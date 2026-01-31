@@ -1,7 +1,7 @@
 {
   "actions": [
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 3.68,
@@ -14,7 +14,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Wait",
       "position": {
         "X": 0,
@@ -27,7 +27,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Interactable",
       "position": {
         "X": 0,
@@ -40,20 +40,20 @@
       "note": "Earthy Portal"
     },
     {
-      "tag": "None",
-      "name": "WaitFor",
+      "tag": 0,
+      "name": "Wait",
       "position": {
         "X": 0,
         "Y": 0,
         "Z": 0
       },
       "arguments": [
-        "IsReady"
+        "2500"
       ],
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Wait",
       "position": {
         "X": -211.94,
@@ -66,33 +66,20 @@
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "MoveTo",
+      "tag": 0,
+      "name": "AutoMoveFor",
       "position": {
-        "X": -212,
-        "Y": -212,
-        "Z": 29
+        "X": -212.04,
+        "Y": -211.99,
+        "Z": 33.81
       },
       "arguments": [
-        "false"
+        "3000"
       ],
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "WaitFor",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
-      },
-      "arguments": [
-        "IsReady"
-      ],
-      "note": ""
-    },
-    {
-      "tag": "None",
+      "tag": 0,
       "name": "Wait",
       "position": {
         "X": -179.95,
@@ -100,51 +87,25 @@
         "Z": -71.07
       },
       "arguments": [
-        "2500"
+        "1500"
       ],
       "note": ""
     },
     {
-      "tag": "Revival",
-      "name": "Revival",
+      "tag": 0,
+      "name": "AutoMoveFor",
       "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
-      },
-      "arguments": [
-        ""
-      ],
-      "note": ""
-    },
-    {
-      "tag": "None",
-      "name": "MoveTo",
-      "position": {
-        "X": -180.01,
+        "X": -180.02,
         "Y": -220.04,
-        "Z": -80
+        "Z": -74.94
       },
       "arguments": [
-        "true"
+        "3000"
       ],
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "WaitFor",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
-      },
-      "arguments": [
-        "IsReady"
-      ],
-      "note": ""
-    },
-    {
-      "tag": "None",
+      "tag": 0,
       "name": "Boss",
       "position": {
         "X": -179.55,
@@ -157,7 +118,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Wait",
       "position": {
         "X": -179.55,
@@ -170,7 +131,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Interactable",
       "position": {
         "X": 0,
@@ -183,20 +144,33 @@
       "note": "Interstice Portal"
     },
     {
-      "tag": "None",
-      "name": "WaitFor",
+      "tag": 0,
+      "name": "Wait",
       "position": {
         "X": 0,
         "Y": 0,
         "Z": 0
       },
       "arguments": [
-        "IsReady"
+        "3003"
       ],
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 4,
+      "name": "Revival",
+      "position": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "arguments": [
+        ""
+      ],
+      "note": ""
+    },
+    {
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 6.68,
@@ -209,7 +183,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Wait",
       "position": {
         "X": 0,
@@ -222,7 +196,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Interactable",
       "position": {
         "X": 0,
@@ -235,20 +209,20 @@
       "note": "Watery Portal"
     },
     {
-      "tag": "None",
-      "name": "WaitFor",
+      "tag": 0,
+      "name": "Wait",
       "position": {
         "X": 0,
         "Y": 0,
         "Z": 0
       },
       "arguments": [
-        "IsReady"
+        "3004"
       ],
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 58.45,
@@ -261,7 +235,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 51.05,
@@ -274,7 +248,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 33.27,
@@ -287,7 +261,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": -2.19,
@@ -300,7 +274,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": -14.68,
@@ -313,33 +287,20 @@
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "MoveTo",
+      "tag": 0,
+      "name": "AutoMoveFor",
       "position": {
-        "X": -19,
+        "X": -17.48,
         "Y": 198,
-        "Z": -183
+        "Z": -180.21
       },
       "arguments": [
-        "true"
+        "3000"
       ],
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "WaitFor",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
-      },
-      "arguments": [
-        "IsReady"
-      ],
-      "note": ""
-    },
-    {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": -33.08,
@@ -352,7 +313,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": -53.81,
@@ -365,7 +326,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": -43.14,
@@ -378,7 +339,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": -11.13,
@@ -391,59 +352,20 @@
       "note": ""
     },
     {
-      "tag": "Revival",
-      "name": "Revival",
+      "tag": 0,
+      "name": "AutoMoveFor",
       "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
+        "X": -4.06,
+        "Y": 169.9,
+        "Z": -105.75
       },
       "arguments": [
-        ""
+        "4000"
       ],
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "Wait",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
-      },
-      "arguments": [
-        "5000"
-      ],
-      "note": ""
-    },
-    {
-      "tag": "None",
-      "name": "MoveTo",
-      "position": {
-        "X": 0,
-        "Y": 170,
-        "Z": -108
-      },
-      "arguments": [
-        "true"
-      ],
-      "note": ""
-    },
-    {
-      "tag": "None",
-      "name": "WaitFor",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
-      },
-      "arguments": [
-        "IsReady"
-      ],
-      "note": ""
-    },
-    {
-      "tag": "None",
+      "tag": 0,
       "name": "Boss",
       "position": {
         "X": 0.03,
@@ -456,7 +378,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 0.17,
@@ -469,7 +391,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Wait",
       "position": {
         "X": 0,
@@ -482,7 +404,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Interactable",
       "position": {
         "X": 0,
@@ -495,20 +417,20 @@
       "note": "Interstice Portal"
     },
     {
-      "tag": "None",
-      "name": "WaitFor",
+      "tag": 0,
+      "name": "Wait",
       "position": {
         "X": 0,
         "Y": 0,
         "Z": 0
       },
       "arguments": [
-        "IsReady"
+        "3006"
       ],
       "note": ""
     },
     {
-      "tag": "Revival",
+      "tag": 4,
       "name": "Revival",
       "position": {
         "X": 0,
@@ -521,7 +443,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 10.3,
@@ -534,7 +456,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Wait",
       "position": {
         "X": 0,
@@ -547,7 +469,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Interactable",
       "position": {
         "X": 0,
@@ -555,25 +477,25 @@
         "Z": 0
       },
       "arguments": [
-        "2011292"
+        "Fiery Portal"
       ],
-      "note": "Fiery Portal"
+      "note": ""
     },
     {
-      "tag": "None",
-      "name": "WaitFor",
+      "tag": 0,
+      "name": "Wait",
       "position": {
         "X": 0,
         "Y": 0,
         "Z": 0
       },
       "arguments": [
-        "IsReady"
+        "3007"
       ],
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 179.21,
@@ -586,7 +508,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 196,
@@ -599,7 +521,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 173.73,
@@ -612,7 +534,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Wait",
       "position": {
         "X": 161.5,
@@ -625,7 +547,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Interactable",
       "position": {
         "X": 0,
@@ -638,33 +560,20 @@
       "note": "Interstice Portal"
     },
     {
-      "tag": "None",
-      "name": "WaitFor",
+      "tag": 0,
+      "name": "Wait",
       "position": {
         "X": 0,
         "Y": 0,
         "Z": 0
       },
       "arguments": [
-        "IsReady"
+        "3008"
       ],
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "MoveTo",
-      "position": {
-        "X": 11.41,
-        "Y": 8.5,
-        "Z": 57.13
-      },
-      "arguments": [
-        ""
-      ],
-      "note": ""
-    },
-    {
-      "tag": "Revival",
+      "tag": 4,
       "name": "Revival",
       "position": {
         "X": 0,
@@ -677,7 +586,20 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
+      "name": "MoveTo",
+      "position": {
+        "X": 11.41,
+        "Y": 8.5,
+        "Z": 57.13
+      },
+      "arguments": [
+        ""
+      ],
+      "note": ""
+    },
+    {
+      "tag": 0,
       "name": "Boss",
       "position": {
         "X": 0.16,
@@ -690,7 +612,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 0.53,
@@ -703,6 +625,7 @@
       "note": ""
     }
   ],
+  "interactables": [],
   "meta": {
     "createdAt": 106,
     "changelog": [
@@ -717,18 +640,6 @@
       {
         "version": 164,
         "change": "Converted to JSON Structure with Tags"
-      },
-      {
-        "version": 173,
-        "change": ""
-      },
-      {
-        "version": 189,
-        "change": "Adjusted tags to string values"
-      },
-      {
-        "version": 202,
-        "change": "Adjusting revival and automoves."
       }
     ],
     "notes": []

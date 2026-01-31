@@ -1,42 +1,46 @@
 {
   "actions": [
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
-        "X": 224.32,
-        "Y": 88.6,
-        "Z": -94.18
+        "X": 194.67,
+        "Y": 91.74,
+        "Z": -93.41
       },
       "arguments": [
-        "true"
+        ""
       ],
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "MoveTo",
+      "tag": 0,
+      "name": "StopForCombat",
       "position": {
-        "X": 130.00374,
-        "Y": 90.31388,
-        "Z": -67.056755
+        "X": 0,
+        "Y": 0,
+        "Z": 0
       },
-      "arguments": [],
+      "arguments": [
+        "False"
+      ],
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "MoveTo",
+      "tag": 0,
+      "name": "StopForCombat",
       "position": {
-        "X": 36.381397,
-        "Y": 72.13117,
-        "Z": -45.53322
+        "X": 125.65,
+        "Y": 89.67,
+        "Z": -66.37
       },
-      "arguments": [],
+      "arguments": [
+        "True"
+      ],
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Boss",
       "position": {
         "X": 17.66,
@@ -49,7 +53,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 41.65,
@@ -62,7 +66,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Interactable",
       "position": {
         "X": 0,
@@ -75,64 +79,7 @@
       "note": "Disposal Chute"
     },
     {
-      "tag": "None",
-      "name": "WaitFor",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
-      },
-      "arguments": [
-        "IsReady"
-      ],
-      "note": ""
-    },
-    {
-      "tag": "None",
-      "name": "MoveTo",
-      "position": {
-        "X": -59.3487,
-        "Y": 72.62593,
-        "Z": 182.84897
-      },
-      "arguments": [],
-      "note": ""
-    },
-    {
-      "tag": "None",
-      "name": "MoveTo",
-      "position": {
-        "X": -46.592396,
-        "Y": 73.753395,
-        "Z": 135.69669
-      },
-      "arguments": [],
-      "note": ""
-    },
-    {
-      "tag": "None",
-      "name": "MoveTo",
-      "position": {
-        "X": -26.48639,
-        "Y": 74.245285,
-        "Z": 108.95167
-      },
-      "arguments": [],
-      "note": ""
-    },
-    {
-      "tag": "None",
-      "name": "MoveTo",
-      "position": {
-        "X": -7.2955933,
-        "Y": 70.321594,
-        "Z": 57.358044
-      },
-      "arguments": [],
-      "note": ""
-    },
-    {
-      "tag": "None",
+      "tag": 0,
       "name": "Boss",
       "position": {
         "X": -12.56,
@@ -145,96 +92,20 @@
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "StopForCombat",
+      "tag": 0,
+      "name": "Wait",
       "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
+        "X": -83.88,
+        "Y": 72,
+        "Z": -35.23
       },
       "arguments": [
-        "false"
+        "30000"
       ],
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "MoveTo",
-      "position": {
-        "X": 7.7214556,
-        "Y": 70.172455,
-        "Z": -66.46675
-      },
-      "arguments": [],
-      "note": ""
-    },
-    {
-      "tag": "None",
-      "name": "StopForCombat",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
-      },
-      "arguments": [
-        "true"
-      ],
-      "note": ""
-    },
-    {
-      "tag": "None",
-      "name": "StopForCombat",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
-      },
-      "arguments": [
-        "false"
-      ],
-      "note": ""
-    },
-    {
-      "tag": "None",
-      "name": "MoveTo",
-      "position": {
-        "X": -58.45,
-        "Y": 68.37,
-        "Z": -57.43
-      },
-      "arguments": [
-        "true"
-      ],
-      "note": ""
-    },
-    {
-      "tag": "None",
-      "name": "StopForCombat",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
-      },
-      "arguments": [
-        "true"
-      ],
-      "note": ""
-    },
-    {
-      "tag": "None",
-      "name": "WaitFor",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
-      },
-      "arguments": [
-        "IsReady"
-      ],
-      "note": ""
-    },
-    {
-      "tag": "None",
+      "tag": 0,
       "name": "Boss",
       "position": {
         "X": -100.38,
@@ -265,14 +136,6 @@
       {
         "version": 164,
         "change": "Converted to JSON Structure with Tags"
-      },
-      {
-        "version": 179,
-        "change": "Updated to newer standards"
-      },
-      {
-        "version": 189,
-        "change": "Adjusted tags to string values"
       }
     ],
     "notes": []

@@ -1,7 +1,7 @@
 {
   "actions": [
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Wait",
       "position": {
         "X": -69.09,
@@ -14,7 +14,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Wait",
       "position": {
         "X": -68.83,
@@ -27,7 +27,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Wait",
       "position": {
         "X": -69.54,
@@ -40,7 +40,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Wait",
       "position": {
         "X": -69.05,
@@ -53,7 +53,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Wait",
       "position": {
         "X": -73.36,
@@ -66,33 +66,20 @@
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "MoveTo",
+      "tag": 0,
+      "name": "AutoMoveFor",
       "position": {
-        "X": -61.59,
-        "Y": -194,
-        "Z": -30.98
+        "X": -59.19,
+        "Y": -194.17,
+        "Z": -31.57
       },
       "arguments": [
-        "true"
+        "2000"
       ],
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "MoveTo",
-      "position": {
-        "X": -48.65,
-        "Y": -202.74,
-        "Z": -31.23
-      },
-      "arguments": [
-        "false"
-      ],
-      "note": ""
-    },
-    {
-      "tag": "Revival",
+      "tag": 4,
       "name": "Revival",
       "position": {
         "X": 33.57,
@@ -105,7 +92,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Boss",
       "position": {
         "X": 21.51,
@@ -118,7 +105,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 35.54,
@@ -131,7 +118,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "StopForCombat",
       "position": {
         "X": 74.69,
@@ -144,7 +131,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 142.21,
@@ -157,7 +144,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "StopForCombat",
       "position": {
         "X": 135.72,
@@ -170,12 +157,12 @@
       "note": ""
     },
     {
-      "tag": "Treasure",
-      "name": "TreasureCoffer",
+      "tag": 0,
+      "name": "MoveTo",
       "position": {
-        "X": 150.05,
-        "Y": -195.06,
-        "Z": -20.15
+        "X": 150.12,
+        "Y": -195.07,
+        "Z": -20.24
       },
       "arguments": [
         ""
@@ -183,33 +170,33 @@
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "MoveTo",
+      "tag": 0,
+      "name": "AutoMoveFor",
       "position": {
-        "X": 157.12,
-        "Y": -195.25,
-        "Z": -22.83
+        "X": 153.93,
+        "Y": -195.2,
+        "Z": -21.66
       },
       "arguments": [
-        "true"
+        "500"
       ],
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "WaitFor",
+      "tag": 0,
+      "name": "Wait",
       "position": {
         "X": 0,
         "Y": 0,
         "Z": 0
       },
       "arguments": [
-        "IsReady"
+        "9500"
       ],
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "StopForCombat",
       "position": {
         "X": 186.57,
@@ -222,12 +209,12 @@
       "note": ""
     },
     {
-      "tag": "Treasure",
-      "name": "TreasureCoffer",
+      "tag": 0,
+      "name": "MoveTo",
       "position": {
-        "X": 202.82,
-        "Y": -158.66,
-        "Z": 116.67
+        "X": 202.78,
+        "Y": -158.68,
+        "Z": 116.1
       },
       "arguments": [
         ""
@@ -235,7 +222,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 146.18,
@@ -248,7 +235,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "StopForCombat",
       "position": {
         "X": 187.35,
@@ -261,7 +248,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 140.82,
@@ -274,31 +261,20 @@
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "MoveTo",
+      "tag": 0,
+      "name": "AutoMoveFor",
       "position": {
-        "X": 125.48264,
-        "Y": -152.92502,
-        "Z": 112.623405
-      },
-      "arguments": [],
-      "note": ""
-    },
-    {
-      "tag": "None",
-      "name": "WaitFor",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
+        "X": 129.91,
+        "Y": -154.36,
+        "Z": 112.14
       },
       "arguments": [
-        "IsReady"
+        "9500"
       ],
       "note": ""
     },
     {
-      "tag": "Revival",
+      "tag": 4,
       "name": "Revival",
       "position": {
         "X": 81.93,
@@ -311,7 +287,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Boss",
       "position": {
         "X": 80,
@@ -324,7 +300,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 67.05,
@@ -337,7 +313,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 44.76,
@@ -350,31 +326,20 @@
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "MoveTo",
+      "tag": 0,
+      "name": "AutoMoveFor",
       "position": {
-        "X": 33.848713,
-        "Y": -130.4382,
-        "Z": 36.443253
-      },
-      "arguments": [],
-      "note": ""
-    },
-    {
-      "tag": "None",
-      "name": "WaitFor",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
+        "X": 38.03,
+        "Y": -130.6,
+        "Z": 36.6
       },
       "arguments": [
-        "IsReady"
+        "8500"
       ],
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "StopForCombat",
       "position": {
         "X": -3.45,
@@ -387,7 +352,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 11.25,
@@ -400,7 +365,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": -0.37,
@@ -413,7 +378,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "StopForCombat",
       "position": {
         "X": -0.86,
@@ -426,7 +391,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "StopForCombat",
       "position": {
         "X": -10.6,
@@ -439,7 +404,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": -74.78,
@@ -452,7 +417,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "StopForCombat",
       "position": {
         "X": -59.69,
@@ -465,7 +430,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": -97.81,
@@ -478,7 +443,7 @@
       "note": ""
     },
     {
-      "tag": "Revival",
+      "tag": 4,
       "name": "Revival",
       "position": {
         "X": -107.16,
@@ -491,7 +456,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Boss",
       "position": {
         "X": -107.2,
@@ -504,7 +469,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": -107.08,
@@ -517,6 +482,7 @@
       "note": ""
     }
   ],
+  "interactables": [],
   "meta": {
     "createdAt": 106,
     "changelog": [
@@ -531,14 +497,6 @@
       {
         "version": 164,
         "change": "Converted to JSON Structure with Tags"
-      },
-      {
-        "version": 185,
-        "change": "Switch to more reliable elevator methods"
-      },
-      {
-        "version": 189,
-        "change": "Adjusted tags to string values"
       }
     ],
     "notes": []

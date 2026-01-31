@@ -1,7 +1,7 @@
 {
   "actions": [
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": 89.16,
@@ -14,18 +14,7 @@
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "MoveTo",
-      "position": {
-        "X": -79.36419,
-        "Y": 1.5648358,
-        "Z": 188.34726
-      },
-      "arguments": [],
-      "note": ""
-    },
-    {
-      "tag": "Revival",
+      "tag": 4,
       "name": "Revival",
       "position": {
         "X": -107.79,
@@ -38,7 +27,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Boss",
       "position": {
         "X": -108.06,
@@ -51,7 +40,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": -145.12,
@@ -64,7 +53,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Wait",
       "position": {
         "X": -72.13,
@@ -77,33 +66,33 @@
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "MoveTo",
+      "tag": 0,
+      "name": "AutoMoveFor",
       "position": {
-        "X": -60.254868,
-        "Y": 41.435062,
-        "Z": 52.039204
+        "X": -64.07,
+        "Y": 40.31,
+        "Z": 52.89
       },
       "arguments": [
-        "false"
+        "6000"
       ],
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "WaitFor",
+      "tag": 0,
+      "name": "Wait",
       "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
+        "X": -38.33,
+        "Y": 55.08,
+        "Z": 27.14
       },
       "arguments": [
-        "IsReady"
+        "5000"
       ],
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": -38,
@@ -116,31 +105,33 @@
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "MoveTo",
+      "tag": 0,
+      "name": "AutoMoveFor",
       "position": {
-        "X": -50.016525,
-        "Y": 60.157913,
-        "Z": 15.751594
+        "X": -46.577,
+        "Y": 55.11,
+        "Z": 16.8
       },
-      "arguments": [],
+      "arguments": [
+        "400"
+      ],
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "WaitFor",
+      "tag": 0,
+      "name": "Wait",
       "position": {
         "X": 0,
         "Y": 0,
         "Z": 0
       },
       "arguments": [
-        "IsReady"
+        "10000"
       ],
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": -80.91,
@@ -153,7 +144,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": -95.3,
@@ -166,7 +157,7 @@
       "note": ""
     },
     {
-      "tag": "Treasure",
+      "tag": 5,
       "name": "TreasureCoffer",
       "position": {
         "X": -94.77,
@@ -179,7 +170,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": -96.64,
@@ -192,31 +183,20 @@
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "MoveTo",
+      "tag": 0,
+      "name": "AutoMoveFor",
       "position": {
-        "X": -107.03283,
-        "Y": 71.05579,
-        "Z": 43.542774
-      },
-      "arguments": [],
-      "note": ""
-    },
-    {
-      "tag": "None",
-      "name": "WaitFor",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
+        "X": -103.14,
+        "Y": 70.26,
+        "Z": 42.74
       },
       "arguments": [
-        "IsReady"
+        "6500"
       ],
       "note": ""
     },
     {
-      "tag": "Treasure",
+      "tag": 5,
       "name": "TreasureCoffer",
       "position": {
         "X": -160.78,
@@ -229,7 +209,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "MoveTo",
       "position": {
         "X": -63.5,
@@ -242,33 +222,20 @@
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "MoveTo",
+      "tag": 0,
+      "name": "AutoMoveFor",
       "position": {
-        "X": -53.99,
-        "Y": 119.58,
-        "Z": -21.28
+        "X": -59.52,
+        "Y": 103.69,
+        "Z": -18.22
       },
       "arguments": [
-        "false"
+        "11000"
       ],
       "note": ""
     },
     {
-      "tag": "None",
-      "name": "WaitFor",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
-      },
-      "arguments": [
-        "IsReady"
-      ],
-      "note": ""
-    },
-    {
-      "tag": "Revival",
+      "tag": 4,
       "name": "Revival",
       "position": {
         "X": -53.32,
@@ -281,7 +248,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Boss",
       "position": {
         "X": -53.21,
@@ -294,7 +261,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Wait",
       "position": {
         "X": -121.52,
@@ -307,7 +274,7 @@
       "note": ""
     },
     {
-      "tag": "Treasure",
+      "tag": 5,
       "name": "TreasureCoffer",
       "position": {
         "X": -153.31,
@@ -320,7 +287,7 @@
       "note": ""
     },
     {
-      "tag": "Treasure",
+      "tag": 5,
       "name": "TreasureCoffer",
       "position": {
         "X": -69.5,
@@ -333,7 +300,7 @@
       "note": ""
     },
     {
-      "tag": "Revival",
+      "tag": 4,
       "name": "Revival",
       "position": {
         "X": -53.94,
@@ -346,7 +313,7 @@
       "note": ""
     },
     {
-      "tag": "None",
+      "tag": 0,
       "name": "Boss",
       "position": {
         "X": -53.98,
@@ -360,11 +327,15 @@
     }
   ],
   "meta": {
-    "createdAt": 172,
+    "createdAt": 160,
     "changelog": [
       {
-        "version": 189,
-        "change": "Adjusted tags to string values"
+        "version": 168,
+        "change": "Converted to JSON Structure with Tags"
+      },
+      {
+        "version": 172,
+        "change": "Converted to JSON Structure with Tags"
       }
     ],
     "notes": []
