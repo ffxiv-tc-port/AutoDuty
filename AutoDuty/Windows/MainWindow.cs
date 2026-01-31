@@ -4,6 +4,7 @@ using System.Numerics;
 using AutoDuty.Helpers;
 using AutoDuty.IPC;
 using Dalamud.Interface;
+using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using ECommons;
@@ -66,8 +67,13 @@ public class MainWindow : Window, IDisposable
 
     internal static void LoopsConfig()
     {
-        if ((Plugin.Configuration.UseSliderInputs && ImGui.SliderInt("Times", ref Plugin.Configuration.LoopTimes, 0, 100)) || (!Plugin.Configuration.UseSliderInputs && ImGui.InputInt("Times", ref Plugin.Configuration.LoopTimes)))
-            Plugin.Configuration.Save();
+        using (ImRaii.Disabled(Plugin.PlannerActive))
+        {
+            if ((Plugin.Configuration.UseSliderInputs && ImGui.SliderInt("Times", ref Plugin.Configuration.LoopTimes, 0, 100)) || (!Plugin.Configuration.UseSliderInputs && ImGui.InputInt("Times", ref Plugin.Configuration.LoopTimes)))
+                Plugin.Configuration.Save();
+        }
+        if (Plugin.PlannerActive)
+            ImGuiComponents.HelpMarker("已啟用排程器；每個任務的執行次數請在排程器設定。 ");
     }
 
     internal static void StopResumePause()
@@ -456,8 +462,8 @@ public class MainWindow : Window, IDisposable
     }
 
     private static readonly List<(string, Action, Vector4?, bool)> tabList =
-        [("Main", MainTab.Draw, null, false), ("Build", BuildTab.Draw, null, false), ("Paths", PathsTab.Draw, null, false), ("Config", ConfigTab.Draw, null, false), ("Info", InfoTab.Draw, null, false), ("Logs", LogTab.Draw, null, false),("Support AutoDuty", KofiLink, ImGui.ColorConvertU32ToFloat4(ColorNormal), false)
-        ];
+    [("Main", MainTab.Draw, null, false), ("Build", BuildTab.Draw, null, false), ("Paths", PathsTab.Draw, null, false), ("Config", ConfigTab.Draw, null, false), ("排程器", PlannerTab.Draw, null, false), ("Info", InfoTab.Draw, null, false), ("Logs", LogTab.Draw, null, false),("Support AutoDuty", KofiLink, ImGui.ColorConvertU32ToFloat4(ColorNormal), false)
+    ];
 
     public override void Draw()
     {

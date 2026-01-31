@@ -1,6 +1,7 @@
 using AutoDuty.Helpers;
 using AutoDuty.IPC;
 using Dalamud.Interface;
+using Dalamud.Interface.Colors;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
@@ -310,6 +311,30 @@ public class ProfileData
     public required Configuration  Config;
 }
 
+[Serializable]
+public class PlannerItem
+{
+    /// <summary>
+    /// TerritoryType key used by ContentPathsManager/ContentHelper.
+    /// </summary>
+    public uint TerritoryType;
+
+    /// <summary>
+    /// How many successful completions to run this duty for.
+    /// </summary>
+    public int TargetRuns = 1;
+
+    /// <summary>
+    /// How many successful completions have been recorded for this duty in the current plan cycle.
+    /// </summary>
+    public int CompletedRuns;
+
+    /// <summary>
+    /// Selected route file name (DutyPath.FileName). Null means auto-select.
+    /// </summary>
+    public string? PathFileName;
+}
+
 public class AutoDutySerializationFactory : DefaultSerializationFactory, ISerializationFactory
 {
     public override string DefaultConfigFileName { get; } = "AutoDutyConfig.json";
@@ -336,6 +361,13 @@ public class Configuration
 
     //General Options
     public int LoopTimes = 1;
+
+    //Planner Options (fixed duty sequence)
+    public bool PlannerEnabled = false;
+    public bool PlannerRepeat  = false;
+    public List<PlannerItem> PlannerItems = [];
+    public int PlannerCurrentIndex = 0;
+
     internal DutyMode dutyModeEnum = DutyMode.None;
     public DutyMode DutyModeEnum
     {
@@ -634,6 +666,9 @@ public static class ConfigTab
     private static string preLoopCommand = string.Empty;
     private static string betweenLoopCommand = string.Empty;
     private static string terminationCommand = string.Empty;
+
+    private static string plannerSearchText = string.Empty;
+    private static int plannerAddTargetRuns = 1;
     private static Dictionary<uint, Item> Items { get; set; } = Svc.Data.GetExcelSheet<Item>()?.Where(x => !x.Name.ToString().IsNullOrEmpty()).ToDictionary(x => x.RowId, x => x) ?? [];
     private static string stopItemQtyItemNameInput = "";
     private static KeyValuePair<uint, string> stopItemQtySelectedItem = new(0, "");
@@ -678,6 +713,218 @@ public static class ConfigTab
         ConsumableItems.Add(new ConsumableItem { StatusId = 1083, ItemId = 14951, Name = "Squadron Spiritbonding Manual", CanBeHq = false });
         ConsumableItems.Add(new ConsumableItem { StatusId = 1084, ItemId = 14952, Name = "Squadron Rationing Manual", CanBeHq = false });
         ConsumableItems.Add(new ConsumableItem { StatusId = 1085, ItemId = 14953, Name = "Squadron Gear Maintenance Manual", CanBeHq = false });
+    }
+
+    internal static void DrawPlannerUi()
+    {
+        var plannerLocked = Plugin.States.HasFlag(PluginState.Looping) || Plugin.States.HasFlag(PluginState.Navigating);
+        if (plannerLocked)
+            ImGui.TextColored(ImGuiColors.DalamudYellow, "請先停止 AutoDuty 以編輯排程。");
+
+        using (ImRaii.Disabled(plannerLocked))
+        {
+            if (ImGui.Checkbox("啟用排程器", ref Configuration.PlannerEnabled))
+                Configuration.Save();
+            ImGui.SameLine();
+            if (ImGui.Checkbox("循環執行", ref Configuration.PlannerRepeat))
+                Configuration.Save();
+            ImGuiComponents.HelpMarker("依序執行任務：A×N 次後執行 B×M 次。成功完成後計數增加。");
+
+            ImGui.Separator();
+            ImGui.TextDisabled("新增任務至排程：");
+
+            plannerAddTargetRuns = Math.Max(1, plannerAddTargetRuns);
+            ImGui.SetNextItemWidth(120 * ImGuiHelpers.GlobalScale);
+            ImGui.InputInt("次數##PlannerAddRuns", ref plannerAddTargetRuns);
+            if (plannerAddTargetRuns < 1)
+                plannerAddTargetRuns = 1;
+
+            ImGui.InputTextWithHint("##PlannerSearch", "搜尋任務...", ref plannerSearchText, 100);
+
+            // 與 Main 相同：在「劇情輔助器」模式下，未解鎖/不可用的任務不得選取（可選擇隱藏）。
+            if (Configuration.DutyModeEnum == DutyMode.Support)
+            {
+                ImGui.SameLine();
+                if (ImGui.Checkbox("隱藏不可用", ref Configuration.HideUnavailableDuties))
+                    Configuration.Save();
+                ImGuiComponents.HelpMarker("劇情輔助器模式下，未解鎖或目前不可執行的任務將無法加入排程。");
+            }
+
+            using (ImRaii.Child("##PlannerDutySearch", new Vector2(0, 140 * ImGuiHelpers.GlobalScale), true))
+            {
+                foreach (var content in ContentHelper.DictionaryContent.Values
+                             .Where(c => c.DutyModes.HasFlag(Configuration.DutyModeEnum))
+                             .OrderBy(c => c.ClassJobLevelRequired)
+                             .ThenBy(c => c.Name))
+                {
+                    if (!plannerSearchText.IsNullOrEmpty() && !content.Name.Contains(plannerSearchText, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    // 限制：劇情輔助器不可選擇未解鎖副本（沿用 Main 的 CanRun() 判斷）。
+                    var canRun = true;
+                    if (Configuration.DutyModeEnum == DutyMode.Support)
+                    {
+                        canRun = content.CanRun();
+                        if (Configuration.HideUnavailableDuties && !canRun)
+                            continue;
+                    }
+
+                    using (ImRaii.Disabled(!canRun))
+                    {
+                        if (ImGui.Selectable($"L{content.ClassJobLevelRequired} ({content.TerritoryType}) {content.Name}##PlannerAdd{content.TerritoryType}"))
+                        {
+                            Configuration.PlannerItems.Add(new PlannerItem
+                            {
+                                TerritoryType = content.TerritoryType,
+                                TargetRuns = plannerAddTargetRuns,
+                                CompletedRuns = 0,
+                                PathFileName = null,
+                            });
+
+                            if (Configuration.PlannerCurrentIndex < 0)
+                                Configuration.PlannerCurrentIndex = 0;
+                            Configuration.Save();
+                        }
+                    }
+                }
+            }
+
+            ImGui.Separator();
+
+            if (Configuration.PlannerItems.Count == 0)
+            {
+                ImGui.TextDisabled("排程清單為空。");
+                return;
+            }
+
+            if (ImGui.Button("重置排程進度"))
+            {
+                foreach (var item in Configuration.PlannerItems)
+                    item.CompletedRuns = 0;
+                Configuration.PlannerCurrentIndex = 0;
+                Configuration.Save();
+            }
+
+            if (ImGui.BeginTable("##PlannerTable", 6, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+            {
+                ImGui.TableSetupColumn("#", ImGuiTableColumnFlags.WidthFixed, 22);
+                ImGui.TableSetupColumn("任務", ImGuiTableColumnFlags.WidthStretch);
+                ImGui.TableSetupColumn("路徑", ImGuiTableColumnFlags.WidthFixed, 180);
+                ImGui.TableSetupColumn("次數", ImGuiTableColumnFlags.WidthFixed, 70);
+                ImGui.TableSetupColumn("進度", ImGuiTableColumnFlags.WidthFixed, 70);
+                ImGui.TableSetupColumn("操作", ImGuiTableColumnFlags.WidthFixed, 120);
+                ImGui.TableHeadersRow();
+
+                for (var i = 0; i < Configuration.PlannerItems.Count; i++)
+                {
+                    var item = Configuration.PlannerItems[i];
+                    ImGui.TableNextRow();
+
+                    ImGui.TableNextColumn();
+                    ImGui.TextUnformatted((i + 1).ToString());
+
+                    ImGui.TableNextColumn();
+                    var name = ContentHelper.DictionaryContent.TryGetValue(item.TerritoryType, out var c)
+                                    ? $"L{c.ClassJobLevelRequired} ({c.TerritoryType}) {c.Name}"
+                                    : $"({item.TerritoryType}) <未知>";
+                    ImGui.TextUnformatted(name);
+                    if (i == Configuration.PlannerCurrentIndex)
+                    {
+                        ImGui.SameLine();
+                        ImGui.TextColored(ImGuiColors.DalamudYellow, "← 目前");
+                    }
+
+                    ImGui.TableNextColumn();
+                    if (!ContentPathsManager.DictionaryPaths.TryGetValue(item.TerritoryType, out var container) || container.Paths.Count == 0)
+                    {
+                        ImGui.TextDisabled("無路徑");
+                    }
+                    else
+                    {
+                        string preview;
+                        if (item.PathFileName.IsNullOrEmpty())
+                        {
+                            preview = "(自動)";
+                        }
+                        else
+                        {
+                            var selectedPath = container.Paths.FirstOrDefault(p => p.FileName.Equals(item.PathFileName, StringComparison.OrdinalIgnoreCase));
+                            preview = selectedPath != null ? selectedPath.Name : "(缺失)";
+                        }
+
+                        ImGui.SetNextItemWidth(-1);
+                        if (ImGui.BeginCombo($"##PlannerPath{i}", preview))
+                        {
+                            var isAuto = item.PathFileName.IsNullOrEmpty();
+                            if (ImGui.Selectable("(自動)", isAuto))
+                            {
+                                item.PathFileName = null;
+                                Configuration.Save();
+                            }
+
+                            foreach (var path in container.Paths)
+                            {
+                                var selected = !item.PathFileName.IsNullOrEmpty() && path.FileName.Equals(item.PathFileName, StringComparison.OrdinalIgnoreCase);
+                                if (ImGui.Selectable(path.Name, selected))
+                                {
+                                    item.PathFileName = path.FileName;
+                                    Configuration.Save();
+                                }
+                            }
+
+                            ImGui.EndCombo();
+                        }
+
+                        if (!item.PathFileName.IsNullOrEmpty() && !container.Paths.Any(p => p.FileName.Equals(item.PathFileName, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            if (ImGui.IsItemHovered())
+                                ImGui.SetTooltip(item.PathFileName);
+                        }
+                    }
+
+                    ImGui.TableNextColumn();
+                    ImGui.SetNextItemWidth(-1);
+                    var runs = item.TargetRuns;
+                    if (ImGui.InputInt($"##PlannerRuns{i}", ref runs, 0, 0))
+                    {
+                        item.TargetRuns = Math.Max(1, runs);
+                        item.CompletedRuns = Math.Clamp(item.CompletedRuns, 0, item.TargetRuns);
+                        Configuration.Save();
+                    }
+
+                    ImGui.TableNextColumn();
+                    ImGui.TextUnformatted($"{item.CompletedRuns}/{item.TargetRuns}");
+
+                    ImGui.TableNextColumn();
+                    var changed = false;
+                    if (ImGui.Button($"上移##PlannerUp{i}") && i > 0)
+                    {
+                        (Configuration.PlannerItems[i - 1], Configuration.PlannerItems[i]) = (Configuration.PlannerItems[i], Configuration.PlannerItems[i - 1]);
+                        if (Configuration.PlannerCurrentIndex == i)
+                            Configuration.PlannerCurrentIndex = i - 1;
+                        else if (Configuration.PlannerCurrentIndex == i - 1)
+                            Configuration.PlannerCurrentIndex = i;
+                        changed = true;
+                    }
+                    ImGui.SameLine();
+                    if (ImGui.Button($"刪除##PlannerDel{i}"))
+                    {
+                        Configuration.PlannerItems.RemoveAt(i);
+                        if (Configuration.PlannerItems.Count == 0)
+                            Configuration.PlannerCurrentIndex = 0;
+                        else if (Configuration.PlannerCurrentIndex >= Configuration.PlannerItems.Count)
+                            Configuration.PlannerCurrentIndex = Configuration.PlannerItems.Count - 1;
+                        changed = true;
+                        i--;
+                    }
+
+                    if (changed)
+                        Configuration.Save();
+                }
+
+                ImGui.EndTable();
+            }
+        }
     }
 
     public static void Draw()
@@ -1049,6 +1296,16 @@ public static class ConfigTab
             if (ImGui.Checkbox("Auto Manage Rotation Plugin State", ref Configuration.AutoManageRotationPluginState))
                 Configuration.Save();
             ImGuiComponents.HelpMarker("Autoduty will enable the Rotation Plugin at the start of each duty\n*Only if using Wrath Combo, Rotation Solver or BossMod AutoRotation\n**AutoDuty will try to use them in that order");
+
+            ImGui.Separator();
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextUnformatted("排程器：");
+            ImGui.SameLine(0, 6);
+            if (ImGui.Button("開啟排程分頁"))
+                MainWindow.OpenTab("排程器");
+            ImGui.SameLine(0, 6);
+            ImGui.TextDisabled(Configuration.PlannerEnabled ? $"已啟用（{Configuration.PlannerItems.Count} 項）" : "未啟用");
+            ImGuiComponents.HelpMarker("排程設定已移至「排程器」分頁。");
 
             if (Configuration.AutoManageRotationPluginState)
             {

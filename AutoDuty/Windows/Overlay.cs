@@ -111,9 +111,9 @@ public unsafe class Overlay : Window
                 ImGui.SameLine(0, 5);
 
                 if (Plugin.States.HasFlag(PluginState.Navigating) || Plugin.States.HasFlag(PluginState.Navigating))
-                    loopsText = $"{(Plugin.CurrentTerritoryContent?.Name!.Length > 20 ? Plugin.CurrentTerritoryContent?.Name![..17] + "..." : Plugin.CurrentTerritoryContent?.Name)}{(Plugin.States.HasFlag(PluginState.Navigating) ? $": {Plugin.CurrentLoop} of {Plugin.Configuration.LoopTimes} Loops" : "")}";
+                loopsText = $"{(Plugin.CurrentTerritoryContent?.Name!.Length > 20 ? Plugin.CurrentTerritoryContent?.Name![..17] + "..." : Plugin.CurrentTerritoryContent?.Name)}{(Plugin.States.HasFlag(PluginState.Navigating) ? $": {Plugin.CurrentLoop} of {Plugin.EffectiveLoopTimes} Loops" : "")}";
                 else
-                    loopsText = $"{(Plugin.CurrentTerritoryContent?.Name!.Length > 40 ? Plugin.CurrentTerritoryContent?.Name![..37] + "..." : Plugin.CurrentTerritoryContent?.Name)}{(Plugin.States.HasFlag(PluginState.Navigating) ? $": {Plugin.CurrentLoop} of {Plugin.Configuration.LoopTimes} Loops" : "")}";
+                loopsText = $"{(Plugin.CurrentTerritoryContent?.Name!.Length > 40 ? Plugin.CurrentTerritoryContent?.Name![..37] + "..." : Plugin.CurrentTerritoryContent?.Name)}{(Plugin.States.HasFlag(PluginState.Navigating) ? $": {Plugin.CurrentLoop} of {Plugin.EffectiveLoopTimes} Loops" : "")}";
 
                 ImGui.TextColored(new Vector4(93 / 255f, 226 / 255f, 231 / 255f, 1), loopsText);
             }

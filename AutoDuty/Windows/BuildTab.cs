@@ -1,4 +1,4 @@
-﻿using Dalamud.Interface.Utility.Raii;
+using Dalamud.Interface.Utility.Raii;
 using ECommons.DalamudServices;
 using ECommons;
 using ImGuiNET;
@@ -52,7 +52,7 @@ namespace AutoDuty.Windows
         private static          int                      _duplicateItemIndex = -1;
         private static          ActionTag                _actionTag;
         private static readonly ActionTag[]              _actionTags           = [ActionTag.None, ActionTag.Synced, ActionTag.Unsynced, ActionTag.W2W, ActionTag.Treasure];
-        public static readonly  JsonSerializerOptions    jsonSerializerOptions = new() { WriteIndented = true, IgnoreReadOnlyProperties = true, IncludeFields = true };
+        public static readonly  JsonSerializerOptions    jsonSerializerOptions = new() { WriteIndented = true, IgnoreReadOnlyProperties = true, IncludeFields = true, PropertyNameCaseInsensitive = true };
 
         internal static unsafe void Draw()
         {

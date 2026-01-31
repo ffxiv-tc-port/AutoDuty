@@ -92,6 +92,9 @@ public sealed class AutoDuty : IDalamudPlugin
     internal DirectoryInfo? AssemblyDirectoryInfo;
 
     internal Configuration Configuration => ConfigurationMain.Instance.GetCurrentConfig;
+
+    public int EffectiveLoopTimes => GetEffectiveLoopTimes();
+    public bool PlannerActive => PlannerEnabled;
     internal WindowSystem WindowSystem = new("AutoDuty");
 
     public   int   Version { get; set; }
@@ -379,7 +382,175 @@ public sealed class AutoDuty : IDalamudPlugin
     private void DutyState_DutyCompleted(object? sender, ushort e)
     {
         DutyState = DutyState.DutyComplete;
+        PlannerOnDutyCompleted();
         this.CheckFinishing();
+    }
+
+    private bool PlannerEnabled => Configuration.PlannerEnabled && Configuration.PlannerItems.Count > 0;
+
+    private bool PlannerTryGetCurrentItem(out PlannerItem item)
+    {
+        item = default!;
+        if (!PlannerEnabled)
+            return false;
+        if (Configuration.PlannerCurrentIndex < 0 || Configuration.PlannerCurrentIndex >= Configuration.PlannerItems.Count)
+            return false;
+        item = Configuration.PlannerItems[Configuration.PlannerCurrentIndex];
+        return true;
+    }
+
+    private int GetEffectiveLoopTimes()
+    {
+        if (PlannerTryGetCurrentItem(out var item))
+            return Math.Max(1, item.TargetRuns);
+        return Math.Max(1, Configuration.LoopTimes);
+    }
+
+    private void PlannerResetProgress()
+    {
+        foreach (var it in Configuration.PlannerItems)
+            it.CompletedRuns = 0;
+        Configuration.PlannerCurrentIndex = 0;
+        Configuration.Save();
+    }
+
+    private bool PlannerIsPlanCompleteNoRepeat()
+    {
+        if (!PlannerEnabled)
+            return false;
+        if (Configuration.PlannerRepeat)
+            return false;
+        // complete when every item hit target
+        return Configuration.PlannerItems.All(it => it.CompletedRuns >= Math.Max(1, it.TargetRuns));
+    }
+
+    private DateTime _plannerLastDutyCompletedAtUtc = DateTime.MinValue;
+    private uint _plannerLastDutyCompletedTerritoryType;
+
+    private bool PlannerTryApplyCurrentSelection(bool resetLoopCounter)
+    {
+        if (!PlannerEnabled)
+            return true;
+
+        // Planner and Leveling share the same switching responsibility; do not mix.
+        if (LevelingEnabled)
+        {
+            MainWindow.ShowPopup("排程器", "排程器與練等模式不相容，請擇一使用。");
+            Configuration.PlannerEnabled = false;
+            Configuration.Save();
+            return false;
+        }
+
+        // sanitize targets/progress
+        foreach (var it in Configuration.PlannerItems)
+        {
+            it.TargetRuns = Math.Max(1, it.TargetRuns);
+            it.CompletedRuns = Math.Clamp(it.CompletedRuns, 0, it.TargetRuns);
+        }
+        if (Configuration.PlannerCurrentIndex < 0)
+            Configuration.PlannerCurrentIndex = 0;
+        if (Configuration.PlannerCurrentIndex >= Configuration.PlannerItems.Count)
+            Configuration.PlannerCurrentIndex = Configuration.PlannerItems.Count - 1;
+
+        // If the plan is complete and we're not repeating, do NOT auto-reset.
+        // Reset is an explicit user action (button), or happens at the repeat boundary.
+        if (PlannerIsPlanCompleteNoRepeat())
+        {
+            if (resetLoopCounter)
+                MainWindow.ShowPopup("排程器", "排程已完成。若要再次執行，請先重置進度或啟用循環執行。");
+            return false;
+        }
+
+        if (!PlannerTryGetCurrentItem(out var item))
+            return false;
+
+        if (!ContentHelper.DictionaryContent.TryGetValue(item.TerritoryType, out var content))
+        {
+            MainWindow.ShowPopup("排程器", $"任務 ({item.TerritoryType}) 在目前的任務模式下不可用。");
+            return false;
+        }
+
+        CurrentTerritoryContent = content;
+        if (ContentPathsManager.DictionaryPaths.TryGetValue(content.TerritoryType, out var container))
+        {
+            if (!item.PathFileName.IsNullOrEmpty())
+            {
+                var index = container.Paths.FindIndex(p => p.FileName.Equals(item.PathFileName, StringComparison.OrdinalIgnoreCase));
+                if (index >= 0)
+                    CurrentPath = index;
+                else
+                    container.SelectPath(out CurrentPath);
+            }
+            else
+            {
+                container.SelectPath(out CurrentPath);
+            }
+        }
+        if (resetLoopCounter)
+            CurrentLoop = 0;
+        return true;
+    }
+
+    private void PlannerOnDutyCompleted()
+    {
+        if (!PlannerEnabled)
+            return;
+
+        if (!PlannerTryGetCurrentItem(out var item))
+            return;
+
+        // Guard against duplicate DutyCompleted events.
+        var now = DateTime.UtcNow;
+        if (item.TerritoryType == _plannerLastDutyCompletedTerritoryType && (now - _plannerLastDutyCompletedAtUtc).TotalMilliseconds < 2000)
+        {
+            Svc.Log.Debug("Planner: ignored duplicate DutyCompleted event.");
+            return;
+        }
+        _plannerLastDutyCompletedTerritoryType = item.TerritoryType;
+        _plannerLastDutyCompletedAtUtc = now;
+
+        // Count only successful completions.
+        item.TargetRuns = Math.Max(1, item.TargetRuns);
+        item.CompletedRuns = Math.Clamp(item.CompletedRuns + 1, 0, item.TargetRuns);
+
+        // Persist progress immediately (requirement: progress persistence).
+        Configuration.Save();
+
+        // Still have runs remaining for this duty.
+        if (item.CompletedRuns < item.TargetRuns)
+            return;
+
+        // Duty finished for this item: advance.
+        if (Configuration.PlannerCurrentIndex < Configuration.PlannerItems.Count - 1)
+        {
+            Configuration.PlannerCurrentIndex++;
+            Configuration.Save();
+            // reset per-duty loop counter so run-to-run logic treats the next duty as a fresh sequence
+            CurrentLoop = 0;
+
+            if (!PlannerTryApplyCurrentSelection(resetLoopCounter: false))
+            {
+                Stage = Stage.Stopped;
+                return;
+            }
+
+            Svc.Log.Info($"Planner: advanced to index {Configuration.PlannerCurrentIndex + 1}/{Configuration.PlannerItems.Count} ({CurrentTerritoryContent?.Name}).");
+            return;
+        }
+
+        // End of plan.
+        if (Configuration.PlannerRepeat)
+        {
+            PlannerResetProgress();
+            CurrentLoop = 0;
+            PlannerTryApplyCurrentSelection(resetLoopCounter: false);
+            Svc.Log.Info("Planner: plan cycle completed, repeating from start.");
+        }
+        else
+        {
+            MainWindow.ShowPopup("排程器", "排程已完成。");
+            Svc.Log.Info("Planner: plan completed.");
+        }
     }
 
     private void MessageReceived(string messageJson)
@@ -488,10 +659,10 @@ public sealed class AutoDuty : IDalamudPlugin
 
         if (t != CurrentTerritoryContent.TerritoryType)
         {
-            if (CurrentLoop < Configuration.LoopTimes)
+            if (CurrentLoop < GetEffectiveLoopTimes())
             {
                 TaskManager.Abort();
-                TaskManager.Enqueue(() => Svc.Log.Debug($"Loop {CurrentLoop} of {Configuration.LoopTimes}"), "Loop-Debug");
+                TaskManager.Enqueue(() => Svc.Log.Debug($"Loop {CurrentLoop} of {GetEffectiveLoopTimes()}"), "Loop-Debug");
                 TaskManager.Enqueue(() => { Stage = Stage.Looping; }, "Loop-SetStage=99");
                 TaskManager.Enqueue(() => { States &= ~PluginState.Navigating; }, "Loop-RemoveNavigationState");
                 TaskManager.Enqueue(() => PlayerHelper.IsReady, int.MaxValue, "Loop-WaitPlayerReady");
@@ -522,7 +693,7 @@ public sealed class AutoDuty : IDalamudPlugin
                 TaskManager.Enqueue(() => Svc.Log.Debug($"Loops Done"),                                                                                         "Loop-Debug");
                 TaskManager.Enqueue(() => { States &= ~PluginState.Navigating; },                                                                               "Loop-RemoveNavigationState");
                 TaskManager.Enqueue(() => PlayerHelper.IsReady,                                                                                                 int.MaxValue, "Loop-WaitPlayerReady");
-                TaskManager.Enqueue(() => Svc.Log.Debug($"Loop {CurrentLoop} == {Configuration.LoopTimes} we are done Looping, Invoking LoopsCompleteActions"), "Loop-Debug");
+                TaskManager.Enqueue(() => Svc.Log.Debug($"Loop {CurrentLoop} == {GetEffectiveLoopTimes()} we are done Looping, Invoking LoopsCompleteActions"), "Loop-Debug");
                 TaskManager.Enqueue(() =>
                                     {
                                         if (this.Configuration.ExecuteBetweenLoopActionLastLoop)
@@ -583,10 +754,19 @@ public sealed class AutoDuty : IDalamudPlugin
             }
         }
 
-        if (CurrentTerritoryContent == null)
-            return;
+        // Allow planner to start without a duty selected in Main.
+        if (PlannerEnabled)
+        {
+            if (!PlannerTryApplyCurrentSelection(resetLoopCounter: true))
+                return;
+        }
+        else
+        {
+            if (CurrentTerritoryContent == null)
+                return;
+        }
 
-        if (loops > 0)
+        if (!PlannerEnabled && loops > 0)
             Configuration.LoopTimes = loops;
 
         if (bareMode)
@@ -603,7 +783,7 @@ public sealed class AutoDuty : IDalamudPlugin
             Configuration.EnableTerminationActions = false;
         }
 
-        Svc.Log.Info($"Running AutoDuty in {CurrentTerritoryContent.EnglishName}, Looping {Configuration.LoopTimes} times{(bareMode ? " in BareMode (No Pre, Between or Termination Loop Actions)" : "")}");
+        Svc.Log.Info($"Running AutoDuty in {CurrentTerritoryContent.EnglishName}, Looping {GetEffectiveLoopTimes()} times{(bareMode ? " in BareMode (No Pre, Between or Termination Loop Actions)" : "")}");
 
         //MainWindow.OpenTab("Mini");
         if (Configuration.ShowOverlay)
@@ -617,7 +797,7 @@ public sealed class AutoDuty : IDalamudPlugin
         if (!VNavmesh_IPCSubscriber.Path_GetMovementAllowed())
             VNavmesh_IPCSubscriber.Path_SetMovementAllowed(true);
         TaskManager.Abort();
-        Svc.Log.Info($"Running {CurrentTerritoryContent.Name} {Configuration.LoopTimes} Times");
+        Svc.Log.Info($"Running {CurrentTerritoryContent.Name} {GetEffectiveLoopTimes()} Times");
         if (!InDungeon)
         {
             CurrentLoop = 0;
@@ -672,6 +852,14 @@ public sealed class AutoDuty : IDalamudPlugin
     internal unsafe void LoopTasks(bool queue = true)
     {
         if (CurrentTerritoryContent == null) return;
+
+        // IMPORTANT: queue=false is used to run completion actions (LoopsCompleteActions).
+        // Do not apply planner duty selection on that path, or it can interfere with termination/between-loop actions.
+        if (queue && PlannerEnabled && !PlannerTryApplyCurrentSelection(resetLoopCounter: false))
+        {
+            Stage = Stage.Stopped;
+            return;
+        }
 
         if (Configuration.EnableBetweenLoopActions)
         {
@@ -788,7 +976,7 @@ public sealed class AutoDuty : IDalamudPlugin
             }
             else
             {
-                CurrentLoop = Configuration.LoopTimes;
+                CurrentLoop = GetEffectiveLoopTimes();
                 LoopsCompleteActions();
                 return;
             }
@@ -797,7 +985,7 @@ public sealed class AutoDuty : IDalamudPlugin
         Queue(CurrentTerritoryContent);
         TaskManager.Enqueue(() => Svc.Log.Debug($"Incrementing LoopCount, Setting Action Var, Wait for CorrectTerritory, PlayerIsValid, DutyStarted, and NavIsReady"));
         TaskManager.Enqueue(() => CurrentLoop++, "Loop-IncrementCurrentLoop");
-        TaskManager.Enqueue(() => { Action = $"Looping: {CurrentTerritoryContent.Name} {CurrentLoop} of {Configuration.LoopTimes}"; }, "Loop-SetAction");
+        TaskManager.Enqueue(() => { Action = $"Looping: {CurrentTerritoryContent.Name} {CurrentLoop} of {GetEffectiveLoopTimes()}"; }, "Loop-SetAction");
         TaskManager.Enqueue(() => Svc.ClientState.TerritoryType == CurrentTerritoryContent.TerritoryType, int.MaxValue, "Loop-WaitCorrectTerritory");
         TaskManager.Enqueue(() => PlayerHelper.IsValid, int.MaxValue, "Loop-WaitPlayerValid");
         TaskManager.Enqueue(() => Svc.DutyState.IsDutyStarted, int.MaxValue, "Loop-WaitDutyStarted");
@@ -1235,7 +1423,7 @@ public sealed class AutoDuty : IDalamudPlugin
     private void CheckFinishing()
     {
         //we finished lets exit the duty or stop
-        if ((Configuration.AutoExitDuty || CurrentLoop < Configuration.LoopTimes))
+        if (Configuration.AutoExitDuty || PlannerEnabled || CurrentLoop < GetEffectiveLoopTimes())
         {
             if (!Stage.EqualsAny(Stage.Stopped, Stage.Paused)                                     &&
                 (!Configuration.OnlyExitWhenDutyDone || this.DutyState == DutyState.DutyComplete) &&
