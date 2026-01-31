@@ -365,6 +365,7 @@ public class Configuration
     //Planner Options (fixed duty sequence)
     public bool PlannerEnabled = false;
     public bool PlannerRepeat  = false;
+    public bool PlannerPaused  = false;
     public List<PlannerItem> PlannerItems = [];
     public int PlannerCurrentIndex = 0;
 

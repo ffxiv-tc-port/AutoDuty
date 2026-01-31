@@ -51,6 +51,33 @@ namespace AutoDuty.Data
             public uint              UnlockQuest            { get; init; }
         }
 
+        public class RunContext
+        {
+            public RunSource Source { get; init; } = RunSource.Manual;
+            public Content   Duty   { get; init; } = null!;
+
+            public int PathIndex { get; init; } = -1;
+
+            /// <summary>
+            /// Optional loop override for this run. When 0 or less, run uses current effective loop logic.
+            /// </summary>
+            public int Loops { get; init; } = 0;
+
+            public bool StartFromZero { get; init; } = true;
+            public bool BareMode      { get; init; } = false;
+
+            /// <summary>
+            /// Planner item index at the time this context was built (or -1 when not a planner run).
+            /// </summary>
+            public int PlannerItemIndex { get; init; } = -1;
+
+            /// <summary>
+            /// When true, a positive <see cref="Loops"/> value should be persisted back to config LoopTimes.
+            /// Preserves the legacy behavior of Run(territoryType, loops).
+            /// </summary>
+            public bool PersistLoopsToConfig { get; init; } = false;
+        }
+
         public class TrustMember
         {
             public byte Index { get; set; }

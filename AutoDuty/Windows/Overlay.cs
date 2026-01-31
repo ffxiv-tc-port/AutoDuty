@@ -72,7 +72,11 @@ public unsafe class Overlay : Window
                         if (ImGui.Button("Start"))
                         {
                             Plugin.LoadPath();
-                            Plugin.Run(Svc.ClientState.TerritoryType);
+                            var ctx = Plugin.BuildCommandRunContext(Svc.ClientState.TerritoryType, loops: 0, startFromZero: true, bareMode: false, source: RunSource.Overlay, persistLoopsToConfig: false);
+                            if (ctx != null)
+                                Plugin.Run(ctx);
+                            else
+                                Plugin.Run(Svc.ClientState.TerritoryType);
                         }
                 }
                 else

@@ -95,6 +95,8 @@ public sealed class AutoDuty : IDalamudPlugin
 
     public int EffectiveLoopTimes => GetEffectiveLoopTimes();
     public bool PlannerActive => PlannerEnabled;
+    internal RunContext? ActiveRunContext = null;
+    internal RunContext? PendingManualRunContext = null;
     internal WindowSystem WindowSystem = new("AutoDuty");
 
     public   int   Version { get; set; }
@@ -399,10 +401,111 @@ public sealed class AutoDuty : IDalamudPlugin
         return true;
     }
 
+    internal RunContext? BuildPlannerRunContext(bool startFromZero = true, bool bareMode = false)
+    {
+        if (!PlannerEnabled)
+            return null;
+
+        var index = Math.Clamp(Configuration.PlannerCurrentIndex, 0, Configuration.PlannerItems.Count - 1);
+        var item = Configuration.PlannerItems[index];
+
+        if (!ContentHelper.DictionaryContent.TryGetValue(item.TerritoryType, out var content))
+            return null;
+
+        var targetRuns = Math.Max(1, item.TargetRuns);
+        var completedRuns = Math.Clamp(item.CompletedRuns, 0, targetRuns);
+        var loopsRemaining = targetRuns - completedRuns;
+        if (loopsRemaining <= 0)
+            return null;
+
+        var pathIndex = -1;
+        if (ContentPathsManager.DictionaryPaths.TryGetValue(item.TerritoryType, out var container))
+        {
+            if (!item.PathFileName.IsNullOrEmpty())
+            {
+                var idx = container.Paths.FindIndex(p => p.FileName.Equals(item.PathFileName, StringComparison.OrdinalIgnoreCase));
+                if (idx >= 0)
+                    pathIndex = idx;
+                else
+                    container.SelectPath(out pathIndex);
+            }
+            else
+            {
+                container.SelectPath(out pathIndex);
+            }
+        }
+
+        return new RunContext
+        {
+            Source = RunSource.Planner,
+            Duty = content,
+            PathIndex = pathIndex,
+            Loops = loopsRemaining,
+            StartFromZero = startFromZero,
+            BareMode = bareMode,
+            PlannerItemIndex = index,
+            PersistLoopsToConfig = false,
+        };
+    }
+
+    internal RunContext? BuildCommandRunContext(uint territoryType, int loops = 0, bool startFromZero = true, bool bareMode = false, RunSource source = RunSource.Command, bool persistLoopsToConfig = true)
+    {
+        if (territoryType <= 0)
+            return null;
+
+        if (!ContentHelper.DictionaryContent.TryGetValue(territoryType, out var content))
+            return null;
+
+        var pathIndex = -1;
+        if (ContentPathsManager.DictionaryPaths.TryGetValue(territoryType, out var container))
+            container.SelectPath(out pathIndex);
+
+        return new RunContext
+        {
+            Source = source,
+            Duty = content,
+            PathIndex = pathIndex,
+            Loops = loops,
+            StartFromZero = startFromZero,
+            BareMode = bareMode,
+            PlannerItemIndex = -1,
+            PersistLoopsToConfig = persistLoopsToConfig,
+        };
+    }
+
+    public void Run(RunContext ctx)
+    {
+        if (ctx == null)
+            return;
+
+        if (ctx.Duty == null)
+            return;
+
+        ActiveRunContext = ctx;
+
+        CurrentTerritoryContent = ctx.Duty;
+        if (ctx.PathIndex >= 0)
+            CurrentPath = ctx.PathIndex;
+
+        if (ctx.PersistLoopsToConfig && ctx.Loops > 0)
+            Configuration.LoopTimes = ctx.Loops;
+
+        // Reuse the existing legacy Run() pipeline to avoid duplicating logic.
+        Run(0, 0, ctx.StartFromZero, ctx.BareMode);
+    }
+
     private int GetEffectiveLoopTimes()
     {
-        if (PlannerTryGetCurrentItem(out var item))
+        if (ActiveRunContext is { Loops: > 0 })
+            return Math.Max(1, ActiveRunContext.Loops);
+
+        if (ActiveRunContext?.Source == RunSource.Planner && PlannerTryGetCurrentItem(out var plannerItem))
+            return Math.Max(1, plannerItem.TargetRuns);
+
+        // Legacy/UI fallback: when not running, keep displaying planner target runs if planner is active.
+        if (ActiveRunContext == null && PlannerTryGetCurrentItem(out var item))
             return Math.Max(1, item.TargetRuns);
+
         return Math.Max(1, Configuration.LoopTimes);
     }
 
@@ -493,6 +596,9 @@ public sealed class AutoDuty : IDalamudPlugin
 
     private void PlannerOnDutyCompleted()
     {
+        if (ActiveRunContext?.Source != RunSource.Planner)
+            return;
+
         if (!PlannerEnabled)
             return;
 
@@ -515,6 +621,10 @@ public sealed class AutoDuty : IDalamudPlugin
 
         // Persist progress immediately (requirement: progress persistence).
         Configuration.Save();
+
+        // If planner is paused (or a manual run is queued), do not advance/retarget any further.
+        if (Configuration.PlannerPaused || PendingManualRunContext != null)
+            return;
 
         // Still have runs remaining for this duty.
         if (item.CompletedRuns < item.TargetRuns)
@@ -754,18 +864,24 @@ public sealed class AutoDuty : IDalamudPlugin
             }
         }
 
-        // Allow planner to start without a duty selected in Main.
-        if (PlannerEnabled)
-        {
-            if (!PlannerTryApplyCurrentSelection(resetLoopCounter: true))
-                return;
-        }
-        else
-        {
-            if (CurrentTerritoryContent == null)
-                return;
-        }
+        if (CurrentTerritoryContent == null)
+            return;
 
+        // Legacy entrypoint: infer source only when no explicit RunContext was provided.
+        ActiveRunContext ??= new RunContext
+        {
+            Source = territoryType > 0 ? RunSource.Command : RunSource.Manual,
+            Duty = CurrentTerritoryContent,
+            PathIndex = CurrentPath,
+            Loops = 0,
+            StartFromZero = startFromZero,
+            BareMode = bareMode,
+            PlannerItemIndex = -1,
+            PersistLoopsToConfig = false,
+        };
+
+        // Preserve legacy behavior: only persist loop times from the legacy Run() path
+        // when planner is not active.
         if (!PlannerEnabled && loops > 0)
             Configuration.LoopTimes = loops;
 
@@ -855,7 +971,7 @@ public sealed class AutoDuty : IDalamudPlugin
 
         // IMPORTANT: queue=false is used to run completion actions (LoopsCompleteActions).
         // Do not apply planner duty selection on that path, or it can interfere with termination/between-loop actions.
-        if (queue && PlannerEnabled && !PlannerTryApplyCurrentSelection(resetLoopCounter: false))
+        if (queue && ActiveRunContext?.Source == RunSource.Planner && !Configuration.PlannerPaused && PendingManualRunContext == null && !PlannerTryApplyCurrentSelection(resetLoopCounter: false))
         {
             Stage = Stage.Stopped;
             return;
@@ -1423,7 +1539,10 @@ public sealed class AutoDuty : IDalamudPlugin
     private void CheckFinishing()
     {
         //we finished lets exit the duty or stop
-        if (Configuration.AutoExitDuty || PlannerEnabled || CurrentLoop < GetEffectiveLoopTimes())
+        var plannerRun = ActiveRunContext?.Source == RunSource.Planner;
+        var pendingManual = PendingManualRunContext != null;
+
+        if (Configuration.AutoExitDuty || plannerRun || pendingManual || CurrentLoop < GetEffectiveLoopTimes())
         {
             if (!Stage.EqualsAny(Stage.Stopped, Stage.Paused)                                     &&
                 (!Configuration.OnlyExitWhenDutyDone || this.DutyState == DutyState.DutyComplete) &&
@@ -1715,6 +1834,8 @@ public sealed class AutoDuty : IDalamudPlugin
 
         this.Framework_Update_InDuty(framework);
 
+        ProcessPendingManualRun();
+
         switch (Stage)
         {
             case Stage.Reading_Path:
@@ -1732,6 +1853,50 @@ public sealed class AutoDuty : IDalamudPlugin
             default:
                 break;
         }
+    }
+
+    private bool IsSafeToStartPendingManualRun()
+    {
+        if (InDungeon)
+            return false;
+
+        if (!PlayerHelper.IsReadyFull)
+            return false;
+
+        if (Svc.Condition[ConditionFlag.BetweenAreas] || Svc.Condition[ConditionFlag.BetweenAreas51])
+            return false;
+
+        if (Svc.Condition[ConditionFlag.WatchingCutscene] || Svc.Condition[ConditionFlag.WatchingCutscene78] || Svc.Condition[ConditionFlag.OccupiedInCutSceneEvent])
+            return false;
+
+        if (_recentlyWatchedCutscene)
+            return false;
+
+        return true;
+    }
+
+    private void ProcessPendingManualRun()
+    {
+        if (PendingManualRunContext == null)
+            return;
+
+        if (!IsSafeToStartPendingManualRun())
+            return;
+
+        var ctx = PendingManualRunContext;
+        PendingManualRunContext = null;
+
+        // Ensure the previous (planner) run is fully stopped before starting manual.
+        StopAndResetALL();
+        Run(ctx);
+    }
+
+    internal void QueueManualRun(RunContext ctx)
+    {
+        PendingManualRunContext = ctx;
+        Configuration.PlannerPaused = true;
+        Configuration.Save();
+        Svc.Log.Info("Manual run queued; waiting for safe exit.");
     }
 
     public event IFramework.OnUpdateDelegate Framework_Update_InDuty = _ => {};
@@ -1765,6 +1930,9 @@ public sealed class AutoDuty : IDalamudPlugin
         if (VNavmesh_IPCSubscriber.IsEnabled && VNavmesh_IPCSubscriber.Path_GetTolerance() > 0.25F)
             VNavmesh_IPCSubscriber.Path_SetTolerance(0.25f);
         FollowHelper.SetFollow(null);
+
+        ActiveRunContext = null;
+        PendingManualRunContext = null;
 
         if (VNavmesh_IPCSubscriber.IsEnabled && VNavmesh_IPCSubscriber.Path_IsRunning())
             VNavmesh_IPCSubscriber.Path_Stop();
@@ -2001,7 +2169,12 @@ public sealed class AutoDuty : IDalamudPlugin
 
                 Configuration.DutyModeEnum = dutyMode;
 
-                Run(territoryType, loopTimes, bareMode: argsArray.Length > 4 && bool.TryParse(argsArray[4], out bool parsedBool) && parsedBool);
+                var bareMode = argsArray.Length > 4 && bool.TryParse(argsArray[4], out bool parsedBool) && parsedBool;
+                var ctx = BuildCommandRunContext(territoryType, loopTimes, startFromZero: true, bareMode: bareMode, source: RunSource.Command, persistLoopsToConfig: true);
+                if (ctx != null)
+                    Run(ctx);
+                else
+                    Run(territoryType, loopTimes, bareMode: bareMode);
                 break;
             case "tt":
                 var tt = Svc.Data.Excel.GetSheet<TerritoryType>()?.FirstOrDefault(x => x.ContentFinderCondition.ValueNullable != null && x.ContentFinderCondition.Value.Name.ToString().Equals(args.Replace("tt ", ""), StringComparison.InvariantCultureIgnoreCase)) ?? Svc.Data.Excel.GetSheet<TerritoryType>()?.GetRow(1);

@@ -234,6 +234,16 @@ namespace AutoDuty.Data
             Trust = 2
         }
 
+        public enum RunSource : int
+        {
+            Manual = 0,
+            Planner = 1,
+            Command = 2,
+            IPC = 3,
+            Overlay = 4,
+            Leveling = 5,
+        }
+
         [Flags]
         public enum PluginState : int
         {

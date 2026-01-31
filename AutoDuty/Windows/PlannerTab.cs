@@ -71,14 +71,34 @@ public static class PlannerTab
                     MainWindow.ShowPopup("錯誤", "執行一般模式(解限)需要正確的職業配置。");
                 else
                 {
-                    var index = Math.Clamp(Plugin.Configuration.PlannerCurrentIndex, 0, Plugin.Configuration.PlannerItems.Count - 1);
-                    var territoryType = Plugin.Configuration.PlannerItems[index].TerritoryType;
-                    if (ContentPathsManager.DictionaryPaths.ContainsKey(territoryType))
-                        Plugin.Run();
-                    else
+                    var ctx = Plugin.BuildPlannerRunContext();
+                    if (ctx == null)
+                    {
+                        MainWindow.ShowPopup("錯誤", "排程內容無效或已完成。請檢查進度、任務與路徑設定。");
+                        return;
+                    }
+
+                    if (!ContentPathsManager.DictionaryPaths.ContainsKey(ctx.Duty.TerritoryType))
+                    {
                         MainWindow.ShowPopup("錯誤", "找不到路徑檔案。");
+                        return;
+                    }
+
+                    Plugin.Run(ctx);
                 }
             }
+        }
+
+        if (Plugin.Configuration.PlannerPaused)
+        {
+            ImGui.SameLine(0, 12);
+            if (ImGui.Button("Resume"))
+            {
+                Plugin.Configuration.PlannerPaused = false;
+                Plugin.Configuration.Save();
+            }
+            ImGui.SameLine(0, 8);
+            ImGui.TextDisabled("（已暫停，按 Resume 解除暫停；不會自動開跑）");
         }
 
         if (Plugin.States.HasFlag(PluginState.Looping))

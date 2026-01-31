@@ -15,7 +15,15 @@ namespace AutoDuty.IPC
         [EzIPC] public void ListConfig() => ConfigHelper.ListConfig();
         [EzIPC] public string GetConfig(string config) => ConfigHelper.GetConfig(config);
         [EzIPC] public void SetConfig (string config, string setting) => ConfigHelper.ModifyConfig(config, setting);
-        [EzIPC] public void Run(uint territoryType, int loops = 0, bool bareMode = false) => Plugin.Run(territoryType, loops, startFromZero: true, bareMode: bareMode);
+        [EzIPC]
+        public void Run(uint territoryType, int loops = 0, bool bareMode = false)
+        {
+            var ctx = Plugin.BuildCommandRunContext(territoryType, loops, startFromZero: true, bareMode: bareMode, source: RunSource.IPC, persistLoopsToConfig: true);
+            if (ctx != null)
+                Plugin.Run(ctx);
+            else
+                Plugin.Run(territoryType, loops, startFromZero: true, bareMode: bareMode);
+        }
         [EzIPC] public void Start(bool startFromZero = true) => Plugin.StartNavigation(startFromZero);
         [EzIPC] public void Stop() => Plugin.Stage = Stage.Stopped;
         [EzIPC] public bool IsNavigating() => Plugin.States.HasFlag(PluginState.Navigating);
