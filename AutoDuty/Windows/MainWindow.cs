@@ -67,13 +67,8 @@ public class MainWindow : Window, IDisposable
 
     internal static void LoopsConfig()
     {
-        using (ImRaii.Disabled(Plugin.PlannerActive))
-        {
-            if ((Plugin.Configuration.UseSliderInputs && ImGui.SliderInt("Times", ref Plugin.Configuration.LoopTimes, 0, 100)) || (!Plugin.Configuration.UseSliderInputs && ImGui.InputInt("Times", ref Plugin.Configuration.LoopTimes)))
-                Plugin.Configuration.Save();
-        }
-        if (Plugin.PlannerActive)
-            ImGuiComponents.HelpMarker("已啟用排程器；每個任務的執行次數請在排程器設定。 ");
+        if ((Plugin.Configuration.UseSliderInputs && ImGui.SliderInt("Times", ref Plugin.Configuration.LoopTimes, 0, 100)) || (!Plugin.Configuration.UseSliderInputs && ImGui.InputInt("Times", ref Plugin.Configuration.LoopTimes)))
+            Plugin.Configuration.Save();
     }
 
     internal static void StopResumePause()

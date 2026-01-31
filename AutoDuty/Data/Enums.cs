@@ -231,7 +231,8 @@ namespace AutoDuty.Data
         {
             None = 0,
             Support = 1,
-            Trust = 2
+            Trust = 2,
+            Manual = 3,
         }
 
         public enum RunSource : int

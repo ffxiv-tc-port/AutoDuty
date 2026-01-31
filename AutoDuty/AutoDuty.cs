@@ -80,7 +80,7 @@ public sealed class AutoDuty : IDalamudPlugin
 
     internal bool SupportLevelingEnabled => LevelingModeEnum == LevelingMode.Support;
     internal bool TrustLevelingEnabled => LevelingModeEnum == LevelingMode.Trust;
-    internal bool LevelingEnabled => LevelingModeEnum != LevelingMode.None;
+    internal bool LevelingEnabled => LevelingModeEnum == LevelingMode.Support || LevelingModeEnum == LevelingMode.Trust;
 
     internal static string Name => "AutoDuty";
     internal static AutoDuty Plugin { get; private set; }

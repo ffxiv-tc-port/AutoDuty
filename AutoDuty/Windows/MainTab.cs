@@ -20,7 +20,32 @@ namespace AutoDuty.Windows
     internal static class MainTab
     {
         internal static ContentPathsManager.ContentPathContainer? DutySelected;
+        internal static Content? SelectedDuty;
+        internal static int SelectedPath = -1;
         internal static readonly (string Normal, string GameFont) Digits = ("0123456789", "");
+
+        internal static RunContext? BuildManualRunContext(bool startFromZero = true, bool bareMode = false)
+        {
+            // During transition, fall back to legacy global selection so this builder is usable
+            // before MainTab fully owns the selection state.
+            var duty = SelectedDuty ?? Plugin.CurrentTerritoryContent;
+            if (duty == null)
+                return null;
+
+            var pathIndex = SelectedPath >= 0 ? SelectedPath : Plugin.CurrentPath;
+
+            return new RunContext
+            {
+                Source = RunSource.Manual,
+                Duty = duty,
+                PathIndex = pathIndex,
+                Loops = Plugin.Configuration.LoopTimes,
+                StartFromZero = startFromZero,
+                BareMode = bareMode,
+                PlannerItemIndex = -1,
+                PersistLoopsToConfig = false,
+            };
+        }
 
         private static int _currentStepIndex = -1;
         private static readonly string _pathsURL = "https://github.com/ffxivcode/AutoDuty/tree/master/AutoDuty/Paths";
@@ -97,20 +122,26 @@ namespace AutoDuty.Windows
                                 if (ImGui.Selectable(path.Value.Name))
                                 {
                                     curPath = path.Index;
-                                    PathSelectionHelper.AddPathSelectionEntry(Plugin.CurrentTerritoryContent!.TerritoryType);
-                                    Dictionary<string, JobWithRole> pathJobs = Plugin.Configuration.PathSelectionsByPath[Plugin.CurrentTerritoryContent.TerritoryType]!;
-                                    pathJobs.TryAdd(path.Value.FileName, JobWithRole.None);
-                                    
-                                    foreach (string jobsKey in pathJobs.Keys) 
-                                        pathJobs[jobsKey] &= ~curJob;
+                                    SelectedPath = curPath;
 
-                                    pathJobs[path.Value.FileName] |= curJob;
+                                    // Do not disturb an active planner run.
+                                    if (!(Plugin.States.HasFlag(PluginState.Looping) && Plugin.ActiveRunContext?.Source == RunSource.Planner))
+                                    {
+                                        PathSelectionHelper.AddPathSelectionEntry(Plugin.CurrentTerritoryContent!.TerritoryType);
+                                        Dictionary<string, JobWithRole> pathJobs = Plugin.Configuration.PathSelectionsByPath[Plugin.CurrentTerritoryContent.TerritoryType]!;
+                                        pathJobs.TryAdd(path.Value.FileName, JobWithRole.None);
 
-                                    PathSelectionHelper.RebuildDefaultPaths(Plugin.CurrentTerritoryContent.TerritoryType);
+                                        foreach (string jobsKey in pathJobs.Keys)
+                                            pathJobs[jobsKey] &= ~curJob;
 
-                                    Plugin.Configuration.Save();
-                                    Plugin.CurrentPath = curPath;
-                                    Plugin.LoadPath();
+                                        pathJobs[path.Value.FileName] |= curJob;
+
+                                        PathSelectionHelper.RebuildDefaultPaths(Plugin.CurrentTerritoryContent.TerritoryType);
+
+                                        Plugin.Configuration.Save();
+                                        Plugin.CurrentPath = curPath;
+                                        Plugin.LoadPath();
+                                    }
                                 }
                                 if (ImGui.IsItemHovered() && !path.Value.PathFile.Meta.Notes.All(x => x.IsNullOrEmpty()))
                                     ImGui.SetTooltip(string.Join("\n", path.Value.PathFile.Meta.Notes));
@@ -168,10 +199,12 @@ namespace AutoDuty.Windows
                                 {
                                     Plugin.LoadPath();
                                     _currentStepIndex = -1;
-                                    if (Plugin.MainListClicked)
-                                        Plugin.Run(Svc.ClientState.TerritoryType, 0, !Plugin.MainListClicked);
+                                    var startFromZero = !Plugin.MainListClicked;
+                                    var ctx = Plugin.BuildCommandRunContext(Svc.ClientState.TerritoryType, loops: 0, startFromZero: startFromZero, bareMode: false, source: RunSource.Manual, persistLoopsToConfig: false);
+                                    if (ctx != null)
+                                        Plugin.Run(ctx);
                                     else
-                                        Plugin.Run(Svc.ClientState.TerritoryType);
+                                        Plugin.Run(Svc.ClientState.TerritoryType, 0, startFromZero);
                                 }
                             }
                             else
@@ -225,6 +258,16 @@ namespace AutoDuty.Windows
                 if (!Plugin.States.HasFlag(PluginState.Looping) && !Plugin.Overlay.IsOpen)
                     MainWindow.GotoAndActions();
 
+                // Planner status line (A4-b)
+                if (Plugin.PlannerActive && Plugin.Configuration.PlannerItems.Count > 0)
+                {
+                    var idx = Math.Clamp(Plugin.Configuration.PlannerCurrentIndex, 0, Plugin.Configuration.PlannerItems.Count - 1);
+                    var tt = Plugin.Configuration.PlannerItems[idx].TerritoryType;
+                    var name = ContentHelper.DictionaryContent.TryGetValue(tt, out var c) ? c.Name : $"{tt}";
+                    var state = Plugin.Configuration.PlannerPaused ? "paused" : (Plugin.ActiveRunContext?.Source == RunSource.Planner && Plugin.States.HasFlag(PluginState.Looping) ? "running" : "idle");
+                    ImGui.TextDisabled($"Planner: {idx + 1}/{Plugin.Configuration.PlannerItems.Count} {name} ({state})");
+                }
+
                 using (ImRaii.Disabled(Plugin.CurrentTerritoryContent == null || (Plugin.Configuration.DutyModeEnum == DutyMode.Trust && Plugin.Configuration.SelectedTrustMembers.Any(x => x is null))))
                 {
                     if (!Plugin.States.HasFlag(PluginState.Looping))
@@ -240,13 +283,39 @@ namespace AutoDuty.Windows
                             else if (Plugin.Configuration.DutyModeEnum == DutyMode.Regular && !Plugin.Configuration.Unsynced && !Plugin.Configuration.OverridePartyValidation && !ObjectHelper.PartyValidation())
                                 MainWindow.ShowPopup("Error", "You must have the correct party makeup to run Regular Duties");
                             else if (ContentPathsManager.DictionaryPaths.ContainsKey(Plugin.CurrentTerritoryContent?.TerritoryType ?? 0))
-                                Plugin.Run();
+                            {
+                                var ctx = BuildManualRunContext();
+                                if (ctx != null)
+                                    Plugin.Run(ctx);
+                            }
                             else
                                 MainWindow.ShowPopup("Error", "No path was found");
                         }
                     }
                     else
                         MainWindow.StopResumePause();
+
+                    if (Plugin.States.HasFlag(PluginState.Looping) && Plugin.ActiveRunContext?.Source == RunSource.Planner)
+                    {
+                        ImGui.SameLine(0, 12);
+                        using (ImRaii.Disabled(Plugin.PendingManualRunContext != null))
+                        {
+                            if (ImGui.Button("切換手動（排隊）"))
+                            {
+                                var ctx = BuildManualRunContext();
+                                if (ctx == null)
+                                    MainWindow.ShowPopup("排程器", "請先在主頁選擇要手動執行的副本/路徑。");
+                                else
+                                    Plugin.QueueManualRun(ctx);
+                            }
+                        }
+
+                        if (Plugin.PendingManualRunContext != null)
+                        {
+                            ImGui.SameLine(0, 8);
+                            ImGui.TextDisabled("（已排隊，等待安全退出…）");
+                        }
+                    }
                 }
                 using (ImRaii.Disabled(Plugin.States.HasFlag(PluginState.Looping)))
                 {
@@ -280,11 +349,22 @@ namespace AutoDuty.Windows
                             ImGui.TextColored(Plugin.LevelingModeEnum == LevelingMode.None ? new Vector4(1, 0, 0, 1) : new Vector4(0, 1, 0, 1), "Select Leveling Mode: ");
                             ImGui.SameLine(0);
                             ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X);
-                            if (ImGui.BeginCombo("##LevelingModeEnum", Plugin.LevelingModeEnum == LevelingMode.None ? "None" : "Auto"))
+                            var levelingModeLabel = "None";
+                            if (Plugin.LevelingModeEnum == LevelingMode.Manual)
+                                levelingModeLabel = "Manual";
+                            else if (Plugin.LevelingEnabled)
+                                levelingModeLabel = "Auto";
+
+                            if (ImGui.BeginCombo("##LevelingModeEnum", levelingModeLabel))
                             {
                                 if (ImGui.Selectable("None"))
                                 {
                                     Plugin.LevelingModeEnum = LevelingMode.None;
+                                    Plugin.Configuration.Save();
+                                }
+                                if (ImGui.Selectable("Manual"))
+                                {
+                                    Plugin.LevelingModeEnum = LevelingMode.Manual;
                                     Plugin.Configuration.Save();
                                 }
                                 if (ImGui.Selectable("Auto"))
@@ -386,12 +466,23 @@ namespace AutoDuty.Windows
                     {
                         if (PlayerHelper.IsReady)
                         {
-                            if (Plugin.LevelingModeEnum != LevelingMode.None)
+                            string? dutyListHint = null;
+
+                            if (Plugin.Configuration.DutyModeEnum == DutyMode.None)
+                            {
+                                dutyListHint = "Please select a duty category above to populate the duty list.";
+                            }
+                            else if (Plugin.Configuration.DutyModeEnum is DutyMode.Support or DutyMode.Trust && Plugin.LevelingModeEnum == LevelingMode.None)
+                            {
+                                dutyListHint = "Please select Manual or Auto above to populate the duty list.";
+                            }
+                            else if (Plugin.LevelingEnabled)
                             {
                                 if (Player.Job.GetCombatRole() == CombatRole.NonCombat || (Plugin.LevelingModeEnum == LevelingMode.Trust && ilvl < 370) || (Plugin.LevelingModeEnum == LevelingMode.Trust && Plugin.CurrentPlayerItemLevelandClassJob.Value != null && Plugin.CurrentPlayerItemLevelandClassJob.Value != Player.Job))
                                 {
                                     Svc.Log.Debug($"You are on a non-compatible job: {Player.Job.GetCombatRole()}, or your doing trust and your iLvl({ilvl}) is below 370, or your iLvl has changed, Disabling Leveling Mode");
                                     Plugin.LevelingModeEnum = LevelingMode.None;
+                                    dutyListHint = "Please select Manual or Auto above to populate the duty list.";
                                 }
                                 else if (ilvl > 0 && ilvl != Plugin.CurrentPlayerItemLevelandClassJob.Key)
                                 {
@@ -424,7 +515,9 @@ namespace AutoDuty.Windows
                                     ImGuiEx.TextWrapped(new Vector4(0, 1, 1, 1), "Blue Mage cannot run Trust, Duty Support, Squadron or Variant dungeons. Please switch jobs or select a different category.");
                                 else
                                 {
-                                    Dictionary<uint, Content> dictionary = ContentHelper.DictionaryContent.Where(x => x.Value.DutyModes.HasFlag(Plugin.Configuration.DutyModeEnum)).ToDictionary();
+                                    Dictionary<uint, Content> dictionary = ContentHelper.DictionaryContent
+                                        .Where(x => Plugin.Configuration.DutyModeEnum != DutyMode.None && x.Value.DutyModes.HasFlag(Plugin.Configuration.DutyModeEnum))
+                                        .ToDictionary();
 
                                     if (dictionary.Count > 0 && PlayerHelper.IsReady)
                                     {
@@ -440,21 +533,61 @@ namespace AutoDuty.Windows
                                             {
                                                 if (Plugin.Configuration.HideUnavailableDuties && !canRun)
                                                     continue;
-                                                if (ImGui.Selectable($"L{content.ClassJobLevelRequired} ({content.TerritoryType}) {content.Name}", Plugin.CurrentTerritoryContent?.TerritoryType == content.TerritoryType))
+                                                var selectedTerritoryType = (SelectedDuty ?? Plugin.CurrentTerritoryContent)?.TerritoryType;
+                                                var isSelected = selectedTerritoryType == content.TerritoryType;
+                                                if (isSelected)
+                                                    ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0, 1, 1, 1));
+                                                try
                                                 {
-                                                    DutySelected = ContentPathsManager.DictionaryPaths[content.TerritoryType];
-                                                    Plugin.CurrentTerritoryContent = content;
-                                                    DutySelected.SelectPath(out Plugin.CurrentPath);
+                                                    if (ImGui.Selectable($"L{content.ClassJobLevelRequired} ({content.TerritoryType}) {content.Name}", isSelected))
+                                                    {
+                                                        SelectedDuty = content;
+
+                                                        if (ContentPathsManager.DictionaryPaths.TryGetValue(content.TerritoryType, out var container))
+                                                        {
+                                                            DutySelected = container;
+                                                            DutySelected.SelectPath(out SelectedPath);
+                                                        }
+                                                        else
+                                                        {
+                                                            DutySelected = null;
+                                                            SelectedPath = -1;
+                                                        }
+
+                                                        // Selecting a duty while planner is actively running must not
+                                                        // mutate the live run state.
+                                                        if (!(Plugin.States.HasFlag(PluginState.Looping) && Plugin.ActiveRunContext?.Source == RunSource.Planner))
+                                                        {
+                                                            Plugin.CurrentTerritoryContent = content;
+                                                            if (SelectedPath >= 0)
+                                                                Plugin.CurrentPath = SelectedPath;
+                                                        }
+                                                    }
+                                                }
+                                                finally
+                                                {
+                                                    if (isSelected)
+                                                        ImGui.PopStyleColor();
+                                                }
+                                                {
+                                                    // no-op: selection handled above
                                                 }
                                             }
                                         }
                                     }
                                     else
                                     {
-                                        if (PlayerHelper.IsReady)
-                                            ImGuiEx.TextWrapped(new Vector4(0, 1, 0, 1), "Please select one of Support, Trust, Squadron or Regular\nto Populate the Duty List");
+                                        // When DutyMode is None we intentionally render no duties.
                                     }
                                 }
+                            }
+
+                            if (dutyListHint != null)
+                            {
+                                ImGui.EndListBox();
+                                ImGui.Separator();
+                                ImGui.TextDisabled(dutyListHint);
+                                return;
                             }
                         }
                         else
