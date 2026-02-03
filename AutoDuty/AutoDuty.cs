@@ -96,7 +96,6 @@ public sealed class AutoDuty : IDalamudPlugin
     public int EffectiveLoopTimes => GetEffectiveLoopTimes();
     public bool PlannerActive => PlannerEnabled;
     internal RunContext? ActiveRunContext = null;
-    internal RunContext? PendingManualRunContext = null;
     internal WindowSystem WindowSystem = new("AutoDuty");
 
     public   int   Version { get; set; }
@@ -481,6 +480,20 @@ public sealed class AutoDuty : IDalamudPlugin
         if (ctx.Duty == null)
             return;
 
+        // Mutual exclusion (policy 3): forbid switching between Planner and Main while running.
+        if (States.HasFlag(PluginState.Looping) && ActiveRunContext != null)
+        {
+            var runningPlanner = ActiveRunContext.Source == RunSource.Planner;
+            var startingPlanner = ctx.Source == RunSource.Planner;
+            if (runningPlanner != startingPlanner)
+            {
+                MainWindow.ShowPopup("Mode", runningPlanner
+                    ? "Planner is running. Stop it first."
+                    : "AutoDuty is running. Stop it first.");
+                return;
+            }
+        }
+
         ActiveRunContext = ctx;
 
         CurrentTerritoryContent = ctx.Duty;
@@ -534,15 +547,6 @@ public sealed class AutoDuty : IDalamudPlugin
     {
         if (!PlannerEnabled)
             return true;
-
-        // Planner and Leveling share the same switching responsibility; do not mix.
-        if (LevelingEnabled)
-        {
-            MainWindow.ShowPopup("排程器", "排程器與練等模式不相容，請擇一使用。");
-            Configuration.PlannerEnabled = false;
-            Configuration.Save();
-            return false;
-        }
 
         // sanitize targets/progress
         foreach (var it in Configuration.PlannerItems)
@@ -622,8 +626,8 @@ public sealed class AutoDuty : IDalamudPlugin
         // Persist progress immediately (requirement: progress persistence).
         Configuration.Save();
 
-        // If planner is paused (or a manual run is queued), do not advance/retarget any further.
-        if (Configuration.PlannerPaused || PendingManualRunContext != null)
+        // If planner is paused, do not advance/retarget any further.
+        if (Configuration.PlannerPaused)
             return;
 
         // Still have runs remaining for this duty.
@@ -971,7 +975,7 @@ public sealed class AutoDuty : IDalamudPlugin
 
         // IMPORTANT: queue=false is used to run completion actions (LoopsCompleteActions).
         // Do not apply planner duty selection on that path, or it can interfere with termination/between-loop actions.
-        if (queue && ActiveRunContext?.Source == RunSource.Planner && !Configuration.PlannerPaused && PendingManualRunContext == null && !PlannerTryApplyCurrentSelection(resetLoopCounter: false))
+        if (queue && ActiveRunContext?.Source == RunSource.Planner && !Configuration.PlannerPaused && !PlannerTryApplyCurrentSelection(resetLoopCounter: false))
         {
             Stage = Stage.Stopped;
             return;
@@ -1540,9 +1544,8 @@ public sealed class AutoDuty : IDalamudPlugin
     {
         //we finished lets exit the duty or stop
         var plannerRun = ActiveRunContext?.Source == RunSource.Planner;
-        var pendingManual = PendingManualRunContext != null;
 
-        if (Configuration.AutoExitDuty || plannerRun || pendingManual || CurrentLoop < GetEffectiveLoopTimes())
+        if (Configuration.AutoExitDuty || plannerRun || CurrentLoop < GetEffectiveLoopTimes())
         {
             if (!Stage.EqualsAny(Stage.Stopped, Stage.Paused)                                     &&
                 (!Configuration.OnlyExitWhenDutyDone || this.DutyState == DutyState.DutyComplete) &&
@@ -1834,8 +1837,6 @@ public sealed class AutoDuty : IDalamudPlugin
 
         this.Framework_Update_InDuty(framework);
 
-        ProcessPendingManualRun();
-
         switch (Stage)
         {
             case Stage.Reading_Path:
@@ -1853,50 +1854,6 @@ public sealed class AutoDuty : IDalamudPlugin
             default:
                 break;
         }
-    }
-
-    private bool IsSafeToStartPendingManualRun()
-    {
-        if (InDungeon)
-            return false;
-
-        if (!PlayerHelper.IsReadyFull)
-            return false;
-
-        if (Svc.Condition[ConditionFlag.BetweenAreas] || Svc.Condition[ConditionFlag.BetweenAreas51])
-            return false;
-
-        if (Svc.Condition[ConditionFlag.WatchingCutscene] || Svc.Condition[ConditionFlag.WatchingCutscene78] || Svc.Condition[ConditionFlag.OccupiedInCutSceneEvent])
-            return false;
-
-        if (_recentlyWatchedCutscene)
-            return false;
-
-        return true;
-    }
-
-    private void ProcessPendingManualRun()
-    {
-        if (PendingManualRunContext == null)
-            return;
-
-        if (!IsSafeToStartPendingManualRun())
-            return;
-
-        var ctx = PendingManualRunContext;
-        PendingManualRunContext = null;
-
-        // Ensure the previous (planner) run is fully stopped before starting manual.
-        StopAndResetALL();
-        Run(ctx);
-    }
-
-    internal void QueueManualRun(RunContext ctx)
-    {
-        PendingManualRunContext = ctx;
-        Configuration.PlannerPaused = true;
-        Configuration.Save();
-        Svc.Log.Info("Manual run queued; waiting for safe exit.");
     }
 
     public event IFramework.OnUpdateDelegate Framework_Update_InDuty = _ => {};
@@ -1932,7 +1889,6 @@ public sealed class AutoDuty : IDalamudPlugin
         FollowHelper.SetFollow(null);
 
         ActiveRunContext = null;
-        PendingManualRunContext = null;
 
         if (VNavmesh_IPCSubscriber.IsEnabled && VNavmesh_IPCSubscriber.Path_IsRunning())
             VNavmesh_IPCSubscriber.Path_Stop();

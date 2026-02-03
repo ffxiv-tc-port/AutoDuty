@@ -34,6 +34,14 @@ public static class PlannerTab
         if (MainWindow.CurrentTabName != "排程器")
             MainWindow.CurrentTabName = "排程器";
 
+        // Mutual exclusion: if Main is currently running, Planner UI must be inert.
+        if (Plugin.States.HasFlag(PluginState.Looping) && Plugin.ActiveRunContext?.Source != RunSource.Planner)
+        {
+            ImGui.TextDisabled("AutoDuty is running.");
+            ImGui.TextDisabled("Planner controls are disabled. Stop Main first.");
+            return;
+        }
+
         // Duty Mode selector (required to queue)
         ImGui.TextColored(Plugin.Configuration.DutyModeEnum == DutyMode.None ? new Vector4(1, 0, 0, 1) : new Vector4(0, 1, 0, 1), "選擇任務模式：");
         ImGui.SameLine(0);
@@ -63,6 +71,8 @@ public static class PlannerTab
                     MainWindow.ShowPopup("錯誤", "請先選擇任務模式。");
                 else if (Plugin.Configuration.PlannerItems.Count == 0)
                     MainWindow.ShowPopup("錯誤", "排程清單為空。");
+                else if (Plugin.LevelingEnabled)
+                    MainWindow.ShowPopup("Error", "Planner and Auto Leveling are mutually exclusive. Set Leveling Mode to None/Manual first.");
                 else if (Svc.Party.PartyId > 0 && (Plugin.Configuration.DutyModeEnum == DutyMode.Support || Plugin.Configuration.DutyModeEnum == DutyMode.Squadron || Plugin.Configuration.DutyModeEnum == DutyMode.Trust))
                     MainWindow.ShowPopup("錯誤", "執行劇情輔助器、冒險者小隊或親信戰友時不可組隊。");
                 else if (Plugin.Configuration.DutyModeEnum == DutyMode.Regular && !Plugin.Configuration.Unsynced && !Plugin.Configuration.OverridePartyValidation && Svc.Party.PartyId == 0)

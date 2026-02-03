@@ -255,6 +255,14 @@ namespace AutoDuty.Windows
             }
             else
             {
+                // Mutual exclusion: if Planner is currently running, Main UI must be inert.
+                if (Plugin.States.HasFlag(PluginState.Looping) && Plugin.ActiveRunContext?.Source == RunSource.Planner)
+                {
+                    ImGui.TextDisabled("Planner is running.");
+                    ImGui.TextDisabled("Main controls are disabled. Stop Planner first.");
+                    return;
+                }
+
                 if (!Plugin.States.HasFlag(PluginState.Looping) && !Plugin.Overlay.IsOpen)
                     MainWindow.GotoAndActions();
 
@@ -295,27 +303,7 @@ namespace AutoDuty.Windows
                     else
                         MainWindow.StopResumePause();
 
-                    if (Plugin.States.HasFlag(PluginState.Looping) && Plugin.ActiveRunContext?.Source == RunSource.Planner)
-                    {
-                        ImGui.SameLine(0, 12);
-                        using (ImRaii.Disabled(Plugin.PendingManualRunContext != null))
-                        {
-                            if (ImGui.Button("切換手動（排隊）"))
-                            {
-                                var ctx = BuildManualRunContext();
-                                if (ctx == null)
-                                    MainWindow.ShowPopup("排程器", "請先在主頁選擇要手動執行的副本/路徑。");
-                                else
-                                    Plugin.QueueManualRun(ctx);
-                            }
-                        }
-
-                        if (Plugin.PendingManualRunContext != null)
-                        {
-                            ImGui.SameLine(0, 8);
-                            ImGui.TextDisabled("（已排隊，等待安全退出…）");
-                        }
-                    }
+                    // Mutual exclusion (policy 3): no queued switching from Planner to Main.
                 }
                 using (ImRaii.Disabled(Plugin.States.HasFlag(PluginState.Looping)))
                 {
