@@ -28,7 +28,9 @@ namespace AutoDuty.Windows
         {
             // During transition, fall back to legacy global selection so this builder is usable
             // before MainTab fully owns the selection state.
-            var duty = SelectedDuty ?? Plugin.CurrentTerritoryContent;
+            var duty = Plugin.LevelingEnabled
+                ? Plugin.CurrentTerritoryContent
+                : (SelectedDuty ?? Plugin.CurrentTerritoryContent);
             if (duty == null)
                 return null;
 
@@ -353,6 +355,14 @@ namespace AutoDuty.Windows
                                 if (ImGui.Selectable("Manual"))
                                 {
                                     Plugin.LevelingModeEnum = LevelingMode.Manual;
+
+                                    // Reset stale selection state when switching from Auto -> Manual.
+                                    // Manual mode should require an explicit duty selection from the list.
+                                    SelectedDuty = null;
+                                    SelectedPath = -1;
+                                    DutySelected = null;
+                                    Plugin.CurrentTerritoryContent = null;
+
                                     Plugin.Configuration.Save();
                                 }
                                 if (ImGui.Selectable("Auto"))
@@ -475,7 +485,9 @@ namespace AutoDuty.Windows
                                 else if (ilvl > 0 && ilvl != Plugin.CurrentPlayerItemLevelandClassJob.Key)
                                 {
                                     Svc.Log.Debug($"Your iLvl has changed, Selecting new Duty.");
-                                    Plugin.CurrentTerritoryContent = LevelingHelper.SelectHighestLevelingRelevantDuty(Plugin.LevelingModeEnum == LevelingMode.Trust);
+                                    // Re-apply current auto leveling mode through a single code path
+                                    // so duty/path/container state stays consistent.
+                                    Plugin.LevelingModeEnum = Plugin.LevelingModeEnum;
                                 }
                                 else
                                 {
@@ -521,7 +533,9 @@ namespace AutoDuty.Windows
                                             {
                                                 if (Plugin.Configuration.HideUnavailableDuties && !canRun)
                                                     continue;
-                                                var selectedTerritoryType = (SelectedDuty ?? Plugin.CurrentTerritoryContent)?.TerritoryType;
+                                                var selectedTerritoryType = Plugin.LevelingEnabled
+                                                    ? Plugin.CurrentTerritoryContent?.TerritoryType
+                                                    : (SelectedDuty ?? Plugin.CurrentTerritoryContent)?.TerritoryType;
                                                 var isSelected = selectedTerritoryType == content.TerritoryType;
                                                 if (isSelected)
                                                     ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0, 1, 1, 1));

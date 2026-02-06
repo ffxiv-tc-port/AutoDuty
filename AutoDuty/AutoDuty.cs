@@ -138,6 +138,19 @@ public sealed class AutoDuty : IDalamudPlugin
         get => levelingModeEnum;
         set
         {
+            if (value == LevelingMode.Manual)
+            {
+                // Manual mode should not auto-pick a duty.
+                levelingModeEnum = LevelingMode.Manual;
+                MainTab.DutySelected = null;
+                MainTab.SelectedDuty = null;
+                MainTab.SelectedPath = -1;
+                MainListClicked = false;
+                CurrentTerritoryContent = null;
+                CurrentPath = -1;
+                return;
+            }
+
             if (value != LevelingMode.None)
             {
                 Svc.Log.Debug($"Setting Leveling mode to {value}");
@@ -149,13 +162,19 @@ public sealed class AutoDuty : IDalamudPlugin
                     MainTab.DutySelected = ContentPathsManager.DictionaryPaths[duty.TerritoryType];
                     CurrentTerritoryContent = duty;
                     MainTab.DutySelected.SelectPath(out CurrentPath);
+                    // Keep manual selection state isolated from auto-leveling selection.
+                    MainTab.SelectedDuty = null;
+                    MainTab.SelectedPath = -1;
                     Svc.Log.Debug($"Leveling Mode: Setting duty to {duty.Name}");
                 }
                 else
                 {
                     MainTab.DutySelected = null;
+                    MainTab.SelectedDuty = null;
+                    MainTab.SelectedPath = -1;
                     MainListClicked = false;
                     CurrentTerritoryContent = null;
+                    CurrentPath = -1;
                     levelingModeEnum = LevelingMode.None;
                     Svc.Log.Debug($"Leveling Mode: No appropriate leveling duty found");
                 }
@@ -163,8 +182,11 @@ public sealed class AutoDuty : IDalamudPlugin
             else
             {
                 MainTab.DutySelected = null;
+                MainTab.SelectedDuty = null;
+                MainTab.SelectedPath = -1;
                 MainListClicked = false;
                 CurrentTerritoryContent = null;
+                CurrentPath = -1;
                 levelingModeEnum = LevelingMode.None;
             }
         }
@@ -232,9 +254,10 @@ public sealed class AutoDuty : IDalamudPlugin
             AssemblyFileInfo = PluginInterface.AssemblyLocation;
             AssemblyDirectoryInfo = AssemblyFileInfo.Directory;
             
-            Version = 
-                ((PluginInterface.IsDev     ? new Version(0,0,0, 227) :
-                  PluginInterface.IsTesting ? PluginInterface.Manifest.TestingAssemblyVersion ?? PluginInterface.Manifest.AssemblyVersion : PluginInterface.Manifest.AssemblyVersion)!).Revision;
+            Version =
+                ((PluginInterface.IsTesting
+                      ? PluginInterface.Manifest.TestingAssemblyVersion ?? PluginInterface.Manifest.AssemblyVersion
+                      : PluginInterface.Manifest.AssemblyVersion)!).Revision;
 
             if (!_configDirectory.Exists)
                 _configDirectory.Create();
@@ -1748,18 +1771,10 @@ public sealed class AutoDuty : IDalamudPlugin
             if (LevelingEnabled)
             {
                 Svc.Log.Info($"{(Configuration.DutyModeEnum == DutyMode.Support || Configuration.DutyModeEnum == DutyMode.Trust) && (Configuration.DutyModeEnum == DutyMode.Support || SupportLevelingEnabled) && (Configuration.DutyModeEnum != DutyMode.Trust || TrustLevelingEnabled)} ({Configuration.DutyModeEnum == DutyMode.Support} || {Configuration.DutyModeEnum == DutyMode.Trust}) && ({Configuration.DutyModeEnum == DutyMode.Support} || {SupportLevelingEnabled}) && ({Configuration.DutyModeEnum != DutyMode.Trust} || {TrustLevelingEnabled})");
-                Content? duty = LevelingHelper.SelectHighestLevelingRelevantDuty(LevelingModeEnum == LevelingMode.Trust);
-                if (duty != null)
-                {
-                    Plugin.CurrentTerritoryContent = duty;
-                    MainListClicked = true;
-                    ContentPathsManager.DictionaryPaths[Plugin.CurrentTerritoryContent.TerritoryType].SelectPath(out CurrentPath);
-                }
-                else
-                {
-                    Plugin.CurrentTerritoryContent = null;
-                    CurrentPath = -1;
-                }
+                // Re-apply current auto leveling mode through a single code path
+                // so duty/path/container state stays consistent.
+                LevelingModeEnum = LevelingModeEnum;
+                MainListClicked = true;
             }
         }
 
