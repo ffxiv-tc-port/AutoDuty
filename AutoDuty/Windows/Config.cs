@@ -731,6 +731,16 @@ public static class ConfigTab
                 Configuration.Save();
             ImGuiComponents.HelpMarker("依序執行任務：A×N 次後執行 B×M 次。成功完成後計數增加。");
 
+            // Align key Main tab toggles in Planner.
+            if (Configuration.DutyModeEnum.EqualsAny(DutyMode.Regular, DutyMode.Trial, DutyMode.Raid))
+            {
+                if (ImGuiEx.CheckboxWrapped("解除限制", ref Configuration.Unsynced))
+                    Configuration.Save();
+            }
+
+            if (ImGui.Checkbox("隱藏不可用", ref Configuration.HideUnavailableDuties))
+                Configuration.Save();
+
             ImGui.Separator();
             ImGui.TextDisabled("新增任務至排程：");
 
@@ -741,18 +751,11 @@ public static class ConfigTab
                 plannerAddTargetRuns = 1;
 
             ImGui.InputTextWithHint("##PlannerSearch", "搜尋任務...", ref plannerSearchText, 100);
-
-            // 與 Main 相同：在「劇情輔助器」模式下，未解鎖/不可用的任務不得選取（可選擇隱藏）。
-            if (Configuration.DutyModeEnum == DutyMode.Support)
-            {
-                ImGui.SameLine();
-                if (ImGui.Checkbox("隱藏不可用", ref Configuration.HideUnavailableDuties))
-                    Configuration.Save();
-                ImGuiComponents.HelpMarker("劇情輔助器模式下，未解鎖或目前不可執行的任務將無法加入排程。");
-            }
+            ImGuiComponents.HelpMarker("與 Main 一致：可用此開關隱藏目前不可執行的任務。");
 
             using (ImRaii.Child("##PlannerDutySearch", new Vector2(0, 140 * ImGuiHelpers.GlobalScale), true))
             {
+                var level = PlayerHelper.GetCurrentLevelFromSheet();
                 foreach (var content in ContentHelper.DictionaryContent.Values
                              .Where(c => c.DutyModes.HasFlag(Configuration.DutyModeEnum))
                              .OrderBy(c => c.ClassJobLevelRequired)
@@ -761,14 +764,9 @@ public static class ConfigTab
                     if (!plannerSearchText.IsNullOrEmpty() && !content.Name.Contains(plannerSearchText, StringComparison.OrdinalIgnoreCase))
                         continue;
 
-                    // 限制：劇情輔助器不可選擇未解鎖副本（沿用 Main 的 CanRun() 判斷）。
-                    var canRun = true;
-                    if (Configuration.DutyModeEnum == DutyMode.Support)
-                    {
-                        canRun = content.CanRun();
-                        if (Configuration.HideUnavailableDuties && !canRun)
-                            continue;
-                    }
+                    var canRun = content.CanRun(level);
+                    if (Configuration.HideUnavailableDuties && !canRun)
+                        continue;
 
                     using (ImRaii.Disabled(!canRun))
                     {
@@ -787,6 +785,32 @@ public static class ConfigTab
                             Configuration.Save();
                         }
                     }
+                }
+            }
+
+            if (Configuration.DutyModeEnum == DutyMode.Trust && Configuration.PlannerItems.Count > 0)
+            {
+                var trustIndex = Math.Clamp(Configuration.PlannerCurrentIndex, 0, Configuration.PlannerItems.Count - 1);
+                var trustTerritory = Configuration.PlannerItems[trustIndex].TerritoryType;
+                if (ContentHelper.DictionaryContent.TryGetValue(trustTerritory, out var trustContent) && trustContent.TrustMembers.Count > 0)
+                {
+                    ImGui.Separator();
+                    ImGuiEx.LineCentered(() => ImGuiEx.TextUnderlined("選擇親信隊友（目前排程項）"));
+
+                    TrustHelper.ResetTrustIfInvalid();
+                    for (int i = 0; i < Configuration.SelectedTrustMembers.Length; i++)
+                    {
+                        var member = Configuration.SelectedTrustMembers[i];
+                        if (member is null)
+                            continue;
+
+                        if (trustContent.TrustMembers.All(x => x.MemberName != member))
+                            Configuration.SelectedTrustMembers[i] = null;
+                    }
+
+                    ImGui.Columns(3);
+                    MainTab.DrawTrustMembers(trustContent);
+                    ImGui.Columns(1, null, true);
                 }
             }
 

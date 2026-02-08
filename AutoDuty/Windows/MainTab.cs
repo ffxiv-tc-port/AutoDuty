@@ -607,7 +607,7 @@ namespace AutoDuty.Windows
             }
         }
 
-        private static void DrawTrustMembers(Content content)
+        internal static void DrawTrustMembers(Content content)
         {
             foreach (TrustMember member in content.TrustMembers)
             {
