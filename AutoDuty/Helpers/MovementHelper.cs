@@ -5,6 +5,7 @@ using FFXIVClientStructs.FFXIV.Client.Game;
 using System.Linq;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using ECommons.DalamudServices;
+using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using ECommons.GameFunctions;
 
@@ -57,10 +58,10 @@ namespace AutoDuty.Helpers
                 return true;
             }
 
-            if (PlayerHelper.IsMoving && !Player.Object.Struct()->Character.InCombat && Vector3.Distance(Player.Object.Position, position) >= 10)
+            if (PlayerHelper.IsMoving)
             {
                 //sprint
-                if (ActionManager.Instance()->GetActionStatus(ActionType.GeneralAction, 4) == 0 && ActionManager.Instance()->QueuedActionId != 4 && !PlayerHelper.IsCasting)
+                if (EzThrottler.Throttle("AutoSprint", 300) && ActionManager.Instance()->GetActionStatus(ActionType.GeneralAction, 4) == 0 && ActionManager.Instance()->QueuedActionId != 4 && !PlayerHelper.IsCasting)
                     ActionManager.Instance()->UseAction(ActionType.GeneralAction, 4);
 
                 //peloton

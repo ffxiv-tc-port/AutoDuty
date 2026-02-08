@@ -1374,6 +1374,13 @@ public sealed class AutoDuty : IDalamudPlugin
         }
 
         Action = $"{Plugin.Actions[Indexer].ToCustomString()}";
+
+        unsafe
+        {
+            if (PlayerHelper.IsMoving && EzThrottler.Throttle("AutoSprint", 300) && ActionManager.Instance()->GetActionStatus(ActionType.GeneralAction, 4) == 0 && ActionManager.Instance()->QueuedActionId != 4 && !PlayerHelper.IsCasting)
+                ActionManager.Instance()->UseAction(ActionType.GeneralAction, 4);
+        }
+
         if (PlayerHelper.InCombat && Plugin.StopForCombat)
         {
             if (Configuration.AutoManageRotationPluginState && !Configuration.UsingAlternativeRotationPlugin)
