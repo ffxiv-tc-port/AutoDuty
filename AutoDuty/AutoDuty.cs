@@ -532,11 +532,11 @@ public sealed class AutoDuty : IDalamudPlugin
 
     private int GetEffectiveLoopTimes()
     {
-        if (ActiveRunContext is { Loops: > 0 })
-            return Math.Max(1, ActiveRunContext.Loops);
-
         if (ActiveRunContext?.Source == RunSource.Planner && PlannerTryGetCurrentItem(out var plannerItem))
             return Math.Max(1, plannerItem.TargetRuns);
+
+        if (ActiveRunContext is { Loops: > 0 })
+            return Math.Max(1, ActiveRunContext.Loops);
 
         // Legacy/UI fallback: when not running, keep displaying planner target runs if planner is active.
         if (ActiveRunContext == null && PlannerTryGetCurrentItem(out var item))

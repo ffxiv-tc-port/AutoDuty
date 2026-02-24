@@ -67,8 +67,37 @@ public class MainWindow : Window, IDisposable
 
     internal static void LoopsConfig()
     {
-        if ((Plugin.Configuration.UseSliderInputs && ImGui.SliderInt("Times", ref Plugin.Configuration.LoopTimes, 0, 100)) || (!Plugin.Configuration.UseSliderInputs && ImGui.InputInt("Times", ref Plugin.Configuration.LoopTimes)))
+        var plannerRunning = Plugin.States.HasFlag(PluginState.Looping) && Plugin.ActiveRunContext?.Source == RunSource.Planner;
+
+        if (plannerRunning && Plugin.Configuration.PlannerItems.Count > 0)
+        {
+            var index = Math.Clamp(Plugin.Configuration.PlannerCurrentIndex, 0, Plugin.Configuration.PlannerItems.Count - 1);
+            var item = Plugin.Configuration.PlannerItems[index];
+            var runs = Math.Max(1, item.TargetRuns);
+
+            var changed = (Plugin.Configuration.UseSliderInputs && ImGui.SliderInt("Times", ref runs, 1, 100))
+                          || (!Plugin.Configuration.UseSliderInputs && ImGui.InputInt("Times", ref runs));
+
+            if (changed)
+            {
+                var minRuns = Math.Max(1, item.CompletedRuns);
+                item.TargetRuns = Math.Max(minRuns, runs);
+                item.CompletedRuns = Math.Clamp(item.CompletedRuns, 0, item.TargetRuns);
+                Plugin.Configuration.Save();
+            }
+
+            return;
+        }
+
+        var loopTimes = Math.Max(1, Plugin.Configuration.LoopTimes);
+        var loopChanged = (Plugin.Configuration.UseSliderInputs && ImGui.SliderInt("Times", ref loopTimes, 1, 100))
+                          || (!Plugin.Configuration.UseSliderInputs && ImGui.InputInt("Times", ref loopTimes));
+
+        if (loopChanged)
+        {
+            Plugin.Configuration.LoopTimes = Math.Max(1, loopTimes);
             Plugin.Configuration.Save();
+        }
     }
 
     internal static void StopResumePause()

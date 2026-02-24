@@ -41,7 +41,8 @@ namespace AutoDuty.Windows
                 Source = RunSource.Manual,
                 Duty = duty,
                 PathIndex = pathIndex,
-                Loops = Plugin.Configuration.LoopTimes,
+                // Keep manual dashboard runs dynamic: effective loops should come from current UI/config value.
+                Loops = 0,
                 StartFromZero = startFromZero,
                 BareMode = bareMode,
                 PlannerItemIndex = -1,
@@ -307,15 +308,16 @@ namespace AutoDuty.Windows
 
                     // Mutual exclusion (policy 3): no queued switching from Planner to Main.
                 }
+                using (ImRaii.Disabled(Plugin.CurrentTerritoryContent == null))
+                {
+                    ImGui.SameLine(0, 15);
+                    ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X);
+                    MainWindow.LoopsConfig();
+                    ImGui.PopItemWidth();
+                }
+
                 using (ImRaii.Disabled(Plugin.States.HasFlag(PluginState.Looping)))
                 {
-                    using (ImRaii.Disabled(Plugin.CurrentTerritoryContent == null))
-                    {
-                        ImGui.SameLine(0, 15);
-                        ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X);
-                        MainWindow.LoopsConfig();
-                        ImGui.PopItemWidth();
-                    }
                     ImGui.TextColored(Plugin.Configuration.DutyModeEnum == DutyMode.None ? new Vector4(1, 0, 0, 1) : new Vector4(0, 1, 0, 1), "Select Duty Mode: ");
                     ImGui.SameLine(0);
                     ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X);
