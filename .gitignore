@@ -364,3 +364,6 @@ FodyWeavers.xsd
 
 # OhMyOpenCode / agent workspace
 .sisyphus/
+
+# OMC local state
+.omc/

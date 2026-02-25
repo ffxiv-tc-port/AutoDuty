@@ -863,7 +863,7 @@ public sealed class AutoDuty : IDalamudPlugin
             return;
         }
         //Svc.Log.Debug($"{flag} : {value}");
-        if (Stage != Stage.Dead && Stage != Stage.Revived && !_recentlyWatchedCutscene && !Conditions.Instance()->WatchingCutscene && flag != ConditionFlag.WatchingCutscene && flag != ConditionFlag.WatchingCutscene78 && flag != ConditionFlag.OccupiedInCutSceneEvent && Stage != Stage.Action && value && States.HasFlag(PluginState.Navigating) && (flag == ConditionFlag.BetweenAreas || flag == ConditionFlag.BetweenAreas51 || flag == ConditionFlag.Jumping61))
+        if (Stage != Stage.Dead && Stage != Stage.Revived && !_recentlyWatchedCutscene && !Conditions.Instance()->WatchingCutscene && flag != ConditionFlag.WatchingCutscene && flag != ConditionFlag.WatchingCutscene78 && flag != ConditionFlag.OccupiedInCutSceneEvent && Stage != Stage.Action && Stage != Stage.Condition && value && States.HasFlag(PluginState.Navigating) && (flag == ConditionFlag.BetweenAreas || flag == ConditionFlag.BetweenAreas51 || flag == ConditionFlag.Jumping61))
         {
             Svc.Log.Info($"Condition_ConditionChange: Indexer Increase and Change Stage to Condition");
             Indexer++;
@@ -1285,7 +1285,7 @@ public sealed class AutoDuty : IDalamudPlugin
         if (!PlayerHelper.IsValid || !EzThrottler.Check("PathFindFailure") || Indexer == -1 || Indexer >= Actions.Count)
             return;
 
-        Action = $"{(Actions.Count >= Indexer ? Plugin.Actions[Indexer].ToCustomString() : "")}";
+        Action = $"{(Actions.Count > Indexer ? Plugin.Actions[Indexer].ToCustomString() : "")}";
 
         PathAction = Actions[Indexer];
 
@@ -1372,6 +1372,9 @@ public sealed class AutoDuty : IDalamudPlugin
 
             //_messageBusSend.PublishAsync(Encoding.UTF8.GetBytes(messageJson));
         }
+
+        if (Indexer == -1 || Indexer >= Actions.Count)
+            return;
 
         Action = $"{Plugin.Actions[Indexer].ToCustomString()}";
 
