@@ -1,7 +1,7 @@
 {
   "actions": [
     {
-      "tag": 0,
+      "tag": "None",
       "name": "Wait",
       "position": {
         "X": -46.57,
@@ -14,7 +14,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "ForceAttack",
       "position": {
         "X": -46.57,
@@ -22,12 +22,12 @@
         "Z": -312.58
       },
       "arguments": [
-        ""
+        "10000"
       ],
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "MoveTo",
       "position": {
         "X": -144.47,
@@ -40,7 +40,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "MoveTo",
       "position": {
         "X": -142.14,
@@ -53,7 +53,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "MoveTo",
       "position": {
         "X": -173.92,
@@ -66,7 +66,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "Wait",
       "position": {
         "X": -174.49,
@@ -79,7 +79,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "ForceAttack",
       "position": {
         "X": -174.49,
@@ -87,12 +87,12 @@
         "Z": -303.28
       },
       "arguments": [
-        ""
+        "10000"
       ],
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "Wait",
       "position": {
         "X": -174.24,
@@ -105,7 +105,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "ForceAttack",
       "position": {
         "X": -174.24,
@@ -113,12 +113,12 @@
         "Z": -301.67
       },
       "arguments": [
-        ""
+        "10000"
       ],
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "Boss",
       "position": {
         "X": -220.94,
@@ -131,7 +131,31 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "Treasure",
+      "name": "MoveTo",
+      "position": {
+        "X": -235.67,
+        "Y": 11.93,
+        "Z": -280.19
+      },
+      "arguments": [
+        ""
+      ],
+      "note": ""
+    },
+    {
+      "tag": "Treasure",
+      "name": "TreasureCoffer",
+      "position": {
+        "X": -235.66946,
+        "Y": 11.9328575,
+        "Z": -280.19122
+      },
+      "arguments": [],
+      "note": ""
+    },
+    {
+      "tag": "None",
       "name": "AutoMoveFor",
       "position": {
         "X": -268.99,
@@ -144,7 +168,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "Wait",
       "position": {
         "X": -183.86,
@@ -157,7 +181,31 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "Treasure",
+      "name": "MoveTo",
+      "position": {
+        "X": -125.601105,
+        "Y": -261.1,
+        "Z": -369.79242
+      },
+      "arguments": [
+        ""
+      ],
+      "note": ""
+    },
+    {
+      "tag": "Treasure",
+      "name": "TreasureCoffer",
+      "position": {
+        "X": -125.50293,
+        "Y": -261.1,
+        "Z": -369.8996
+      },
+      "arguments": [],
+      "note": ""
+    },
+    {
+      "tag": "None",
       "name": "Wait",
       "position": {
         "X": -216.49,
@@ -170,7 +218,31 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "Treasure",
+      "name": "MoveTo",
+      "position": {
+        "X": -203.69588,
+        "Y": -280.96313,
+        "Z": -293.30127
+      },
+      "arguments": [
+        ""
+      ],
+      "note": ""
+    },
+    {
+      "tag": "Treasure",
+      "name": "TreasureCoffer",
+      "position": {
+        "X": -203.69588,
+        "Y": -280.96313,
+        "Z": -293.30127
+      },
+      "arguments": [],
+      "note": ""
+    },
+    {
+      "tag": "None",
       "name": "Boss",
       "position": {
         "X": -269.13,
@@ -183,7 +255,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "MoveTo",
       "position": {
         "X": -294.85,
@@ -196,7 +268,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "Interactable",
       "position": {
         "X": 0,
@@ -204,12 +276,12 @@
         "Z": 0
       },
       "arguments": [
-        "Stone of Transference"
+        "2006834"
       ],
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "Wait",
       "position": {
         "X": 0,
@@ -222,7 +294,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "Wait",
       "position": {
         "X": 155.31,
@@ -235,7 +307,31 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "Treasure",
+      "name": "MoveTo",
+      "position": {
+        "X": 142.43657,
+        "Y": -856.2941,
+        "Z": 316.81717
+      },
+      "arguments": [
+        ""
+      ],
+      "note": ""
+    },
+    {
+      "tag": "Treasure",
+      "name": "TreasureCoffer",
+      "position": {
+        "X": 142.43657,
+        "Y": -856.2941,
+        "Z": 316.81717
+      },
+      "arguments": [],
+      "note": ""
+    },
+    {
+      "tag": "None",
       "name": "Wait",
       "position": {
         "X": 216.86,
@@ -248,7 +344,31 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "Treasure",
+      "name": "MoveTo",
+      "position": {
+        "X": 225.48192,
+        "Y": -845.0498,
+        "Z": 206.49356
+      },
+      "arguments": [
+        ""
+      ],
+      "note": ""
+    },
+    {
+      "tag": "Treasure",
+      "name": "TreasureCoffer",
+      "position": {
+        "X": 225.48192,
+        "Y": -845.0498,
+        "Z": 206.49356
+      },
+      "arguments": [],
+      "note": ""
+    },
+    {
+      "tag": "None",
       "name": "Wait",
       "position": {
         "X": 261.75,
@@ -261,7 +381,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "Boss",
       "position": {
         "X": 230.71,
@@ -274,7 +394,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "Wait",
       "position": {
         "X": 0,
@@ -287,7 +407,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "Boss",
       "position": {
         "X": 230.71,
@@ -300,7 +420,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "Wait",
       "position": {
         "X": 0,
@@ -311,9 +431,32 @@
         "4000"
       ],
       "note": ""
+    },
+    {
+      "tag": "Treasure",
+      "name": "MoveTo",
+      "position": {
+        "X": 231.28822,
+        "Y": -854.5461,
+        "Z": 411.1363
+      },
+      "arguments": [
+        ""
+      ],
+      "note": ""
+    },
+    {
+      "tag": "Treasure",
+      "name": "TreasureCoffer",
+      "position": {
+        "X": 231.2591,
+        "Y": -854.546,
+        "Z": 411.29385
+      },
+      "arguments": [],
+      "note": ""
     }
   ],
-  "interactables": [],
   "meta": {
     "createdAt": 106,
     "changelog": [
@@ -328,6 +471,14 @@
       {
         "version": 164,
         "change": "Converted to JSON Structure with Tags"
+      },
+      {
+        "version": 189,
+        "change": "Adjusted tags to string values"
+      },
+      {
+        "version": 228,
+        "change": ""
       }
     ],
     "notes": []

@@ -1,7 +1,7 @@
 {
   "actions": [
     {
-      "tag": 0,
+      "tag": "None",
       "name": "MoveTo",
       "position": {
         "X": -400.16,
@@ -14,7 +14,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "MoveTo",
       "position": {
         "X": -400.24,
@@ -27,7 +27,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "MoveTo",
       "position": {
         "X": -400.83,
@@ -40,7 +40,20 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "Revival",
+      "name": "Revival",
+      "position": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "arguments": [
+        ""
+      ],
+      "note": ""
+    },
+    {
+      "tag": "None",
       "name": "Boss",
       "position": {
         "X": -399.93,
@@ -53,33 +66,44 @@
       "note": ""
     },
     {
-      "tag": 5,
-      "name": "TreasureCoffer",
-      "position": {
-        "X": -399.79,
-        "Y": 8,
-        "Z": -170.45
-      },
-      "arguments": [
-        ""
-      ],
-      "note": ""
-    },
-    {
-      "tag": 0,
+      "tag": "None",
       "name": "MoveTo",
       "position": {
-        "X": -399.56,
-        "Y": 9.52,
-        "Z": -187.51
+        "X": -403.95834,
+        "Y": 8,
+        "Z": -172.0559
+      },
+      "arguments": [],
+      "note": ""
+    },
+    {
+      "tag": "None",
+      "name": "MoveTo",
+      "position": {
+        "X": -400,
+        "Y": 9.5,
+        "Z": -189
       },
       "arguments": [
-        ""
+        "false"
       ],
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
+      "name": "WaitFor",
+      "position": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "arguments": [
+        "IsReady"
+      ],
+      "note": ""
+    },
+    {
+      "tag": "None",
       "name": "MoveTo",
       "position": {
         "X": 407.55,
@@ -92,7 +116,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "MoveTo",
       "position": {
         "X": 386.7,
@@ -105,7 +129,7 @@
       "note": ""
     },
     {
-      "tag": 5,
+      "tag": "Treasure",
       "name": "TreasureCoffer",
       "position": {
         "X": 392.88,
@@ -118,7 +142,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "MoveTo",
       "position": {
         "X": 399.71,
@@ -131,7 +155,7 @@
       "note": ""
     },
     {
-      "tag": 5,
+      "tag": "Treasure",
       "name": "TreasureCoffer",
       "position": {
         "X": 412.22,
@@ -144,12 +168,12 @@
       "note": ""
     },
     {
-      "tag": 0,
-      "name": "MoveTo",
+      "tag": "Revival",
+      "name": "Revival",
       "position": {
-        "X": 400.07,
-        "Y": 9.8,
-        "Z": 153.81
+        "X": 0,
+        "Y": 0,
+        "Z": 0
       },
       "arguments": [
         ""
@@ -157,7 +181,44 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
+      "name": "MoveTo",
+      "position": {
+        "X": 400.2759,
+        "Y": 8.419535,
+        "Z": 165.77376
+      },
+      "arguments": [],
+      "note": ""
+    },
+    {
+      "tag": "None",
+      "name": "MoveTo",
+      "position": {
+        "X": 400,
+        "Y": 9.6,
+        "Z": 152
+      },
+      "arguments": [
+        "false"
+      ],
+      "note": ""
+    },
+    {
+      "tag": "None",
+      "name": "WaitFor",
+      "position": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "arguments": [
+        "IsReady"
+      ],
+      "note": ""
+    },
+    {
+      "tag": "None",
       "name": "Boss",
       "position": {
         "X": 400.31,
@@ -170,12 +231,12 @@
       "note": ""
     },
     {
-      "tag": 5,
-      "name": "TreasureCoffer",
+      "tag": "Revival",
+      "name": "Revival",
       "position": {
-        "X": 399.92,
-        "Y": 24.96,
-        "Z": 88.36
+        "X": 0,
+        "Y": 0,
+        "Z": 0
       },
       "arguments": [
         ""
@@ -183,20 +244,33 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "MoveTo",
       "position": {
-        "X": 400.14,
-        "Y": 24.94,
-        "Z": 81.85
+        "X": 400,
+        "Y": 25,
+        "Z": 81
       },
       "arguments": [
-        ""
+        "false"
       ],
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
+      "name": "WaitFor",
+      "position": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "arguments": [
+        "IsReady"
+      ],
+      "note": ""
+    },
+    {
+      "tag": "None",
       "name": "MoveTo",
       "position": {
         "X": 399.51,
@@ -209,20 +283,33 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "MoveTo",
       "position": {
-        "X": 399.61,
-        "Y": -58.48,
-        "Z": -131.83
+        "X": 400,
+        "Y": -58.5,
+        "Z": -134
       },
       "arguments": [
-        ""
+        "false"
       ],
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
+      "name": "WaitFor",
+      "position": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "arguments": [
+        "IsReady"
+      ],
+      "note": ""
+    },
+    {
+      "tag": "None",
       "name": "MoveTo",
       "position": {
         "X": 437.39,
@@ -235,7 +322,7 @@
       "note": ""
     },
     {
-      "tag": 5,
+      "tag": "Treasure",
       "name": "TreasureCoffer",
       "position": {
         "X": 445.76,
@@ -248,7 +335,7 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "MoveTo",
       "position": {
         "X": 366.02,
@@ -261,7 +348,7 @@
       "note": ""
     },
     {
-      "tag": 5,
+      "tag": "Treasure",
       "name": "TreasureCoffer",
       "position": {
         "X": 358.72,
@@ -274,20 +361,33 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
       "name": "MoveTo",
       "position": {
-        "X": 363.34,
-        "Y": -38.48,
-        "Z": -245.81
+        "X": 363.5,
+        "Y": -38.5,
+        "Z": -248
       },
       "arguments": [
-        ""
+        "false"
       ],
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
+      "name": "WaitFor",
+      "position": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "arguments": [
+        "IsReady"
+      ],
+      "note": ""
+    },
+    {
+      "tag": "None",
       "name": "MoveTo",
       "position": {
         "X": 400.02,
@@ -300,12 +400,12 @@
       "note": ""
     },
     {
-      "tag": 0,
-      "name": "MoveTo",
+      "tag": "Revival",
+      "name": "Revival",
       "position": {
-        "X": 399.94,
-        "Y": -18.48,
-        "Z": -339.08
+        "X": 0,
+        "Y": 0,
+        "Z": 0
       },
       "arguments": [
         ""
@@ -313,7 +413,33 @@
       "note": ""
     },
     {
-      "tag": 0,
+      "tag": "None",
+      "name": "MoveTo",
+      "position": {
+        "X": 399.87,
+        "Y": -55,
+        "Z": -380.52
+      },
+      "arguments": [
+        "false"
+      ],
+      "note": ""
+    },
+    {
+      "tag": "None",
+      "name": "WaitFor",
+      "position": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "arguments": [
+        "IsReady"
+      ],
+      "note": ""
+    },
+    {
+      "tag": "None",
       "name": "Boss",
       "position": {
         "X": 400.32,
@@ -324,22 +450,8 @@
         ""
       ],
       "note": ""
-    },
-    {
-      "tag": 5,
-      "name": "TreasureCoffer",
-      "position": {
-        "X": 400.15,
-        "Y": -55,
-        "Z": -409.6
-      },
-      "arguments": [
-        ""
-      ],
-      "note": ""
     }
   ],
-  "interactables": [],
   "meta": {
     "createdAt": 118,
     "changelog": [
@@ -354,6 +466,14 @@
       {
         "version": 164,
         "change": "Converted to JSON Structure with Tags"
+      },
+      {
+        "version": 189,
+        "change": "Adjusted tags to string values"
+      },
+      {
+        "version": 203,
+        "change": "adjusted Transitions"
       }
     ],
     "notes": []

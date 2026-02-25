@@ -1,166 +1,124 @@
 {
-  "actions": [
+  "Actions": [
     {
-      "tag": 0,
-      "name": "ChatCommand",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
-      },
-      "arguments": [
-        "/vbmai off"
-      ],
-      "note": ""
-    },
-    {
-      "tag": 0,
-      "name": "Boss",
-      "position": {
-        "X": -39.06,
+      "Tag": "None",
+      "Name": "Boss",
+      "Position": {
+        "X": -38.98,
         "Y": 114.71,
-        "Z": -4.01
+        "Z": -4.16
       },
-      "arguments": [
+      "Arguments": [
         ""
       ],
-      "note": ""
+      "Note": ""
     },
     {
-      "tag": 0,
-      "name": "Wait",
-      "position": {
-        "X": -39.97,
+      "Tag": "None",
+      "Name": "Interactable",
+      "Position": {
+        "X": -40.24,
         "Y": 114.71,
-        "Z": 1.96
+        "Z": 3.47
       },
-      "arguments": [
-        "2000"
+      "Arguments": [
+        "2007455"
       ],
-      "note": ""
+      "Note": "Cranial Hatch"
     },
     {
-      "tag": 0,
-      "name": "Interactable",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
-      },
-      "arguments": [
-        "Cranial Hatch"
-      ],
-      "note": ""
-    },
-    {
-      "tag": 0,
-      "name": "Wait",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
-      },
-      "arguments": [
-        "1000"
-      ],
-      "note": ""
-    },
-    {
-      "tag": 0,
-      "name": "Wait",
-      "position": {
-        "X": -40.09,
+      "Tag": "None",
+      "Name": "Interactable",
+      "Position": {
+        "X": -40.24,
         "Y": 114.71,
-        "Z": 2.81
+        "Z": 3.47
       },
-      "arguments": [
-        "500"
+      "Arguments": [
+        "2007456"
       ],
-      "note": ""
+      "Note": "Ingress"
     },
     {
-      "tag": 0,
-      "name": "Interactable",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
+      "Tag": "None",
+      "Name": "WaitFor",
+      "Position": {
+        "X": 0.0,
+        "Y": 0.0,
+        "Z": 0.0
       },
-      "arguments": [
-        "Ingress"
+      "Arguments": [
+        "IsReady"
       ],
-      "note": ""
+      "Note": ""
     },
     {
-      "tag": 0,
-      "name": "Wait",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
+      "Tag": "None",
+      "Name": "WaitFor",
+      "Position": {
+        "X": 0.0,
+        "Y": 0.0,
+        "Z": 0.0
       },
-      "arguments": [
-        "9000"
+      "Arguments": [
+        "IsReady"
       ],
-      "note": ""
+      "Note": ""
     },
     {
-      "tag": 0,
-      "name": "Wait",
-      "position": {
-        "X": 0.75,
+      "Tag": "None",
+      "Name": "MoveTo",
+      "Position": {
+        "X": 0.041660503,
+        "Y": -250.29001,
+        "Z": -239.65451
+      },
+      "Arguments": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Boss",
+      "Position": {
+        "X": 0.04,
         "Y": -250.29,
-        "Z": -241.15
+        "Z": -239.65
       },
-      "arguments": [
-        "2000"
-      ],
-      "note": ""
-    },
-    {
-      "tag": 0,
-      "name": "ForceAttack",
-      "position": {
-        "X": 0,
-        "Y": 0,
-        "Z": 0
-      },
-      "arguments": [
+      "Arguments": [
         ""
       ],
-      "note": ""
+      "Note": ""
     },
     {
-      "tag": 0,
-      "name": "Boss",
-      "position": {
-        "X": -0.24,
-        "Y": -250.29,
-        "Z": -238.17
+      "Tag": "None",
+      "Name": "WaitFor",
+      "Position": {
+        "X": 0.0,
+        "Y": 0.0,
+        "Z": 0.0
       },
-      "arguments": [
-        ""
+      "Arguments": [
+        "IsReady"
       ],
-      "note": ""
+      "Note": ""
     }
   ],
-  "interactables": [],
-  "meta": {
-    "createdAt": 106,
-    "changelog": [
+  "Meta": {
+    "CreatedAt": 173,
+    "Changelog": [
       {
-        "version": 161,
-        "change": "Converted to new JSON Structure"
+        "Version": 173,
+        "Change": "kuku"
       },
       {
-        "version": 163,
-        "change": "Converted to newer JSON Structure"
+        "Version": 189,
+        "Change": "Adjusted tags to string values"
       },
       {
-        "version": 164,
-        "change": "Converted to JSON Structure with Tags"
+        "Version": 231,
+        "Change": "Added IsReady checks"
       }
     ],
-    "notes": []
+    "Notes": []
   }
 }
