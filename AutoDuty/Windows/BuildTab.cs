@@ -1,7 +1,7 @@
 using Dalamud.Interface.Utility.Raii;
 using ECommons.DalamudServices;
 using ECommons;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using System.Text.Json;
 using System;
 using System.Numerics;
@@ -466,7 +466,7 @@ namespace AutoDuty.Windows
 
                         if (_buildListSelected == item.Index && ImGui.IsMouseDown(ImGuiMouseButton.Left) && !_showAddActionUI)
                         {
-                            float mouseYDelta = ImGui.GetMouseDragDelta(0).Y;
+                            float mouseYDelta = ImGui.GetMouseDragDelta(ImGuiMouseButton.Left).Y;
 
                             if (MathF.Abs(mouseYDelta) > ImGui.GetTextLineHeight())
                             {

@@ -3,6 +3,7 @@ using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using ECommons;
+using ECommons.Automation;
 using ECommons.DalamudServices;
 using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Component.GUI;
@@ -40,7 +41,7 @@ namespace AutoDuty.Helpers
 
             if (AutoRetainer_IPCSubscriber.IsBusy())
                 AutoRetainer_IPCSubscriber.AbortAllTasks();
-            Plugin.Chat.ExecuteCommand("/autoretainer d");
+            Chat.ExecuteCommand("/autoretainer d");
         }
 
         private bool         _autoRetainerStarted = false;
@@ -113,7 +114,7 @@ namespace AutoDuty.Helpers
                     if (VNavmesh_IPCSubscriber.Path_IsRunning())
                         VNavmesh_IPCSubscriber.Path_Stop();
                     DebugLog("Waiting for AutoRetainer to Start");
-                    Plugin.Chat.ExecuteCommand("/autoretainer e");
+                    Chat.ExecuteCommand("/autoretainer e");
                 }
                 else
                     DebugLog("Interacting with SummoningBell");

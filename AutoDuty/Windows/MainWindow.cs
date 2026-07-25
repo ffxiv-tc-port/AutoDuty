@@ -16,7 +16,7 @@ using ECommons.LanguageHelpers;
 using ECommons.Schedulers;
 using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.Game;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 
 namespace AutoDuty.Windows;
 

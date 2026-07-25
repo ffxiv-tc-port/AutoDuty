@@ -11,7 +11,7 @@ using ECommons.ImGuiMethods;
 using ECommons.LanguageHelpers;
 using ECommons.MathHelpers;
 using FFXIVClientStructs.FFXIV.Client.UI;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using Serilog.Events;
 using System;
 using System.Collections.Generic;
@@ -811,7 +811,7 @@ public static class ConfigTab
 
                     ImGui.Columns(3);
                     MainTab.DrawTrustMembers(trustContent);
-                    ImGui.Columns(1, null, true);
+                    ImGui.Columns(1);
                 }
             }
 
