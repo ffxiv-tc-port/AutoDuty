@@ -46,7 +46,13 @@
      <None Remove="Resources\AutoDuty.json" />
      <None Remove="Resources\AutoDuty_Passive.json" />
    </ItemGroup>
-  
+
+   <ItemGroup>
+     <Content Include="LanguageChineseTraditional.ini">
+       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+     </Content>
+   </ItemGroup>
+
    <ItemGroup>
      <EmbeddedResource Include="Resources\AutoDuty.json" />
      <EmbeddedResource Include="Resources\AutoDuty_Passive.json" />

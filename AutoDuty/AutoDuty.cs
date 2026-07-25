@@ -234,6 +234,7 @@ public sealed class AutoDuty : IDalamudPlugin
         {
             Plugin = this;
             ECommonsMain.Init(PluginInterface, Plugin, Module.DalamudReflector, Module.ObjectFunctions);
+            ECommons.LanguageHelpers.Localization.Init("ChineseTraditional");
             PictoService.Initialize(PluginInterface);
 
             this.isDev = PluginInterface.IsDev;
@@ -985,7 +986,7 @@ public sealed class AutoDuty : IDalamudPlugin
         }
         TaskManager.Enqueue(() => Svc.Log.Debug($"Done Queueing-WaitDutyStarted, NavIsReady"));
         TaskManager.Enqueue(() => Svc.DutyState.IsDutyStarted,          "Run-WaitDutyStarted");
-        TaskManager.Enqueue(() => VNavmesh_IPCSubscriber.Nav_IsReady(), int.MaxValue, "Run-WaitNavIsReady");
+        TaskManager.Enqueue(WaitForNavReady(), int.MaxValue, "Run-WaitNavIsReady");
         TaskManager.Enqueue(() => Svc.Log.Debug($"Start Navigation"));
         TaskManager.Enqueue(() => StartNavigation(startFromZero), "Run-StartNavigation");
         if (CurrentLoop == 0)
@@ -1132,7 +1133,7 @@ public sealed class AutoDuty : IDalamudPlugin
         TaskManager.Enqueue(() => Svc.ClientState.TerritoryType == CurrentTerritoryContent.TerritoryType, int.MaxValue, "Loop-WaitCorrectTerritory");
         TaskManager.Enqueue(() => PlayerHelper.IsValid, int.MaxValue, "Loop-WaitPlayerValid");
         TaskManager.Enqueue(() => Svc.DutyState.IsDutyStarted, int.MaxValue, "Loop-WaitDutyStarted");
-        TaskManager.Enqueue(() => VNavmesh_IPCSubscriber.Nav_IsReady(), int.MaxValue, "Loop-WaitNavReady");
+        TaskManager.Enqueue(WaitForNavReady(), int.MaxValue, "Loop-WaitNavReady");
         TaskManager.Enqueue(() => Svc.Log.Debug($"StartNavigation"));
         TaskManager.Enqueue(() => StartNavigation(true), "Loop-StartNavigation");
     }
@@ -1440,6 +1441,7 @@ public sealed class AutoDuty : IDalamudPlugin
         
         if (!TaskManager.IsBusy)
         {
+            BossMod_IPCSubscriber.DisableRealAIPreset();
             Stage = Stage.Reading_Path;
             Indexer++;
             return;
@@ -1505,6 +1507,7 @@ public sealed class AutoDuty : IDalamudPlugin
         else if (!PlayerHelper.InCombat && !VNavmesh_IPCSubscriber.SimpleMove_PathfindInProgress())
         {
             BossMod_IPCSubscriber.SetRange(Configuration.MaxDistanceToTargetFloat);
+            BossMod_IPCSubscriber.DisableRealAIPreset();
 
             VNavmesh_IPCSubscriber.Path_Stop();
             Stage = Stage.Reading_Path;
@@ -1571,6 +1574,32 @@ public sealed class AutoDuty : IDalamudPlugin
     {
         States &= ~PluginState.Navigating;
         this.CheckFinishing();
+    }
+
+    /// <summary>
+    /// Nav.IsReady only means vnavmesh has *a* navmesh object loaded, not that it actually
+    /// covers the player's current position (some instanced solo/Trust duties stream in
+    /// geometry vnavmesh's auto-build never fully captures). Passively waiting on IsReady
+    /// forever, as the old code did, hangs indefinitely in that case. Force a full rebuild
+    /// (no cache) if it hasn't become ready within a few seconds.
+    /// </summary>
+    private static Func<bool?> WaitForNavReady()
+    {
+        DateTime waitStart = DateTime.MinValue;
+        return () =>
+        {
+            if (VNavmesh_IPCSubscriber.Nav_IsReady())
+                return true;
+            if (waitStart == DateTime.MinValue)
+                waitStart = DateTime.Now;
+            else if ((DateTime.Now - waitStart).TotalSeconds >= 5)
+            {
+                Svc.Log.Info("Navmesh not ready after 5s, forcing rebuild");
+                VNavmesh_IPCSubscriber.Nav_Rebuild();
+                waitStart = DateTime.Now;
+            }
+            return false;
+        };
     }
 
     private void CheckFinishing()
