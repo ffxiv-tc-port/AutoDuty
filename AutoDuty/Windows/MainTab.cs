@@ -7,6 +7,7 @@ using ECommons.DalamudServices;
 using ECommons.ExcelServices;
 using ECommons.GameFunctions;
 using ECommons.ImGuiMethods;
+using ECommons.LanguageHelpers;
 using ImGuiNET;
 using System;
 using System.Collections.Generic;
@@ -75,7 +76,7 @@ namespace AutoDuty.Windows
                 // Set the width of the search box to the calculated width
                 ImGui.SetNextItemWidth(inputMaxWidth);
                 
-                ImGui.InputTextWithHint("##search", "Search duties...", ref _searchText, inputMaxLength);
+                ImGui.InputTextWithHint("##search", "Search duties...".Loc(), ref _searchText, inputMaxLength);
 
                 // Apply filtering based on the search text
                 if (_searchText.Length > 0)
@@ -105,7 +106,7 @@ namespace AutoDuty.Windows
                                                !Plugin.Configuration.PathSelectionsByPath.ContainsKey(Plugin.CurrentTerritoryContent.TerritoryType) || 
                                                !(pathSelection = Plugin.Configuration.PathSelectionsByPath[Plugin.CurrentTerritoryContent.TerritoryType]).Any(kvp => kvp.Value.HasJob(Svc.ClientState.LocalPlayer.GetJob()))))
                         {
-                            if (ImGui.Button("Clear Saved Path"))
+                            if (ImGui.Button("Clear Saved Path".Loc()))
                             {
                                 foreach (KeyValuePair<string, JobWithRole> keyValuePair in pathSelection) 
                                     pathSelection[keyValuePair.Key] &= ~curJob;
@@ -170,12 +171,12 @@ namespace AutoDuty.Windows
                     var progress = VNavmesh_IPCSubscriber.IsEnabled ? VNavmesh_IPCSubscriber.Nav_BuildProgress() : 0;
                     if (progress >= 0)
                     {
-                        ImGui.Text($"{Plugin.CurrentTerritoryContent.Name} Mesh: Loading: ");
+                        ImGui.Text("?? Mesh: Loading: ".Loc(Plugin.CurrentTerritoryContent.Name));
                         ImGui.SameLine();
                         ImGui.ProgressBar(progress, new Vector2(200, 0));
                     }
                     else
-                        ImGui.Text($"{Plugin.CurrentTerritoryContent.Name} Mesh: Loaded Path: {(ContentPathsManager.DictionaryPaths.ContainsKey(Plugin.CurrentTerritoryContent.TerritoryType) ? "Loaded" : "None")}");
+                        ImGui.Text("?? Mesh: Loaded Path: ??".Loc(Plugin.CurrentTerritoryContent.Name, ContentPathsManager.DictionaryPaths.ContainsKey(Plugin.CurrentTerritoryContent.TerritoryType) ? "Loaded".Loc() : "None".Loc()));
 
                     ImGui.Separator();
                     ImGui.Spacing();
@@ -198,7 +199,7 @@ namespace AutoDuty.Windows
                         {
                             if (Plugin.Stage == 0)
                             {
-                                if (ImGui.Button("Start"))
+                                if (ImGui.Button("Start".Loc()))
                                 {
                                     Plugin.LoadPath();
                                     _currentStepIndex = -1;
@@ -241,16 +242,16 @@ namespace AutoDuty.Windows
                                 ImGui.SetScrollY(_currentStepIndex);
                             }
                             if (Plugin.InDungeon && Plugin.Actions.Count < 1 && !ContentPathsManager.DictionaryPaths.ContainsKey(Plugin.CurrentTerritoryContent.TerritoryType))
-                                ImGui.TextColored(new Vector4(0, 255, 0, 1), $"No Path file was found for:\n{TerritoryName.GetTerritoryName(Plugin.CurrentTerritoryContent.TerritoryType).Split('|')[1].Trim()}\n({Plugin.CurrentTerritoryContent.TerritoryType}.json)\nin the Paths Folder:\n{Plugin.PathsDirectory.FullName.Replace('\\', '/')}\nPlease download from:\n{_pathsURL}\nor Create in the Build Tab");
+                                ImGui.TextColored(new Vector4(0, 255, 0, 1), "No Path file was found for:\n??\n(??.json)\nin the Paths Folder:\n??\nPlease download from:\n??\nor Create in the Build Tab".Loc(TerritoryName.GetTerritoryName(Plugin.CurrentTerritoryContent.TerritoryType).Split('|')[1].Trim(), Plugin.CurrentTerritoryContent.TerritoryType, Plugin.PathsDirectory.FullName.Replace('\\', '/'), _pathsURL));
                         }
                         else
                         {
                             if (!VNavmesh_IPCSubscriber.IsEnabled && !Plugin.Configuration.UsingAlternativeMovementPlugin)
-                                ImGui.TextColored(new Vector4(255, 0, 0, 1), "AutoDuty Requires VNavmesh plugin to be Installed and Loaded\nPlease add 3rd party repo:\nhttps://puni.sh/api/repository/veyn");
+                                ImGui.TextColored(new Vector4(255, 0, 0, 1), "AutoDuty Requires VNavmesh plugin to be Installed and Loaded\nPlease add 3rd party repo:\nhttps://puni.sh/api/repository/veyn".Loc());
                             if (!BossMod_IPCSubscriber.IsEnabled && !Plugin.Configuration.UsingAlternativeBossPlugin)
-                                ImGui.TextColored(new Vector4(255, 0, 0, 1), "AutoDuty Requires BossMod plugin to be Installed and Loaded\nPlease add 3rd party repo:\nhttps://puni.sh/api/repository/veyn");
+                                ImGui.TextColored(new Vector4(255, 0, 0, 1), "AutoDuty Requires BossMod plugin to be Installed and Loaded\nPlease add 3rd party repo:\nhttps://puni.sh/api/repository/veyn".Loc());
                             if (!Wrath_IPCSubscriber.IsEnabled && !ReflectionHelper.RotationSolver_Reflection.RotationSolverEnabled && !BossMod_IPCSubscriber.IsEnabled && !Plugin.Configuration.UsingAlternativeRotationPlugin)
-                                ImGui.TextColored(new Vector4(255, 0, 0, 1), "AutoDuty Requires a Rotation plugin to be Installed and Loaded (Either Wrath Combo, Rotation Solver Reborn, or BossMod AutoRotation)");
+                                ImGui.TextColored(new Vector4(255, 0, 0, 1), "AutoDuty Requires a Rotation plugin to be Installed and Loaded (Either Wrath Combo, Rotation Solver Reborn, or BossMod AutoRotation)".Loc());
                         }
                         ImGui.EndListBox();
                     }
@@ -261,8 +262,8 @@ namespace AutoDuty.Windows
                 // Mutual exclusion: if Planner is currently running, Main UI must be inert.
                 if (Plugin.States.HasFlag(PluginState.Looping) && Plugin.ActiveRunContext?.Source == RunSource.Planner)
                 {
-                    ImGui.TextDisabled("Planner is running.");
-                    ImGui.TextDisabled("Main controls are disabled. Stop Planner first.");
+                    ImGui.TextDisabled("Planner is running.".Loc());
+                    ImGui.TextDisabled("Main controls are disabled. Stop Planner first.".Loc());
                     return;
                 }
 
@@ -275,24 +276,24 @@ namespace AutoDuty.Windows
                     var idx = Math.Clamp(Plugin.Configuration.PlannerCurrentIndex, 0, Plugin.Configuration.PlannerItems.Count - 1);
                     var tt = Plugin.Configuration.PlannerItems[idx].TerritoryType;
                     var name = ContentHelper.DictionaryContent.TryGetValue(tt, out var c) ? c.Name : $"{tt}";
-                    var state = Plugin.Configuration.PlannerPaused ? "paused" : (Plugin.ActiveRunContext?.Source == RunSource.Planner && Plugin.States.HasFlag(PluginState.Looping) ? "running" : "idle");
-                    ImGui.TextDisabled($"Planner: {idx + 1}/{Plugin.Configuration.PlannerItems.Count} {name} ({state})");
+                    var state = Plugin.Configuration.PlannerPaused ? "paused".Loc() : (Plugin.ActiveRunContext?.Source == RunSource.Planner && Plugin.States.HasFlag(PluginState.Looping) ? "running".Loc() : "idle".Loc());
+                    ImGui.TextDisabled("Planner: ??/?? ?? (??)".Loc(idx + 1, Plugin.Configuration.PlannerItems.Count, name, state));
                 }
 
                 using (ImRaii.Disabled(Plugin.CurrentTerritoryContent == null || (Plugin.Configuration.DutyModeEnum == DutyMode.Trust && Plugin.Configuration.SelectedTrustMembers.Any(x => x is null))))
                 {
                     if (!Plugin.States.HasFlag(PluginState.Looping))
                     {
-                        if (ImGui.Button("Run"))
+                        if (ImGui.Button("Run".Loc()))
                         {
                             if (Plugin.Configuration.DutyModeEnum == DutyMode.None)
-                                MainWindow.ShowPopup("Error", "You must select a version\nof the dungeon to run");
+                                MainWindow.ShowPopup("Error".Loc(), "You must select a version\nof the dungeon to run".Loc());
                             else if (Svc.Party.PartyId > 0 && (Plugin.Configuration.DutyModeEnum == DutyMode.Support || Plugin.Configuration.DutyModeEnum == DutyMode.Squadron || Plugin.Configuration.DutyModeEnum == DutyMode.Trust))
-                                MainWindow.ShowPopup("Error", "You must not be in a party to run Support, Squadron or Trust");
+                                MainWindow.ShowPopup("Error".Loc(), "You must not be in a party to run Support, Squadron or Trust".Loc());
                             else if (Plugin.Configuration.DutyModeEnum == DutyMode.Regular && !Plugin.Configuration.Unsynced && !Plugin.Configuration.OverridePartyValidation && Svc.Party.PartyId == 0)
-                                MainWindow.ShowPopup("Error", "You must be in a group of 4 to run Regular Duties");
+                                MainWindow.ShowPopup("Error".Loc(), "You must be in a group of 4 to run Regular Duties".Loc());
                             else if (Plugin.Configuration.DutyModeEnum == DutyMode.Regular && !Plugin.Configuration.Unsynced && !Plugin.Configuration.OverridePartyValidation && !ObjectHelper.PartyValidation())
-                                MainWindow.ShowPopup("Error", "You must have the correct party makeup to run Regular Duties");
+                                MainWindow.ShowPopup("Error".Loc(), "You must have the correct party makeup to run Regular Duties".Loc());
                             else if (ContentPathsManager.DictionaryPaths.ContainsKey(Plugin.CurrentTerritoryContent?.TerritoryType ?? 0))
                             {
                                 var ctx = BuildManualRunContext();
@@ -300,7 +301,7 @@ namespace AutoDuty.Windows
                                     Plugin.Run(ctx);
                             }
                             else
-                                MainWindow.ShowPopup("Error", "No path was found");
+                                MainWindow.ShowPopup("Error".Loc(), "No path was found".Loc());
                         }
                     }
                     else
@@ -318,7 +319,7 @@ namespace AutoDuty.Windows
 
                 using (ImRaii.Disabled(Plugin.States.HasFlag(PluginState.Looping)))
                 {
-                    ImGui.TextColored(Plugin.Configuration.DutyModeEnum == DutyMode.None ? new Vector4(1, 0, 0, 1) : new Vector4(0, 1, 0, 1), "Select Duty Mode: ");
+                    ImGui.TextColored(Plugin.Configuration.DutyModeEnum == DutyMode.None ? new Vector4(1, 0, 0, 1) : new Vector4(0, 1, 0, 1), "Select Duty Mode: ".Loc());
                     ImGui.SameLine(0);
                     ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X);
                     if (ImGui.BeginCombo("##DutyModeEnum", Plugin.Configuration.DutyModeEnum.ToCustomString()))
@@ -338,23 +339,23 @@ namespace AutoDuty.Windows
                     {
                         if (Plugin.Configuration.DutyModeEnum == DutyMode.Support || Plugin.Configuration.DutyModeEnum == DutyMode.Trust)
                         {
-                            ImGui.TextColored(Plugin.LevelingModeEnum == LevelingMode.None ? new Vector4(1, 0, 0, 1) : new Vector4(0, 1, 0, 1), "Select Leveling Mode: ");
+                            ImGui.TextColored(Plugin.LevelingModeEnum == LevelingMode.None ? new Vector4(1, 0, 0, 1) : new Vector4(0, 1, 0, 1), "Select Leveling Mode: ".Loc());
                             ImGui.SameLine(0);
                             ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X);
-                            var levelingModeLabel = "None";
+                            var levelingModeLabel = "None".Loc();
                             if (Plugin.LevelingModeEnum == LevelingMode.Manual)
-                                levelingModeLabel = "Manual";
+                                levelingModeLabel = "Manual".Loc();
                             else if (Plugin.LevelingEnabled)
-                                levelingModeLabel = "Auto";
+                                levelingModeLabel = "Auto".Loc();
 
                             if (ImGui.BeginCombo("##LevelingModeEnum", levelingModeLabel))
                             {
-                                if (ImGui.Selectable("None"))
+                                if (ImGui.Selectable("None".Loc()))
                                 {
                                     Plugin.LevelingModeEnum = LevelingMode.None;
                                     Plugin.Configuration.Save();
                                 }
-                                if (ImGui.Selectable("Manual"))
+                                if (ImGui.Selectable("Manual".Loc()))
                                 {
                                     Plugin.LevelingModeEnum = LevelingMode.Manual;
 
@@ -367,7 +368,7 @@ namespace AutoDuty.Windows
 
                                     Plugin.Configuration.Save();
                                 }
-                                if (ImGui.Selectable("Auto"))
+                                if (ImGui.Selectable("Auto".Loc()))
                                 {
                                     Plugin.LevelingModeEnum = Plugin.Configuration.DutyModeEnum == DutyMode.Support ? LevelingMode.Support : LevelingMode.Trust;
                                     Plugin.Configuration.Save();
@@ -378,15 +379,15 @@ namespace AutoDuty.Windows
                             }
                             ImGui.PopItemWidth();
 
-                            if (Plugin.Configuration.DutyModeEnum != DutyMode.Trust) 
-                                ImGuiComponents.HelpMarker("Leveling Mode will queue you for the most CONSISTENT dungeon considering your lvl + Ilvl. \nIt will NOT always queue you for the highest level dungeon, it follows our stable dungeon list instead.");
-                            else 
-                                ImGuiComponents.HelpMarker("TRUST Leveling Mode will queue you for the most CONSISTENT dungeon considering your lvl + Ilvl, as well as the LOWEST LEVEL trust members you have, in an attempt to level them all equally.\nIt will NOT always queue you for the highest level dungeon, it follows our stable dungeon list instead.");
+                            if (Plugin.Configuration.DutyModeEnum != DutyMode.Trust)
+                                ImGuiComponents.HelpMarker("Leveling Mode will queue you for the most CONSISTENT dungeon considering your lvl + Ilvl. \nIt will NOT always queue you for the highest level dungeon, it follows our stable dungeon list instead.".Loc());
+                            else
+                                ImGuiComponents.HelpMarker("TRUST Leveling Mode will queue you for the most CONSISTENT dungeon considering your lvl + Ilvl, as well as the LOWEST LEVEL trust members you have, in an attempt to level them all equally.\nIt will NOT always queue you for the highest level dungeon, it follows our stable dungeon list instead.".Loc());
                         }
 
                         if (Plugin.Configuration.DutyModeEnum == DutyMode.Support && levelingMode == LevelingMode.Support)
                         {
-                            if(ImGui.Checkbox("Prefer Trust over Support Leveling", ref Plugin.Configuration.PreferTrustOverSupportLeveling))
+                            if(ImGui.Checkbox("Prefer Trust over Support Leveling".Loc(), ref Plugin.Configuration.PreferTrustOverSupportLeveling))
                                 Plugin.Configuration.Save();
                         }
 
@@ -395,7 +396,7 @@ namespace AutoDuty.Windows
                             ImGui.Separator();
                             if (DutySelected != null && DutySelected.Content.TrustMembers.Count > 0)
                             {
-                                ImGuiEx.LineCentered(() => ImGuiEx.TextUnderlined("Select your Trust Party"));
+                                ImGuiEx.LineCentered(() => ImGuiEx.TextUnderlined("Select your Trust Party".Loc()));
                                 
 
                                 TrustHelper.ResetTrustIfInvalid();
@@ -421,7 +422,7 @@ namespace AutoDuty.Windows
                                 if (DutySelected.Content.TrustMembers.Count == 7)
                                     ImGui.NextColumn();
 
-                                if (ImGui.Button("Refresh", new Vector2(ImGui.GetContentRegionAvail().X, 0)))
+                                if (ImGui.Button("Refresh".Loc(), new Vector2(ImGui.GetContentRegionAvail().X, 0)))
                                 {
                                     if (InventoryHelper.CurrentItemLevel < 370)
                                         Plugin.LevelingModeEnum = LevelingMode.None;
@@ -434,7 +435,7 @@ namespace AutoDuty.Windows
                                 ImGui.NextColumn();
                                 ImGui.Columns(1, null, true);
                             }
-                            else if (ImGui.Button("Refresh trust member levels"))
+                            else if (ImGui.Button("Refresh trust member levels".Loc()))
                             {
                                 if (InventoryHelper.CurrentItemLevel < 370)
                                     Plugin.LevelingModeEnum = LevelingMode.None;
@@ -451,11 +452,11 @@ namespace AutoDuty.Windows
 
                         DrawSearchBar();
                         ImGui.SameLine();
-                        if (ImGui.Checkbox("Hide Unavailable Duties", ref Plugin.Configuration.HideUnavailableDuties))
+                        if (ImGui.Checkbox("Hide Unavailable Duties".Loc(), ref Plugin.Configuration.HideUnavailableDuties))
                             Plugin.Configuration.Save();
                         if (Plugin.Configuration.DutyModeEnum == DutyMode.Regular || Plugin.Configuration.DutyModeEnum == DutyMode.Trial || Plugin.Configuration.DutyModeEnum == DutyMode.Raid)
                         {
-                            if (ImGuiEx.CheckboxWrapped("Unsynced", ref Plugin.Configuration.Unsynced))
+                            if (ImGuiEx.CheckboxWrapped("Unsynced".Loc(), ref Plugin.Configuration.Unsynced))
                                 Plugin.Configuration.Save();
                         }
                     }
@@ -470,11 +471,11 @@ namespace AutoDuty.Windows
 
                             if (Plugin.Configuration.DutyModeEnum == DutyMode.None)
                             {
-                                dutyListHint = "Please select a duty category above to populate the duty list.";
+                                dutyListHint = "Please select a duty category above to populate the duty list.".Loc();
                             }
                             else if (Plugin.Configuration.DutyModeEnum is DutyMode.Support or DutyMode.Trust && Plugin.LevelingModeEnum == LevelingMode.None)
                             {
-                                dutyListHint = "Please select Manual or Auto above to populate the duty list.";
+                                dutyListHint = "Please select Manual or Auto above to populate the duty list.".Loc();
                             }
                             else if (Plugin.LevelingEnabled)
                             {
@@ -482,7 +483,7 @@ namespace AutoDuty.Windows
                                 {
                                     Svc.Log.Debug($"You are on a non-compatible job: {Player.Job.GetCombatRole()}, or your doing trust and your iLvl({ilvl}) is below 370, or your iLvl has changed, Disabling Leveling Mode");
                                     Plugin.LevelingModeEnum = LevelingMode.None;
-                                    dutyListHint = "Please select Manual or Auto above to populate the duty list.";
+                                    dutyListHint = "Please select Manual or Auto above to populate the duty list.".Loc();
                                 }
                                 else if (ilvl > 0 && ilvl != Plugin.CurrentPlayerItemLevelandClassJob.Key)
                                 {
@@ -493,7 +494,7 @@ namespace AutoDuty.Windows
                                 }
                                 else
                                 {
-                                    ImGuiEx.TextWrapped(new Vector4(0, 1, 0, 1), $"Leveling Mode: L{Player.Level} (i{ilvl})");
+                                    ImGuiEx.TextWrapped(new Vector4(0, 1, 0, 1), "Leveling Mode: L?? (i??)".Loc(Player.Level, ilvl));
                                     foreach (var item in LevelingHelper.LevelingDuties.Select((Value, Index) => (Value, Index)))
                                     {
                                         if (Plugin.Configuration.DutyModeEnum == DutyMode.Trust && !item.Value.DutyModes.HasFlag(DutyMode.Trust))
@@ -503,7 +504,7 @@ namespace AutoDuty.Windows
                                         {
                                             using (ImRaii.Disabled(disabled))
                                             {
-                                                ImGuiEx.TextWrapped(item.Value == Plugin.CurrentTerritoryContent ? new Vector4(0, 1, 1, 1) : new Vector4(1, 1, 1, 1), $"L{item.Value.ClassJobLevelRequired} (i{item.Value.ItemLevelRequired}): {item.Value.EnglishName}");
+                                                ImGuiEx.TextWrapped(item.Value == Plugin.CurrentTerritoryContent ? new Vector4(0, 1, 1, 1) : new Vector4(1, 1, 1, 1), "L?? (i??): ??".Loc(item.Value.ClassJobLevelRequired, item.Value.ItemLevelRequired, item.Value.EnglishName));
                                             }
                                         }
                                     }
@@ -512,9 +513,9 @@ namespace AutoDuty.Windows
                             else
                             {
                                 if (Player.Job.GetCombatRole() == CombatRole.NonCombat)
-                                    ImGuiEx.TextWrapped(new Vector4(255, 1, 0, 1), "Please switch to a combat job to use AutoDuty.");
+                                    ImGuiEx.TextWrapped(new Vector4(255, 1, 0, 1), "Please switch to a combat job to use AutoDuty.".Loc());
                                 else if (Player.Job == Job.BLU && Plugin.Configuration.DutyModeEnum is not (DutyMode.Regular or DutyMode.Trial or DutyMode.Raid))
-                                    ImGuiEx.TextWrapped(new Vector4(0, 1, 1, 1), "Blue Mage cannot run Trust, Duty Support, Squadron or Variant dungeons. Please switch jobs or select a different category.");
+                                    ImGuiEx.TextWrapped(new Vector4(0, 1, 1, 1), "Blue Mage cannot run Trust, Duty Support, Squadron or Variant dungeons. Please switch jobs or select a different category.".Loc());
                                 else
                                 {
                                     Dictionary<uint, Content> dictionary = ContentHelper.DictionaryContent
@@ -543,7 +544,7 @@ namespace AutoDuty.Windows
                                                     ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0, 1, 1, 1));
                                                 try
                                                 {
-                                                    if (ImGui.Selectable($"L{content.ClassJobLevelRequired} ({content.TerritoryType}) {content.Name}", isSelected))
+                                                    if (ImGui.Selectable("L?? (??) ??".Loc(content.ClassJobLevelRequired, content.TerritoryType, content.Name), isSelected))
                                                     {
                                                         SelectedDuty = content;
 
@@ -595,14 +596,14 @@ namespace AutoDuty.Windows
                             }
                         }
                         else
-                            ImGuiEx.TextWrapped(new Vector4(0, 1, 0, 1), "Busy...");
+                            ImGuiEx.TextWrapped(new Vector4(0, 1, 0, 1), "Busy...".Loc());
                     }
                     else
                     {
                         if (!VNavmesh_IPCSubscriber.IsEnabled)
-                            ImGuiEx.TextWrapped(new Vector4(255, 0, 0, 1), "AutoDuty requires vnavmesh plugin to be installed and loaded for proper navigation and movement. Please add 3rd party repo:\nhttps://puni.sh/api/repository/veyn");
+                            ImGuiEx.TextWrapped(new Vector4(255, 0, 0, 1), "AutoDuty requires vnavmesh plugin to be installed and loaded for proper navigation and movement. Please add 3rd party repo:\nhttps://puni.sh/api/repository/veyn".Loc());
                         if (!BossMod_IPCSubscriber.IsEnabled)
-                            ImGuiEx.TextWrapped(new Vector4(255, 0, 0, 1), "AutoDuty requires BossMod plugin to be installed and loaded for proper mechanic handling. Please add 3rd party repo:\nhttps://puni.sh/api/repository/veyn");
+                            ImGuiEx.TextWrapped(new Vector4(255, 0, 0, 1), "AutoDuty requires BossMod plugin to be installed and loaded for proper mechanic handling. Please add 3rd party repo:\nhttps://puni.sh/api/repository/veyn".Loc());
                     }
                     ImGui.EndListBox();
                 }

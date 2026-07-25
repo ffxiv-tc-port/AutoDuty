@@ -4,6 +4,7 @@ using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility.Raii;
 using ECommons.DalamudServices;
 using ECommons.ImGuiMethods;
+using ECommons.LanguageHelpers;
 using ImGuiNET;
 using System;
 using System.Linq;
@@ -37,8 +38,8 @@ public static class PlannerTab
         // Mutual exclusion: if Main is currently running, Planner UI must be inert.
         if (Plugin.States.HasFlag(PluginState.Looping) && Plugin.ActiveRunContext?.Source != RunSource.Planner)
         {
-            ImGui.TextDisabled("AutoDuty is running.");
-            ImGui.TextDisabled("Planner controls are disabled. Stop Main first.");
+            ImGui.TextDisabled("AutoDuty is running.".Loc());
+            ImGui.TextDisabled("Planner controls are disabled. Stop Main first.".Loc());
             return;
         }
 
@@ -72,7 +73,7 @@ public static class PlannerTab
                 else if (Plugin.Configuration.PlannerItems.Count == 0)
                     MainWindow.ShowPopup("錯誤", "排程清單為空。");
                 else if (Plugin.LevelingEnabled)
-                    MainWindow.ShowPopup("Error", "Planner and Auto Leveling are mutually exclusive. Set Leveling Mode to None/Manual first.");
+                    MainWindow.ShowPopup("Error".Loc(), "Planner and Auto Leveling are mutually exclusive. Set Leveling Mode to None/Manual first.".Loc());
                 else if (Svc.Party.PartyId > 0 && (Plugin.Configuration.DutyModeEnum == DutyMode.Support || Plugin.Configuration.DutyModeEnum == DutyMode.Squadron || Plugin.Configuration.DutyModeEnum == DutyMode.Trust))
                     MainWindow.ShowPopup("錯誤", "執行劇情輔助器、冒險者小隊或親信戰友時不可組隊。");
                 else if (Plugin.Configuration.DutyModeEnum == DutyMode.Regular && !Plugin.Configuration.Unsynced && !Plugin.Configuration.OverridePartyValidation && Svc.Party.PartyId == 0)
@@ -102,7 +103,7 @@ public static class PlannerTab
         if (Plugin.Configuration.PlannerPaused)
         {
             ImGui.SameLine(0, 12);
-            if (ImGui.Button("Resume"))
+            if (ImGui.Button("Resume".Loc()))
             {
                 Plugin.Configuration.PlannerPaused = false;
                 Plugin.Configuration.Save();

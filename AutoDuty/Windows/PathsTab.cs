@@ -13,6 +13,7 @@ using ECommons.ExcelServices;
 using ECommons.GameFunctions;
 using AutoDuty.Managers;
 using ECommons.ImGuiMethods;
+using ECommons.LanguageHelpers;
 using AutoDuty.Updater;
 
 namespace AutoDuty.Windows
@@ -50,29 +51,29 @@ namespace AutoDuty.Windows
         {
             if (MainWindow.CurrentTabName != "Paths")
                 MainWindow.CurrentTabName = "Paths";
-            ImGui.Text($"Path Files");
+            ImGui.Text("Path Files".Loc());
             ImGui.Spacing();
             ImGui.Separator();
             ImGui.Spacing();
-            if (ImGui.Button("Open Folder"))
+            if (ImGui.Button("Open Folder".Loc()))
                 Process.Start("explorer.exe", Plugin.PathsDirectory.FullName);
 
             ImGui.SameLine();
             using (var d = ImRaii.Disabled(_selectedDutyPath == null))
             {
-                if (ImGuiEx.ButtonWrapped("Open File"))
+                if (ImGuiEx.ButtonWrapped("Open File".Loc()))
                     Process.Start("explorer", _selectedDutyPath?.FilePath ?? string.Empty);
             }
             ImGui.SameLine();
             ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0, 1, 1, 1));
-            if (ImGuiEx.CheckboxWrapped($"Do not overwrite on update", ref _checked))
+            if (ImGuiEx.CheckboxWrapped("Do not overwrite on update".Loc(), ref _checked))
                 CheckBoxOnChange();
 
             ImGui.PopStyleColor();
             ImGui.SameLine();
             using (ImRaii.Disabled(!Plugin.Configuration.PathSelectionsByPath.Any(kvp => kvp.Value.Any())))
             {
-                if (ImGuiEx.ButtonWrapped("Clear all cached jobs"))
+                if (ImGuiEx.ButtonWrapped("Clear all cached jobs".Loc()))
                 {
                     _selectedDutyPath = null;
                     Plugin.Configuration.PathSelectionsByPath.Clear();
@@ -81,15 +82,15 @@ namespace AutoDuty.Windows
             }
 
             bool anyHeaderOpen = headers.Values.Any(b => b);
-            if (ImGuiEx.ButtonWrapped(anyHeaderOpen ? "Collapse All" : "Reveal All"))
+            if (ImGuiEx.ButtonWrapped(anyHeaderOpen ? "Collapse All".Loc() : "Reveal All".Loc()))
             {
-                foreach (uint key in headers.Keys) 
+                foreach (uint key in headers.Keys)
                     headers[key] = !anyHeaderOpen;
             }
 
             using (ImRaii.Disabled(Patcher.PatcherState == ActionState.Running))
             {
-                if (ImGuiEx.ButtonWrapped("Download Paths")) 
+                if (ImGuiEx.ButtonWrapped("Download Paths".Loc()))
                     Patcher.Patch(ImGui.IsMouseClicked(ImGuiMouseButton.Right));
             }
             bool showJobSelection = _selectedDutyPath is { container.Paths.Count: > 1 };
@@ -120,7 +121,7 @@ namespace AutoDuty.Windows
                         if (ImGui.Selectable("##PathHeader_" + container.id, false))
                             headers[container.id] = !open;
                         ImGui.SameLine();
-                        ImGuiHelper.ColoredText(container.ColoredNameRegex, $"({container.id}) {container.Content.Name}");
+                        ImGuiHelper.ColoredText(container.ColoredNameRegex, "(??) ??".Loc(container.id, container.Content.Name));
                     }
 
                     List<Tuple<CombatRole, Job>>[]   pathJobs       = Enumerable.Range(0, container.Paths.Count).Select(_ => new List<Tuple<CombatRole, Job>>()).ToArray();
@@ -163,12 +164,12 @@ namespace AutoDuty.Windows
                             {
                                 ImGuiHelper.ColoredText(container.ColoredNameRegex, container.Content.Name!);
                                 ImGui.SameLine(0, 0);
-                                ImGui.Text(" => ");
+                                ImGui.Text(" => ".Loc());
                                 ImGui.SameLine(0, 0);
                             }
 
 
-                            ImGui.TextColored(ImGuiHelper.VersionColor, $"(v{path.PathFile.Meta.LastUpdatedVersion})");
+                            ImGui.TextColored(ImGuiHelper.VersionColor, "(v??)".Loc(path.PathFile.Meta.LastUpdatedVersion));
                             ImGui.SameLine(0, 2);
                             ImGuiHelper.ColoredText(path.ColoredNameRegex, path.Name);
 
@@ -222,7 +223,7 @@ namespace AutoDuty.Windows
 
                 ImGui.Text(_selectedDutyPath.Name);
 
-                if (ImGui.Button("Clear job selection for this Duty"))
+                if (ImGui.Button("Clear job selection for this Duty".Loc()))
                 {
                     ImGui.EndChild();
                     ImGui.EndTable();
