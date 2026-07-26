@@ -5,8 +5,8 @@
   "Description": "自動幫你跑副本，支援信賴的同伴、達人指引、士官兵團、多變或一般模式。需搭配 BossModReborn、vnavmesh 與一款戰鬥循環插件（WrathCombo 或 BossMod AutoRotation）使用。",
   "InternalName": "AutoDuty",
   "DalamudApiLevel": "12",
-  "RepoUrl": "https://github.com/Lother/AutoDuty",
-  "IconUrl": "https://raw.githubusercontent.com/Lother/DalamudPluginsTC/main/icons/AutoDuty.png",
+  "RepoUrl": "https://github.com/ffxiv-tc-port/AutoDuty",
+  "IconUrl": "https://raw.githubusercontent.com/ffxiv-tc-port/DalamudPluginsTC/main/icons/AutoDuty.png",
   "ImageUrls": [
     "https://s3.puni.sh/media/plugin/54/image-15l1o9gf3yg.png",
     "https://s3.puni.sh/media/plugin/54/image-gc84lu4pdpb.png",
