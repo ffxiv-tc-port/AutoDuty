@@ -173,7 +173,7 @@ namespace AutoDuty.Windows
                 }
                 ImGui.EndPopup();
             }
-            string addActionUiPopupId = "Add Action: (??)".Loc(_action?.Name) + "###AddActionUI";
+            string addActionUiPopupId = "Add Action: (??)".Loc(_action?.Name ?? string.Empty) + "###AddActionUI";
             if (_showAddActionUI && !ImGui.IsPopupOpen(addActionUiPopupId))
             {
                 ImGui.SetNextWindowSize(new Vector2(ImGui.CalcTextSize("X").X * 55, ImGui.GetTextLineHeight() * 7), ImGuiCond.FirstUseEver);
