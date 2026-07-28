@@ -140,6 +140,13 @@ namespace AutoDuty.Windows
 
                         foreach (ContentPathsManager.DutyPath path in container.Paths)
                         {
+                            if (path.Invalid)
+                                continue;
+
+                            // 版本/備註只讀背景預讀好的 Meta。直接碰 path.PathFile 會觸發延遲載入，
+                            // 等於在開啟路徑分頁的第一幀，於主執行緒讀完並反序列化全部 271 個 path json。
+                            PathFileMetaData? meta = path.Meta;
+
                             if (ImGui.Selectable("###PathList" + path.FileName, path == _selectedDutyPath))
                             {
                                 if (path == _selectedDutyPath)
@@ -155,8 +162,8 @@ namespace AutoDuty.Windows
                                 showJobSelection = false;
                             }
 
-                            if (ImGui.IsItemHovered() && path.PathFile.Meta.Notes.Count > 0)
-                                ImGui.SetTooltip(string.Join("\n", path.PathFile.Meta.Notes));
+                            if (ImGui.IsItemHovered() && meta is { Notes.Count: > 0 })
+                                ImGui.SetTooltip(string.Join("\n", meta.Notes));
                             ImGui.SetItemAllowOverlap();
                             ImGui.SameLine(multiple ? 20 : 1);
 
@@ -169,7 +176,7 @@ namespace AutoDuty.Windows
                             }
 
 
-                            ImGui.TextColored(ImGuiHelper.VersionColor, "(v??)".Loc(path.PathFile.Meta.LastUpdatedVersion));
+                            ImGui.TextColored(ImGuiHelper.VersionColor, "(v??)".Loc(meta?.LastUpdatedVersion.ToString() ?? "?"));
                             ImGui.SameLine(0, 2);
                             ImGuiHelper.ColoredText(path.ColoredNameRegex, path.Name);
 

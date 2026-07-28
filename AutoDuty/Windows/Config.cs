@@ -1431,31 +1431,28 @@ public static class ConfigTab
                     using (ImRaii.Disabled(Configuration.MaxDistanceToTargetRoleBased))
                     {
                         ImGui.PushItemWidth(195 * ImGuiHelpers.GlobalScale);
+                        // 滑桿在拖曳期間每一幀都回 true，存檔只能在放開滑鼠（編輯結束）那一刻做一次
                         if (ImGui.SliderFloat("Max Distance To Target".Loc(), ref Configuration.MaxDistanceToTargetFloat, 1, 30))
-                        {
                             Configuration.MaxDistanceToTargetFloat = Math.Clamp(Configuration.MaxDistanceToTargetFloat, 1, 30);
+                        if (ImGui.IsItemDeactivatedAfterEdit())
                             Configuration.Save();
-                        }
                         if (ImGui.SliderFloat("Max Distance To Target AoE".Loc(), ref Configuration.MaxDistanceToTargetAoEFloat, 1, 10))
-                        {
                             Configuration.MaxDistanceToTargetAoEFloat = Math.Clamp(Configuration.MaxDistanceToTargetAoEFloat, 1, 10);
+                        if (ImGui.IsItemDeactivatedAfterEdit())
                             Configuration.Save();
-                        }
                         ImGui.PopItemWidth();
                     }
                     using (ImRaii.Disabled(!Configuration.MaxDistanceToTargetRoleBased))
                     {
                         ImGui.PushItemWidth(195 * ImGuiHelpers.GlobalScale);
                         if (ImGui.SliderFloat("Max Distance To Target | Melee".Loc(), ref Configuration.MaxDistanceToTargetRoleMelee, 1, 30))
-                        {
                             Configuration.MaxDistanceToTargetRoleMelee = Math.Clamp(Configuration.MaxDistanceToTargetRoleMelee, 1, 30);
+                        if (ImGui.IsItemDeactivatedAfterEdit())
                             Configuration.Save();
-                        }
                         if (ImGui.SliderFloat("Max Distance To Target | Ranged".Loc(), ref Configuration.MaxDistanceToTargetRoleRanged, 1, 30))
-                        {
                             Configuration.MaxDistanceToTargetRoleRanged = Math.Clamp(Configuration.MaxDistanceToTargetRoleRanged, 1, 30);
+                        if (ImGui.IsItemDeactivatedAfterEdit())
                             Configuration.Save();
-                        }
                         ImGui.PopItemWidth();
                     }
                     if (ImGui.Checkbox("Set Positional Based on Player Role".Loc(), ref Configuration.positionalRoleBased))
@@ -1812,10 +1809,9 @@ public static class ConfigTab
                     ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X);
                     int autoRepairPct = (int)Configuration.AutoRepairPct;
                     if (ImGui.SliderInt("##Repair@", ref autoRepairPct, 0, 99, "%d%%"))
-                    {
                         Configuration.AutoRepairPct = Math.Clamp((uint)autoRepairPct, 0, 99);
+                    if (ImGui.IsItemDeactivatedAfterEdit())
                         Configuration.Save();
-                    }
 
                     ImGui.PopItemWidth();
                     if (!Configuration.AutoRepairSelf)
@@ -2164,10 +2160,9 @@ public static class ConfigTab
                                 ImGui.SameLine();
                                 ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X);
                                 if (ImGui.SliderInt("##AutoDesynthSkillUpLimit", ref Configuration.AutoDesynthSkillUpLimit, 0, 50))
-                                {
                                     Configuration.AutoDesynthSkillUpLimit = Math.Clamp(Configuration.AutoDesynthSkillUpLimit, 0, 50);
+                                if (ImGui.IsItemDeactivatedAfterEdit())
                                     Configuration.Save();
-                                }
                                 ImGui.PopItemWidth();
                                 ImGui.Unindent();
                             }
@@ -2189,10 +2184,9 @@ public static class ConfigTab
                             if (Configuration.UseSliderInputs)
                             {
                                 if (ImGui.SliderInt("##Slots", ref Configuration.AutoGCTurninSlotsLeft, 0, 140))
-                                {
                                     Configuration.AutoGCTurninSlotsLeft = Math.Clamp(Configuration.AutoGCTurninSlotsLeft, 0, 140);
+                                if (ImGui.IsItemDeactivatedAfterEdit())
                                     Configuration.Save();
-                                }
                             }
                             else
                             {
@@ -2306,10 +2300,9 @@ public static class ConfigTab
                     if (Configuration.UseSliderInputs)
                     {
                         if (ImGui.SliderInt("##Level", ref Configuration.StopLevelInt, 1, 100))
-                        {
                             Configuration.StopLevelInt = Math.Clamp(Configuration.StopLevelInt, 1, 100);
+                        if (ImGui.IsItemDeactivatedAfterEdit())
                             Configuration.Save();
-                        }
                     }
                     else
                     {
