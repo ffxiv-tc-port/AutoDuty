@@ -14,6 +14,7 @@ using System.Collections.Generic;
 using System.IO;
 using ECommons;
 using ECommons.DalamudServices;
+using ECommons.LanguageHelpers;
 using AutoDuty.Windows;
 using AutoDuty.IPC;
 using AutoDuty.External;
@@ -296,29 +297,29 @@ public sealed class AutoDuty : IDalamudPlugin
             Svc.Commands.AddHandler("/ad", new CommandInfo(OnCommand) { });
             Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
             {
-                HelpMessage = "\n/autoduty or /ad -> opens main window\n" +
-                "/autoduty or /ad config or cfg -> opens config window / modifies config\n" +
-                "/autoduty or /ad start -> starts autoduty when in a Duty\n" +
-                "/autoduty or /ad stop -> stops everything\n" +
-                "/autoduty or /ad pause -> pause route\n" +
-                "/autoduty or /ad resume -> resume route\n" +
-                "/autoduty or /ad turnin -> GC Turnin\n" +
-                "/autoduty or /ad desynth -> Desynth's your inventory\n" +
-                "/autoduty or /ad repair -> Repairs your gear\n" +
-                "/autoduty or /ad equiprec-> Equips recommended gear\n" +
-                "/autoduty or /ad extract -> Extract's materia from equipment\n" +
-                "/autoduty or /ad turnin -> GC Turnin\n" +
-                "/autoduty or /ad goto -> goes to\n" +
-                "/autoduty or /ad dataid -> Logs and copies your target's dataid to clipboard\n" +
-                "/autoduty or /ad exitduty -> exits duty\n" +
-                "/autoduty or /ad queue -> queues duty\n" +
-                "/autoduty or /ad moveto -> move's to territorytype and location sent\n" +
-                "/autoduty or /ad overlay -> opens overlay\n" +
-                "/autoduty or /ad overlay lock-> toggles locking the overlay\n" +
-                "/autoduty or /ad overlay nobg-> toggles the overlay's background\n" +
-                "/autoduty or /ad movetoflag -> moves to the flag map marker\n" +
-                "/autoduty or /ad run -> starts auto duty in territory type specified\n" +
-                "/autoduty or /ad tt -> logs and copies to clipboard the Territory Type number for duty specified\n"
+                HelpMessage = "\n/autoduty or /ad -> opens main window\n".Loc() +
+                "/autoduty or /ad config or cfg -> opens config window / modifies config\n".Loc() +
+                "/autoduty or /ad start -> starts autoduty when in a Duty\n".Loc() +
+                "/autoduty or /ad stop -> stops everything\n".Loc() +
+                "/autoduty or /ad pause -> pause route\n".Loc() +
+                "/autoduty or /ad resume -> resume route\n".Loc() +
+                "/autoduty or /ad turnin -> GC Turnin\n".Loc() +
+                "/autoduty or /ad desynth -> Desynth's your inventory\n".Loc() +
+                "/autoduty or /ad repair -> Repairs your gear\n".Loc() +
+                "/autoduty or /ad equiprec-> Equips recommended gear\n".Loc() +
+                "/autoduty or /ad extract -> Extract's materia from equipment\n".Loc() +
+                "/autoduty or /ad turnin -> GC Turnin\n".Loc() +
+                "/autoduty or /ad goto -> goes to\n".Loc() +
+                "/autoduty or /ad dataid -> Logs and copies your target's dataid to clipboard\n".Loc() +
+                "/autoduty or /ad exitduty -> exits duty\n".Loc() +
+                "/autoduty or /ad queue -> queues duty\n".Loc() +
+                "/autoduty or /ad moveto -> move's to territorytype and location sent\n".Loc() +
+                "/autoduty or /ad overlay -> opens overlay\n".Loc() +
+                "/autoduty or /ad overlay lock-> toggles locking the overlay\n".Loc() +
+                "/autoduty or /ad overlay nobg-> toggles the overlay's background\n".Loc() +
+                "/autoduty or /ad movetoflag -> moves to the flag map marker\n".Loc() +
+                "/autoduty or /ad run -> starts auto duty in territory type specified\n".Loc() +
+                "/autoduty or /ad tt -> logs and copies to clipboard the Territory Type number for duty specified\n".Loc()
             });
 
             PluginInterface.UiBuilder.Draw += DrawUI;
@@ -509,9 +510,9 @@ public sealed class AutoDuty : IDalamudPlugin
             var startingPlanner = ctx.Source == RunSource.Planner;
             if (runningPlanner != startingPlanner)
             {
-                MainWindow.ShowPopup("Mode", runningPlanner
-                    ? "Planner is running. Stop it first."
-                    : "AutoDuty is running. Stop it first.");
+                MainWindow.ShowPopup("Mode".Loc(), runningPlanner
+                    ? "Planner is running. Stop it first.".Loc()
+                    : "AutoDuty is running. Stop it first.".Loc());
                 return;
             }
         }
@@ -1525,7 +1526,7 @@ public sealed class AutoDuty : IDalamudPlugin
         {
             CurrentTerritoryContent = null;
             PathFile = "";
-            MainWindow.ShowPopup("Error", "Unable to load content for Territory");
+            MainWindow.ShowPopup("Error".Loc(), "Unable to load content for Territory".Loc());
             return;
         }
         //MainWindow.OpenTab("Mini");

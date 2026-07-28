@@ -467,7 +467,9 @@ public class MainWindow : Window, IDisposable
             {
                 ImGui.PushStyleColor(ImGuiCol.Tab, x.color.Value);
             }
-            if (ImGui.BeginTabItem(x.name, openTabName == x.name ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None))
+            // Display text is localized, but the widget ID (after ###) and the navigation key
+            // (openTabName / BeginChild) stay on the original English name.
+            if (ImGui.BeginTabItem(x.name.Loc() + "###" + x.name, openTabName == x.name ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None))
             {
                 if (x.color != null) 
                     ImGui.PopStyleColor();
