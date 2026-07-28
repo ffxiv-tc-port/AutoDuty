@@ -8,7 +8,7 @@ using ECommons.ExcelServices;
 using ECommons.GameFunctions;
 using ECommons.ImGuiMethods;
 using ECommons.LanguageHelpers;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -76,7 +76,7 @@ namespace AutoDuty.Windows
                 // Set the width of the search box to the calculated width
                 ImGui.SetNextItemWidth(inputMaxWidth);
                 
-                ImGui.InputTextWithHint("##search", "Search duties...".Loc(), ref _searchText, inputMaxLength);
+                ImGui.InputTextWithHint("##search", "Search duties...".Loc(), ref _searchText, (int)inputMaxLength);
 
                 // Apply filtering based on the search text
                 if (_searchText.Length > 0)
@@ -433,7 +433,7 @@ namespace AutoDuty.Windows
                                     SchedulerHelper.ScheduleAction("Refresh Levels - DT", () => TrustHelper.GetLevels(ContentHelper.DictionaryContent[1167u]), () => TrustHelper.State == ActionState.None);
                                 }
                                 ImGui.NextColumn();
-                                ImGui.Columns(1, null, true);
+                                ImGui.Columns(1);
                             }
                             else if (ImGui.Button("Refresh trust member levels".Loc()))
                             {
