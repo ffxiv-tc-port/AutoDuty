@@ -464,7 +464,7 @@ public class MainWindow : Window, IDisposable
             {
                 ImGui.PushStyleColor(ImGuiCol.Tab, x.color.Value);
             }
-            if (ImGuiEx.BeginTabItem(x.name, openTabName == x.name ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None))
+            if (ImGui.BeginTabItem(x.name, openTabName == x.name ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None))
             {
                 if (x.color != null) 
                     ImGui.PopStyleColor();
