@@ -34,7 +34,6 @@ using Dalamud.Game.ClientState.Conditions;
 using AutoDuty.Properties;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
-using Serilog.Events;
 using AutoDuty.Updater;
 
 namespace AutoDuty;
@@ -335,7 +334,11 @@ public sealed class AutoDuty : IDalamudPlugin
             Svc.DutyState.DutyWiped += DutyState_DutyWiped;
             Svc.DutyState.DutyRecommenced += DutyState_DutyRecommenced;
             Svc.DutyState.DutyCompleted += DutyState_DutyCompleted;
-            Svc.Log.MinimumLogLevel = LogEventLevel.Debug;
+            // 此行原設為 LogEventLevel.Debug 但無實際作用：非開發模式外掛的預設值
+            // (ScopedPluginLogService.GetDefaultLevel) 本來就已經是 Debug，等於設回原值。
+            // 外掛自訂等級只能比全域記錄等級更嚴格、不能更寬鬆，真正要看到 Debug 內容
+            // 要到 /xllog 調整全域等級（LogTab.cs 的說明文字已經這樣告知使用者）。
+            // 保留此註解避免日後又加回這行無效設定。
             PluginInterface.UiBuilder.Draw += UiBuilderOnDraw;
         }
         catch (Exception e)
