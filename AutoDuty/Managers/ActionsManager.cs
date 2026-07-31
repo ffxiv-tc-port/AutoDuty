@@ -449,27 +449,32 @@ namespace AutoDuty.Managers
             if (gameObject == null || !IsValid)
                 return true;
 
-            // 重查排在所有解參考之前。原本 IsTargetable / IsValid() 的檢查寫在
-            // TryGetObjectByDataId 重查「之後面」的位置——也就是先拿舊參考解參考一次,
-            // 才去重查。順序反了:懸空指標在第一次解參考就已經炸了,
-            // 而 IsValid() 只檢查玩家有沒有登入、擋不住任何東西。
-            if (!TryGetObjectByDataId(gameObject.DataId, out gameObject) || gameObject == null)
+            // 只快取 DataId 這個純量。傳進來的 gameObject 是呼叫端每幀用 ResolveObject
+            // (依 GameObjectId 查表)重解出來的,所以此刻讀它的欄位是安全的;但不能把物件
+            // 本身留到後續的幀——那等於持有一根建構時就凍結、之後永不重解析的原生指標。
+            var targetDataId = gameObject.DataId;
+
+            // TryGetObjectByDataId 是「找最近的同 DataId 物件」,要對整個物件表做距離排序。
+            // 把它連同所有解參考一起放進節流視窗,每秒一次而不是每幀一次。
+            // 代價:目標消失時的中止判斷最多延遲 1 秒——但那一秒內只是不動作,
+            // 不會去解參考任何舊指標,所以延遲是安全的方向。
+            if (!EzThrottler.Throttle("Interactable", 1000))
+                return false;
+
+            if (!TryGetObjectByDataId(targetDataId, out var target) || target == null)
                 return true;
 
-            if (!gameObject.IsTargetable || !gameObject.IsValid())
+            if (!target.IsTargetable || !target.IsValid())
                 return true;
 
-            if (EzThrottler.Throttle("Interactable", 1000))
+            if (GetBattleDistanceToPlayer(target) > 2f)
+                MovementHelper.Move(target, 0.25f, 2f, false);
+            else
             {
-                if (GetBattleDistanceToPlayer(gameObject!) > 2f)
-                    MovementHelper.Move(gameObject, 0.25f, 2f, false);
-                else
-                {
-                    Svc.Log.Debug($"InteractableCheck: Interacting with {gameObject!.Name} at {gameObject.Position} which is {GetDistanceToPlayer(gameObject)} away, because game object is not null: {gameObject != null} and IsTargetable: {gameObject!.IsTargetable} and IsValid: {gameObject.IsValid()}");
-                    if (VNavmesh_IPCSubscriber.Path_IsRunning())
-                        VNavmesh_IPCSubscriber.Path_Stop();
-                    InteractWithObject(gameObject);
-                };
+                Svc.Log.Debug($"InteractableCheck: Interacting with {target.Name} at {target.Position} which is {GetDistanceToPlayer(target)} away, IsTargetable: {target.IsTargetable}");
+                if (VNavmesh_IPCSubscriber.Path_IsRunning())
+                    VNavmesh_IPCSubscriber.Path_Stop();
+                InteractWithObject(target);
             }
 
             return false;
