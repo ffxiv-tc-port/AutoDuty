@@ -22,6 +22,23 @@ namespace AutoDuty.Helpers
     {
         internal static bool TryGetObjectByDataId(uint dataId, out IGameObject? gameObject) => (gameObject = Svc.Objects.OrderBy(GetDistanceToPlayer).FirstOrDefault(x => x.DataId == dataId)) != null;
 
+        // ⚠️ 不要把 IGameObject 捕獲進 TaskManager 的閉包跨幀用。
+        // Dalamud 的 GameObject.Address 在建構時就凍結、永不重新解析
+        // (GameObject.cs:137-139),而 IGameObject.IsValid() 只檢查「玩家有沒有登入」、
+        // 完全不驗證位址(GameObject.cs:170-177)。所以存 IGameObject == 存一根原生指標,
+        // 而排隊中的任務是在「後面的幀」才執行、甚至會反覆重跑很多幀。
+        // 正解:閉包只捕獲 GameObjectId,每次執行時用 ResolveObject 重查物件表,
+        // 查不到就中止該行為(fail-closed)。
+        internal static bool TryGetObjectIdByDataId(uint dataId, out ulong? objectId)
+        {
+            objectId = Svc.Objects.OrderBy(GetDistanceToPlayer).FirstOrDefault(x => x.DataId == dataId)?.GameObjectId;
+            return objectId != null;
+        }
+
+        internal static ulong? GetObjectIdByDataId(uint id) => Svc.Objects.OrderBy(GetDistanceToPlayer).FirstOrDefault(o => o.DataId == id)?.GameObjectId;
+
+        internal static IGameObject? ResolveObject(ulong? objectId) => objectId is null ? null : Svc.Objects.SearchById(objectId.Value);
+
         internal static List<IGameObject>? GetObjectsByObjectKind(ObjectKind objectKind) => [.. Svc.Objects.OrderBy(GetDistanceToPlayer).Where(o => o.ObjectKind == objectKind)];
 
         internal static IGameObject? GetObjectByObjectKind(ObjectKind objectKind) => Svc.Objects.OrderBy(GetDistanceToPlayer).FirstOrDefault(o => o.ObjectKind == objectKind);

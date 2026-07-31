@@ -194,7 +194,23 @@ public sealed class AutoDuty : IDalamudPlugin
     internal PluginState States = PluginState.None;
     internal int Indexer = -1;
     internal bool MainListClicked = false;
-    internal IBattleChara? BossObject;
+    // ⚠️ 不要把 IGameObject 存進欄位跨幀用。
+    // Dalamud 的 GameObject.Address 在建構時就凍結、永不重新解析
+    // (GameObject.cs:137-139,所有屬性都走 Struct => (GameObject*)this.Address),
+    // 而 IGameObject.IsValid() 只檢查「玩家有沒有登入」、完全不驗證位址
+    // (GameObject.cs:170-177)。所以存 IGameObject == 存一根原生指標。
+    // BossObject 會跨很多幀存活(ActionsManager.BossMoveCheck 是 TaskManager 的
+    // 檢查式,會反覆重跑並解 BossObject.Struct()->InCombat),王在分階段消失/重生、
+    // 團滅或離開副本時就是攔不到的 AccessViolation。
+    // 改成只存 GameObjectId、每次讀取時重查物件表:既有的 BossObject != null
+    // 守衛自動變成有效的存活檢查,查不到就走 null 分支而不是崩潰。
+    private ulong? bossObjectId = null;
+
+    internal IBattleChara? BossObject
+    {
+        get => this.bossObjectId is null ? null : Svc.Objects.SearchById(this.bossObjectId.Value) as IBattleChara;
+        set => this.bossObjectId = value?.GameObjectId;
+    }
     internal static IGameObject? ClosestObject => Svc.Objects.Where(o => o.IsTargetable && o.ObjectKind.EqualsAny(Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventObj, Dalamud.Game.ClientState.Objects.Enums.ObjectKind.BattleNpc)).OrderBy(ObjectHelper.GetDistanceToPlayer).TryGetFirst(out var gameObject) ? gameObject : null;
     internal OverrideCamera OverrideCamera;
     internal MainWindow MainWindow { get; init; }
