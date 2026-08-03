@@ -249,6 +249,9 @@ public sealed class AutoDuty : IDalamudPlugin
         {
             Plugin = this;
             ECommonsMain.Init(PluginInterface, Plugin, Module.DalamudReflector, Module.ObjectFunctions);
+            // 讓「呼叫了對方沒有的 IPC 方法」不再完全靜默。
+            // 訂閱越早越好：事件只在 IPC **呼叫**當下才被查閱，在這裡訂閱就涵蓋往後所有呼叫。
+            EzIpcFailureLog.Enable();
             ECommons.LanguageHelpers.Localization.Init("ChineseTraditional");
             PictoService.Initialize(PluginInterface);
 
@@ -1988,6 +1991,7 @@ public sealed class AutoDuty : IDalamudPlugin
         FileHelper.FileSystemWatcher.Dispose();
         FileHelper.FileWatcher.Dispose();
         WindowSystem.RemoveAllWindows();
+        EzIpcFailureLog.Disable();
         ECommonsMain.Dispose();
         MainWindow.Dispose();
         OverrideCamera.Dispose();
