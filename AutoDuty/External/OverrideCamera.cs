@@ -67,21 +67,54 @@ public unsafe class OverrideCamera : IDisposable
         _rmiCameraHook?.Dispose();
     }
 
+    // fail-closed: a detour is a managed function the *native* code calls directly, so a managed
+    // exception escaping it unwinds through native frames that have no handler for it. Everything we
+    // add on top of Original() therefore runs inside a try, and the degraded behaviour is "don't
+    // override" - Original has already run, so the game's own camera handling passes through intact.
+    // The most realistic exception source here is Framework.Instance(): it is a ClientStructs
+    // [StaticAddress], and when its signature stops resolving it *throws* InvalidOperationException
+    // (InteropGenerator's ThrowHelper.ThrowNullAddress) instead of returning null.
+    // NOTE: this does NOT protect against AccessViolationException (corrupted-state, uncatchable in
+    // .NET Core). What it catches is managed exceptions.
+    private long _detourErrors;
+    private DateTime _lastDetourErrorLog = DateTime.MinValue;
+
+    private void OnDetourError(Exception ex)
+    {
+        ++_detourErrors;
+        // this runs per frame - never log unthrottled. Information (not Debug) because reporting
+        // users run at LogLevel 2.
+        var now = DateTime.UtcNow;
+        if (now - _lastDetourErrorLog < TimeSpan.FromSeconds(30))
+            return;
+        _lastDetourErrorLog = now;
+        Svc.Log.Information($"OverrideCamera: camera override threw, leaving the game's own camera input alone (total {_detourErrors}): {ex}");
+    }
+
     private void RMICameraDetour(Camera* self, int inputMode, float speedH, float speedV)
     {
         _rmiCameraHook!.Original(self, inputMode, speedH, speedV);
-        if (IgnoreUserInput || inputMode == 0) // let user override...
+        try
         {
-            var dt = Framework.Instance()->FrameDeltaTime;
-            var deltaH = (DesiredAzimuth - self->DirH.Radians()).Normalized();
-            var deltaV = (DesiredAltitude - self->DirV.Radians()).Normalized();
-            var maxH = SpeedH.Rad * dt;
-            var maxV = SpeedV.Rad * dt;
-            //self->InputDeltaH = Math.Clamp(deltaH.Rad, -maxH, maxH);
-            //self->InputDeltaV = Math.Clamp(deltaV.Rad, -maxV, maxV);
-            self->InputDeltaH = deltaH.Rad;
-            self->InputDeltaV = deltaV.Rad;
-            Enabled = false;
+            if (self == null)
+                return;
+            if (IgnoreUserInput || inputMode == 0) // let user override...
+            {
+                var dt = Framework.Instance()->FrameDeltaTime;
+                var deltaH = (DesiredAzimuth - self->DirH.Radians()).Normalized();
+                var deltaV = (DesiredAltitude - self->DirV.Radians()).Normalized();
+                var maxH = SpeedH.Rad * dt;
+                var maxV = SpeedV.Rad * dt;
+                //self->InputDeltaH = Math.Clamp(deltaH.Rad, -maxH, maxH);
+                //self->InputDeltaV = Math.Clamp(deltaV.Rad, -maxV, maxV);
+                self->InputDeltaH = deltaH.Rad;
+                self->InputDeltaV = deltaV.Rad;
+                Enabled = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            OnDetourError(ex);
         }
     }
 }
