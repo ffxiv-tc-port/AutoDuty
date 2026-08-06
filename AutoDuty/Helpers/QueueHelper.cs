@@ -160,6 +160,43 @@ namespace AutoDuty.Helpers
             }
         }
 
+        /// <summary>
+        /// 取出副本列表目前選取項目的顯示名稱;取不到就回 "?"。
+        ///
+        /// 這是純診斷用途,原本整條鏈零檢查:
+        ///   items[(int)DutyList->SelectedItemIndex].Renderer->GetTextNodeById(5)->GetAsAtkTextNode()->NodeText
+        /// 三個問題:
+        ///  ① SelectedItemIndex 沿用 AtkComponentList 的語意,**沒有選取時是 -1**,
+        ///     而且沒有任何上界比對 → 直接丟 ArgumentOutOfRangeException。
+        ///  ② Renderer 可能是 null,而 GetTextNodeById 是 [MemberFunction] 原生呼叫,
+        ///     對 null 呼叫即 AccessViolationException(corrupted-state,try/catch 攔不到)。
+        ///  ③ GetTextNodeById 找不到節點時回 null,原本直接再接 GetAsAtkTextNode()。
+        /// 回 "?" 而不是空字串,是為了讓診斷訊息看得出「不知道」而不是「名字是空的」。
+        /// </summary>
+        private string GetSelectedDutyListItemName(List<AtkComponentTreeListItem> items)
+        {
+            if (_addonContentsFinder == null)
+                return "?";
+
+            var dutyList = _addonContentsFinder->DutyList;
+            if (dutyList == null)
+                return "?";
+
+            var index = dutyList->SelectedItemIndex;
+            if (index < 0 || index >= items.Count)
+                return "?";
+
+            var renderer = items[index].Renderer;
+            if (renderer == null)
+                return "?";
+
+            var textNode = renderer->GetTextNodeById(5);
+            if (textNode == null || textNode->AtkResNode.Type != NodeType.Text)
+                return "?";
+
+            return textNode->NodeText.ToString().Replace("...", "");
+        }
+
         private void QueueRegular()
         {
             if (ContentsFinder.Instance()->IsUnrestrictedParty != Plugin.Configuration.Unsynced)
@@ -179,25 +216,45 @@ namespace AutoDuty.Helpers
                 return;
             }
 
+            // 上面那個 && 在 _allConditionsMetToJoin 為 true 時會短路,addon 的 null 檢查整個被跳過;
+            // 而 TryGetAddonByName 找不到 addon 時會把 out 參數設成 null ——
+            // 也就是排隊條件都符合之後,ContentsFinder 一關閉,下一 tick 就會對空指標取 DutyList。
+            // 這裡補一道與 _allConditionsMetToJoin 無關的閘,失敗形式是「這一 tick 不動作」。
+            if (_addonContentsFinder == null || _addonContentsFinder->DutyList == null)
+                return;
+
             if (_addonContentsFinder->DutyList->Items.LongCount == 0)
                 return;
-            
+
             var vectorDutyListItems = _addonContentsFinder->DutyList->Items;
             List<AtkComponentTreeListItem> listAtkComponentTreeListItems = [];
             if (vectorDutyListItems.Count == 0)
                 return;
             
-            vectorDutyListItems.ForEach(pointAtkComponentTreeListItem => listAtkComponentTreeListItems.Add(*(pointAtkComponentTreeListItem.Value)));
+            // 向量裡的項目指標可能是空的,解參考前先擋掉(原本是無條件 *p.Value)。
+            vectorDutyListItems.ForEach(pointAtkComponentTreeListItem =>
+            {
+                if (pointAtkComponentTreeListItem.Value != null)
+                    listAtkComponentTreeListItems.Add(*(pointAtkComponentTreeListItem.Value));
+            });
 
             if (!_allConditionsMetToJoin && AgentContentsFinder.Instance()->SelectedDuty.Id != _content!.ContentFinderCondition)
             {
-                Svc.Log.Debug($"Queue Helper - Opening ContentsFinder to {_content.Name} because we have the wrong selection of {listAtkComponentTreeListItems[(int)_addonContentsFinder->DutyList->SelectedItemIndex].Renderer->GetTextNodeById(5)->GetAsAtkTextNode()->NodeText.ToString().Replace("...", "")}");
+                // 原本這行把整條原生解參考鏈寫在字串插值裡 —— 插值一律先求值,
+                // 所以不管記錄等級開到多低都會執行。先取進區域變數,插值只用區域變數。
+                var wrongSelectionName = GetSelectedDutyListItemName(listAtkComponentTreeListItems);
+                Svc.Log.Debug($"Queue Helper - Opening ContentsFinder to {_content.Name} because we have the wrong selection of {wrongSelectionName}");
                 AgentContentsFinder.Instance()->OpenRegularDuty(_content.ContentFinderCondition);
                 EzThrottler.Throttle("QueueHelper", 500, true);
                 return;
             }
 
-            var selectedDutyName = _addonContentsFinder->AtkValues[18].GetValueAsString().Replace("\u0002\u001a\u0002\u0002\u0003", string.Empty).Replace("\u0002\u001a\u0002\u0001\u0003", string.Empty).Replace("\u0002\u001f\u0001\u0003", "\u2013");
+            // AtkValues 是原生指標陣列,沒有 Length 可以靠 —— 索引 18 必須先比對 AtkValuesCount。
+            // 越界讀到的是垃圾型別 + 垃圾指標,而 GetValueAsString() 會照那個型別把它當字串指標解參考。
+            // 取不到時視為「目前沒有選取任何副本」,走既有的 SelectDuty 分支(與原本空字串的行為一致)。
+            var selectedDutyName = string.Empty;
+            if (_addonContentsFinder->AtkValues != null && _addonContentsFinder->AtkValuesCount > 18)
+                selectedDutyName = _addonContentsFinder->AtkValues[18].GetValueAsString().Replace("\u0002\u001a\u0002\u0002\u0003", string.Empty).Replace("\u0002\u001a\u0002\u0001\u0003", string.Empty).Replace("\u0002\u001f\u0001\u0003", "\u2013");
             if (selectedDutyName != _content!.Name && !string.IsNullOrEmpty(selectedDutyName))
             {
                 Svc.Log.Debug($"Queue Helper - We have {selectedDutyName} selected, not {_content.Name}, Clearing.");
