@@ -8,7 +8,9 @@ namespace AutoDuty.Windows
     internal static class InfoTab
     {
         static string infoUrl = "https://docs.google.com/spreadsheets/d/151RlpqRcCpiD_VbQn6Duf-u-S71EP7d0mx3j1PDNoNA";
-        static string gitIssueUrl = "https://github.com/ffxivcode/AutoDuty/issues";
+        // 🔴 指向本 fork 的 issues:原上游 ffxivcode/AutoDuty 已於 2026-01 封存,
+        // 送去那裡的回報不會有人處理。
+        static string gitIssueUrl = "https://github.com/ffxiv-tc-port/AutoDuty/issues";
         static string punishDiscordUrl = "https://discord.com/channels/1001823907193552978/1236757595738476725";
         static string ffxivcodeDiscordUrl = "https://discord.com/channels/1241050921732014090/1273374407653462017";
         private static Configuration Configuration = Plugin.Configuration;

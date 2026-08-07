@@ -143,7 +143,9 @@ namespace AutoDuty.Updater
 
                 var content = new StringContent(json, Encoding.UTF8, "application/vnd.github+json");
 
-                var url = $"https://api.github.com/repos/ffxivcode/AutoDuty/issues";
+                // 🔴 指向本 fork:原上游 ffxivcode/AutoDuty 已封存,對封存 repo 開 issue
+                // GitHub API 會回 410 Gone,使用者的回報等於丟掉。
+                var url = $"https://api.github.com/repos/ffxiv-tc-port/AutoDuty/issues";
                 var response = await _client.PostAsync(url, content);
 
                 var responseString = await response.Content.ReadAsStringAsync();
