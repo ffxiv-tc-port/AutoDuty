@@ -52,7 +52,9 @@ namespace AutoDuty.Windows
         }
 
         private static int _currentStepIndex = -1;
-        private static readonly string _pathsURL = "https://github.com/ffxivcode/AutoDuty/tree/master/AutoDuty/Paths";
+        // 「找不到路徑檔」訊息裡給使用者看的網址。指向本 fork,與實際下載來源
+        // (GitHubHelper.PathRepoBaseUrl)保持同一個 repo/分支。
+        private static readonly string _pathsURL = "https://github.com/ffxiv-tc-port/AutoDuty/tree/tc-7.20/AutoDuty/Paths";
 
         // New search text field for filtering duties
         private static string _searchText = string.Empty;
