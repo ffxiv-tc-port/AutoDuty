@@ -13,10 +13,23 @@ using System.Linq;
 namespace AutoDuty.Helpers
 {
     using System;
+    using global::AutoDuty.Multibox;
     using static Data.Classes;
 
     internal unsafe class QueueHelper : ActiveHelperBase<QueueHelper>
     {
+        /// <summary>
+        /// 只等待並接受副本確認視窗,不自己排隊。
+        /// 📌 供 Multibox 用戶端使用:排隊是主機端做的,用戶端只負責接下彈出的確認。
+        /// </summary>
+        internal static void InvokeAcceptOnly()
+        {
+            _dutyMode = DutyMode.None;
+            Svc.Log.Information("Queueing: Accepting only");
+            Instance.Start();
+            Plugin.Action = "Queueing: Waiting to accept";
+        }
+
         internal static void Invoke(Content? content, DutyMode dutyMode)
         {
             if (State != ActionState.Running && content != null && dutyMode != DutyMode.None)
@@ -274,6 +287,11 @@ namespace AutoDuty.Helpers
                 _allConditionsMetToJoin = true;
                 Svc.Log.Debug("Queue Helper - All Conditions Met, Clicking Join");
                 AddonHelper.FireCallBack((AtkUnitBase*)_addonContentsFinder, true, 12, 0);
+
+                // 主機端按下報名的同一刻,通知各用戶端準備接受彈出的確認視窗。
+                // 未啟用多開 / 非主機端時整段跳過。
+                if (MultiboxUtility.Config is { MultiBox: true, Host: true })
+                    MultiboxUtility.Server.Queue();
                 return;
             }
             Svc.Log.Debug("end");
