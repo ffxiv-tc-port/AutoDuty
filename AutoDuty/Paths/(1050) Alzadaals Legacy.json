@@ -1,18 +1,135 @@
 {
-  "actions": [
-    "Boss|124.01, 303.00, -90.50|",
-    "Interactable|123.99, 305.60, -146.17|Salt-encrusted Teleporter",
-    "Wait|0, 0, 0|12000",
-    "MoveTo|-0.10, -7.90, -135.84|",
-    "Wait|0, 0, 0|2000",
-    "Boss|-0.11, -16.00, -182.38|",
-    "MoveTo|-0.03, -19.86, -247.31|",
-    "Wait|0, 0, 0|8000",
-    "Boss|109.94, -350.00, -67.31|"
+  "Actions": [
+    {
+      "Tag": "None",
+      "Name": "Boss",
+      "Position": {
+        "X": 124.01,
+        "Y": 303.0,
+        "Z": -90.5
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Interactable",
+      "Position": {
+        "X": 123.99,
+        "Y": 305.6,
+        "Z": -146.17
+      },
+      "Arguments": [
+        "Salt-encrusted Teleporter"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Wait",
+      "Position": {
+        "X": 0.0,
+        "Y": 0.0,
+        "Z": 0.0
+      },
+      "Arguments": [
+        "12000"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "MoveTo",
+      "Position": {
+        "X": -0.1,
+        "Y": -7.9,
+        "Z": -135.84
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Wait",
+      "Position": {
+        "X": 0.0,
+        "Y": 0.0,
+        "Z": 0.0
+      },
+      "Arguments": [
+        "2000"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Boss",
+      "Position": {
+        "X": -0.11,
+        "Y": -16.0,
+        "Z": -182.38
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "MoveTo",
+      "Position": {
+        "X": -0.03,
+        "Y": -19.86,
+        "Z": -247.31
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Wait",
+      "Position": {
+        "X": 0.0,
+        "Y": 0.0,
+        "Z": 0.0
+      },
+      "Arguments": [
+        "8000"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Boss",
+      "Position": {
+        "X": 109.94,
+        "Y": -350.0,
+        "Z": -67.31
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    }
   ],
-  "meta": {
-    "createdAt": 52,
-    "changelog": [],
-    "notes": []
+  "Meta": {
+    "CreatedAt": 52,
+    "Changelog": [],
+    "Notes": []
   }
 }

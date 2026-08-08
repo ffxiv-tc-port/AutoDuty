@@ -1,25 +1,233 @@
 {
-  "actions": [
-    "Interactable|-3.68, -2.38, -5.96|Tiny Key",
-    "MoveTo|21.82, 7.10, 27.40|",
-    "MoveTo|64.63, 3.37, -7.75|",
-    "Interactable|105.56, -0.13, 12.14|Runstop Headgate",
-    "Boss|112.59, -2.44, -12.91|",
-    "MoveTo|89.52, 4.72, -100.15|",
-    "MoveTo|39.34, 5.90, -92.07|",
-    "MoveTo|34.50, 7.05, -125.09|",
-    "WaitFor|45.29, 7.02, -129.71|10000",
-    "MoveTo|44.67, 7.02, -131.59|",
-    "MoveTo|-41.32, 18.65, -119.77|",
-    "Interactable|94.96, 12.90, -122.70|Tiny Key",
-    "Interactable|-94.96, 12.90, -122.70|Swiftmake Checkgate",
-    "Interactable|-101.39, 20.74, -178.08|Tiny Key",
-    "Interactable|-101.76, 20.97, -186.69|Swiftmake Checkgate",
-    "Boss|-27.24, 35.5, -236.09|"
+  "Actions": [
+    {
+      "Tag": "None",
+      "Name": "Interactable",
+      "Position": {
+        "X": -3.68,
+        "Y": -2.38,
+        "Z": -5.96
+      },
+      "Arguments": [
+        "Tiny Key"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "MoveTo",
+      "Position": {
+        "X": 21.82,
+        "Y": 7.1,
+        "Z": 27.4
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "MoveTo",
+      "Position": {
+        "X": 64.63,
+        "Y": 3.37,
+        "Z": -7.75
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Interactable",
+      "Position": {
+        "X": 105.56,
+        "Y": -0.13,
+        "Z": 12.14
+      },
+      "Arguments": [
+        "Runstop Headgate"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Boss",
+      "Position": {
+        "X": 112.59,
+        "Y": -2.44,
+        "Z": -12.91
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "MoveTo",
+      "Position": {
+        "X": 89.52,
+        "Y": 4.72,
+        "Z": -100.15
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "MoveTo",
+      "Position": {
+        "X": 39.34,
+        "Y": 5.9,
+        "Z": -92.07
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "MoveTo",
+      "Position": {
+        "X": 34.5,
+        "Y": 7.05,
+        "Z": -125.09
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "WaitFor",
+      "Position": {
+        "X": 45.29,
+        "Y": 7.02,
+        "Z": -129.71
+      },
+      "Arguments": [
+        "10000"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "MoveTo",
+      "Position": {
+        "X": 44.67,
+        "Y": 7.02,
+        "Z": -131.59
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "MoveTo",
+      "Position": {
+        "X": -41.32,
+        "Y": 18.65,
+        "Z": -119.77
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Interactable",
+      "Position": {
+        "X": 94.96,
+        "Y": 12.9,
+        "Z": -122.7
+      },
+      "Arguments": [
+        "Tiny Key"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Interactable",
+      "Position": {
+        "X": -94.96,
+        "Y": 12.9,
+        "Z": -122.7
+      },
+      "Arguments": [
+        "Swiftmake Checkgate"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Interactable",
+      "Position": {
+        "X": -101.39,
+        "Y": 20.74,
+        "Z": -178.08
+      },
+      "Arguments": [
+        "Tiny Key"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Interactable",
+      "Position": {
+        "X": -101.76,
+        "Y": 20.97,
+        "Z": -186.69
+      },
+      "Arguments": [
+        "Swiftmake Checkgate"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Boss",
+      "Position": {
+        "X": -27.24,
+        "Y": 35.5,
+        "Z": -236.09
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    }
   ],
-  "meta": {
-    "createdAt": 52,
-    "changelog": [],
-    "notes": []
+  "Meta": {
+    "CreatedAt": 52,
+    "Changelog": [],
+    "Notes": []
   }
 }
