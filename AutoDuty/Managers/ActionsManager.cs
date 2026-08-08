@@ -348,9 +348,8 @@ namespace AutoDuty.Managers
 
         /// <summary>
         /// 只給 <see cref="KillInRange"/> 用的鎖定判定。
-        /// ⚠️ 刻意不共用下面的 <see cref="TargetCheck"/>:那一支的判斷式極性是反的
-        /// (可鎖定就直接回 true,永遠不會真的去鎖定),那是從上游 v19 一路帶過來的既有行為,
-        /// 這次不動它。這裡採用上游修好之後的極性。
+        /// 📌 與下面的 <see cref="TargetCheck"/> 判斷式相同,刻意分成兩支是為了各自持有
+        /// 獨立的 <see cref="EzThrottler"/> 鍵 —— 共用同一個鍵會讓兩個呼叫點互相節流。
         /// 回傳 true＝「這個目標不用再處理了」(不可鎖定/已經是當前目標),false＝還在鎖定中。
         /// </summary>
         private bool AcquireTargetCheck(IGameObject? gameObject)
@@ -604,7 +603,7 @@ namespace AutoDuty.Managers
 
         private bool TargetCheck(IGameObject? gameObject)
         {
-            if (gameObject == null || gameObject.IsTargetable || gameObject.IsValid() || Svc.Targets.Target == gameObject)
+            if (gameObject is not { IsTargetable: true } || !gameObject.IsValid() || (Svc.Targets.Target?.Equals(gameObject) ?? false))
                 return true;
 
             if (EzThrottler.Check("TargetCheck"))
