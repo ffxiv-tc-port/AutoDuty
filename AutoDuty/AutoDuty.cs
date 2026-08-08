@@ -222,8 +222,12 @@ public sealed class AutoDuty : IDalamudPlugin
     /// 多變迷宮(Variant Dungeon)目前走到的分歧編號,給
     /// <see cref="Data.PathActionConditionVariantPath"/> 判斷步驟該不該執行。
     /// ⚠️ 目前沒有任何程式碼會改變它 —— 上游是由 VariantVote 動作在投票時寫入的,
-    /// 而我方尚未移植 VariantVote(詳見 ActionsManager)。所以它恆為 0,
-    /// 只有 pathIndices 含 0 的條件會成立。移植 VariantVote 時要一併補上寫入端。
+    /// 而我方刻意不移植 VariantVote(2026-08-08 查證):它的唯一消費者是
+    /// (1315) The Merchant's Tale,而台服沒有這個副本 —— TerritoryType 1315 是空佔位列,
+    /// 對應 CFC 1066 超過台服表末列 1065,台服也沒有任何曉月之後的異聞迷宮。
+    /// 所以它恆為 0,只有 pathIndices 含 0 的條件會成立。
+    /// 等台服實裝該副本(判準:CFC 表出現指向 territory 1315 的列)再移植,
+    /// 屆時 BMR 模組的正確型別名字串才是已知的(上游路徑檔傳的名字對 BMR 少一個 N,本來就是靜默 no-op)。
     /// </summary>
     internal byte VariantPath = 0;
 
