@@ -101,9 +101,12 @@ namespace AutoDuty.Data
             Summoner    = 1 << 18,
             Red_Mage    = 1 << 19,
             Pictomancer = 1 << 20,
-            Casters     = Black_Mage | Summoner | Red_Mage | Pictomancer,
+            // 上游 7.x 才補上的旗標。既有使用者設定裡存的是舊的 Casters/DPS/All 數值,
+            // 不含這個位元 ⇒ 他們的行為不變(青魔一樣不被既有篩選命中),只有新設定吃得到。
+            Blue_Mage   = 1 << 21,
+            Casters     = Black_Mage | Summoner | Red_Mage | Pictomancer | Blue_Mage,
             DPS         = Melee      | Aiming   | Casters,
-            All         = Tanks      | Healers  | DPS 
+            All         = Tanks      | Healers  | DPS
         }
 
         public enum JobRole
@@ -348,6 +351,38 @@ namespace AutoDuty.Data
             LargeBlue = 60781,
         }
 
+        /// <summary>
+        /// 路徑步驟條件的種類。字串值會出現在 path json 的 <c>$type</c> 判別碼裡,
+        /// 名稱必須與 <see cref="PathActionCondition"/> 的子類別對應,改名等於改檔案格式。
+        /// </summary>
+        public enum ConditionType
+        {
+            None,
+            Distance,
+            ItemCount,
+            ObjectData,
+            Job,
+            ActionStatus,
+            VariantPath,
+            ConditionFlag,
+            Not,
+            Or,
+            And
+        }
+
+        public enum ObjectDataProperty
+        {
+            EventState,
+            IsTargetable
+        }
+
+        public enum DistanceLocationTypes
+        {
+            Player,
+            Object,
+            Location
+        }
+
         public static bool HasAnyFlag<T>(this T instance, params T[] parameter) where T : Enum
         {
             return parameter.Any(enu => instance.HasFlag(enu));
@@ -397,6 +432,7 @@ namespace AutoDuty.Data
                 Job.ACN or Job.SMN => JobWithRole.Summoner,
                 Job.RDM => JobWithRole.Red_Mage,
                 Job.PCT => JobWithRole.Pictomancer,
+                Job.BLU => JobWithRole.Blue_Mage,
                 _ => JobWithRole.None
             };
 

@@ -217,6 +217,16 @@ public sealed class AutoDuty : IDalamudPlugin
     internal Overlay Overlay { get; init; }
     internal bool InDungeon => ContentHelper.DictionaryContent.ContainsKey(Svc.ClientState.TerritoryType);
     internal bool SkipTreasureCoffer = false;
+
+    /// <summary>
+    /// 多變迷宮(Variant Dungeon)目前走到的分歧編號,給
+    /// <see cref="Data.PathActionConditionVariantPath"/> 判斷步驟該不該執行。
+    /// ⚠️ 目前沒有任何程式碼會改變它 —— 上游是由 VariantVote 動作在投票時寫入的,
+    /// 而我方尚未移植 VariantVote(詳見 ActionsManager)。所以它恆為 0,
+    /// 只有 pathIndices 含 0 的條件會成立。移植 VariantVote 時要一併補上寫入端。
+    /// </summary>
+    internal byte VariantPath = 0;
+
     internal string Action = "";
     internal string PathFile = "";
     internal TaskManager TaskManager;
@@ -1352,6 +1362,39 @@ public sealed class AutoDuty : IDalamudPlugin
             Svc.Log.Debug($"Skipping path entry {Actions[Indexer].Name} because we are either in revival mode, LootTreasure is off or BossOnly");
             Indexer++;
             return;
+        }
+
+        // 步驟條件:全部成立才執行。空集合(絕大多數步驟)不進這個分支,行為與加入條件之前相同。
+        if (PathAction.Conditions.Count > 0)
+        {
+            PathActionCondition? unfulfilled = null;
+            foreach (PathActionCondition condition in PathAction.Conditions)
+            {
+                bool ok;
+                try
+                {
+                    ok = condition.IsFulfilled();
+                }
+                catch (Exception ex)
+                {
+                    // 條件算不出來就當成不成立(跳過該步驟),而不是讓例外把整個 Framework.Update 打斷。
+                    Svc.Log.Warning($"Path condition {condition.ParseKey} threw, treating as not fulfilled: {ex}");
+                    ok = false;
+                }
+
+                if (!ok)
+                {
+                    unfulfilled = condition;
+                    break;
+                }
+            }
+
+            if (unfulfilled != null)
+            {
+                Svc.Log.Debug($"Skipping path entry {PathAction.Name} because condition [{unfulfilled.Describe()}] is not fulfilled");
+                Indexer++;
+                return;
+            }
         }
 
         if (PathAction.Position == Vector3.Zero)

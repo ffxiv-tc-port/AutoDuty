@@ -139,6 +139,13 @@ namespace AutoDuty.Data
             [JsonPropertyName("arguments")]
             public List<string> Arguments { get; set; } = [];
 
+            /// <summary>
+            /// 這個步驟的執行條件。空集合＝無條件執行(與加入本欄位之前的行為完全相同)。
+            /// 全部成立才執行,任何一個不成立就整步跳過。
+            /// </summary>
+            [JsonPropertyName("conditions")]
+            public List<PathActionCondition> Conditions { get; set; } = [];
+
             [JsonPropertyName("note")]
             public string Note { get; set; } = string.Empty;
         }

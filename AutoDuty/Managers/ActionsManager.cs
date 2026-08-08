@@ -50,7 +50,12 @@ namespace AutoDuty.Managers
             ("CameraFacing", "Face which Coords?", "Adds a CameraFacing step to the path; after moving to the position, AutoDuty will face the coordinates specified.\nExample: CameraFacing|720.66, 57.24, 9.18|722.05, 62.47, 15.55"),
             ("ClickTalk", "false", "Adds a ClickTalk step to the path; after moving to the position, AutoDuty will click the talk addon."),
             ("ConditionAction","condition;args,action;args", "Adds a ConditionAction step to the path; after moving to the position, AutoDuty will check the condition specified and invoke Action."),
-            ("ModifyIndex", "what number (0-based)", "Adds a ModifyIndex step to the path; after moving to the position, AutoDuty will modify the index to the number specified.")
+            ("ModifyIndex", "what number (0-based)", "Adds a ModifyIndex step to the path; after moving to the position, AutoDuty will modify the index to the number specified."),
+            ("KillInRange", "Range", "Adds a KillInRange step to the path; AutoDuty will target and kill every hostile battle NPC within the specified range of the step position, then move on.\nExample: KillInRange|-12.12, 18.76, -148.05|15"),
+            ("SelectJournalResult", "accept? (true/false)", "Adds a SelectJournalResult step to the path; after moving to the position, AutoDuty will accept (or decline) the JournalResult window.\nExample: SelectJournalResult|0, 0, 0|true"),
+            ("JumpTo", "jump where? | how long before jump?", "Adds a JumpTo step to the path; AutoDuty will move towards the point without using the navmesh and then jump.\nExample: JumpTo|0, 0, 0|-12.12, 18.76, -148.05;500"),
+            ("Action", "ActionType | Action ID", "Adds an Action step to the path; after moving to the position, AutoDuty will wait until the action is ready and then use it.\nExample: Action|0, 0, 0|Action;23282"),
+            ("BLULoad", "enable? | which spell (Blue Magic Spellbook No.)", "Adds a BLULoad step to the path; when playing Blue Mage, AutoDuty will slot the specified spell in or out of the current loadout.\nExample: BLULoad|0, 0, 0|true;11")
         ];
 
         public void InvokeAction(PathAction action)
@@ -60,7 +65,7 @@ namespace AutoDuty.Managers
                 if (action != null)
                 {
                     var thisType = GetType();
-                    var actionTask = thisType.GetMethod(action.Name);
+                    var actionTask = thisType.GetMethod(action.Name) ?? ResolveActionIgnoreCase(thisType, action.Name);
                     _taskManager.Enqueue(() => actionTask?.Invoke(this, [action]), $"InvokeAction-{actionTask?.Name}");
                 }
                 else
@@ -70,6 +75,28 @@ namespace AutoDuty.Managers
             {
                 Svc.Log.Error(ex.ToString());
             }
+        }
+
+        /// <summary>
+        /// 動作名稱大小寫不符時的退路。上游的路徑檔裡確實有寫成 <c>Bossmod</c>(小寫 m)的步驟,
+        /// 而反射查方法是大小寫敏感的 ⇒ 那些步驟在上游與我方都是靜默地什麼都不做。
+        /// 這裡只在精確比對失敗時才啟用,並且要求方法簽章正好是 (PathAction),
+        /// 免得誤中 object 繼承來的 ToString/Equals 之類。
+        /// </summary>
+        private static System.Reflection.MethodInfo? ResolveActionIgnoreCase(Type thisType, string name)
+        {
+            if (name.IsNullOrEmpty())
+                return null;
+
+            System.Reflection.MethodInfo? candidate = thisType
+                                                      .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly)
+                                                      .FirstOrDefault(m => m.Name.Equals(name, StringComparison.OrdinalIgnoreCase) &&
+                                                                           m.GetParameters() is [{ } p] && p.ParameterType == typeof(PathAction));
+
+            if (candidate != null)
+                Svc.Log.Information($"路徑動作「{name}」大小寫與實作不符,已改用「{candidate.Name}」執行。");
+
+            return candidate;
         }
 
         public void Follow(PathAction action) => FollowHelper.SetFollow(GetObjectByName(action.Arguments[0]));
@@ -236,6 +263,170 @@ namespace AutoDuty.Managers
             _taskManager.Enqueue(() => InCombat, tot, "ForceAttack-WaitForCombat");
         }
 
+        /// <summary>
+        /// 往指定座標「不走導航網格」直線推進一段時間後起跳,再繼續推進到定點。
+        /// 用在有 mesh 斷開的跳躍捷徑上(例如落雷之獄的中段出口)。
+        /// </summary>
+        public unsafe void JumpTo(PathAction action)
+        {
+            if (action.Arguments.Count == 0)
+                return;
+
+            if (!action.Arguments[0].TryGetVector3(out Vector3 position))
+                return;
+
+            Plugin.Action = $"Jumping To {action.Arguments[0]}";
+
+            int wait = 100;
+            if (action.Arguments.Count > 1 && int.TryParse(action.Arguments[1], out int parsedWait) && parsedWait > 0)
+                wait = parsedWait;
+
+            _taskManager.Enqueue(() => VNavmesh_IPCSubscriber.Path_MoveTo([position], false), "Start-JumpTo-Move");
+
+            _taskManager.Enqueue(() => EzThrottler.Throttle("JumpTo", wait), "JumpTo-Wait");
+            _taskManager.Enqueue(() => EzThrottler.Check("JumpTo"), wait, "JumpTo-Wait");
+
+            _taskManager.Enqueue(() => ActionManager.Instance()->UseAction(ActionType.GeneralAction, 2), "JumpTo-Jump");
+            _taskManager.Enqueue(() => MovementHelper.Move(position, useMesh: false), "Finish-JumpTo-Move");
+            _taskManager.Enqueue(() => Plugin.Action = "");
+        }
+
+        /// <summary>
+        /// 等指定技能可用後施放一次。參數為 [ActionType, 技能 ID]。
+        /// 狀態碼 573 代表「這個職業沒有這個技能」,直接跳過不等。
+        /// </summary>
+        public unsafe void Action(PathAction action)
+        {
+            if (action.Arguments.Count < 2)
+                return;
+
+            if (!Enum.TryParse(action.Arguments[0], out ActionType type))
+                return;
+
+            if (!uint.TryParse(action.Arguments[1], out uint id))
+                return;
+
+            Svc.Log.Debug($"Action: {type} {id}");
+
+            if (ActionManager.Instance()->GetActionStatus(type, id) == 573)
+                return;
+
+            Plugin.Action = $"Action: {type} {id}";
+            _taskManager.Enqueue(() => ActionManager.Instance()->GetActionStatus(type, id) == 0, "Action-WaitTillReady");
+            _taskManager.Enqueue(() => ActionManager.Instance()->UseAction(type, id), "Action-UsingAction");
+            _taskManager.Enqueue(() => Plugin.Action = "");
+        }
+
+        /// <summary>
+        /// 青魔道士專用:把某個青魔法書編號的魔法換進/換出當前配置。
+        /// 參數為 [true/false 是否放入, 青魔法書編號]。非青魔時整步不做事。
+        /// </summary>
+        public void BLULoad(PathAction action)
+        {
+            if (action.Arguments.Count < 2)
+                return;
+
+            if (GetJob() != ECommons.ExcelServices.Job.BLU)
+                return;
+
+            if (!bool.TryParse(action.Arguments[0], out bool enable))
+                return;
+
+            if (!byte.TryParse(action.Arguments[1], out byte spell))
+                return;
+
+            Plugin.Action = $"BLULoad: {(enable ? "+" : "-")}{spell}";
+            _taskManager.Enqueue(() => !Svc.Condition.Any(ConditionFlag.InCombat, ConditionFlag.Casting), "BLULoad-WaitOOC");
+
+            if (enable)
+                _taskManager.Enqueue(() => BLUHelper.SpellLoadoutIn(spell), "BLULoad-In");
+            else
+                _taskManager.Enqueue(() => BLUHelper.SpellLoadoutOut(spell), "BLULoad-Out");
+
+            _taskManager.Enqueue(() => Plugin.Action = "");
+        }
+
+        /// <summary>
+        /// 只給 <see cref="KillInRange"/> 用的鎖定判定。
+        /// ⚠️ 刻意不共用下面的 <see cref="TargetCheck"/>:那一支的判斷式極性是反的
+        /// (可鎖定就直接回 true,永遠不會真的去鎖定),那是從上游 v19 一路帶過來的既有行為,
+        /// 這次不動它。這裡採用上游修好之後的極性。
+        /// 回傳 true＝「這個目標不用再處理了」(不可鎖定/已經是當前目標),false＝還在鎖定中。
+        /// </summary>
+        private bool AcquireTargetCheck(IGameObject? gameObject)
+        {
+            if (gameObject is not { IsTargetable: true } || !gameObject.IsValid() || (Svc.Targets.Target?.Equals(gameObject) ?? false))
+                return true;
+
+            if (EzThrottler.Check("AcquireTargetCheck"))
+            {
+                EzThrottler.Throttle("AcquireTargetCheck", 25);
+                Svc.Targets.Target = gameObject;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 把步驟座標周圍指定半徑內的敵對戰鬥 NPC 逐一鎖定並打完,清空之後才往下一步。
+        /// 施放什麼技能由使用者自己的循環外掛決定,這裡只負責選目標與靠近。
+        /// </summary>
+        public void KillInRange(PathAction action)
+        {
+            if (action.Arguments.Count < 1)
+                return;
+
+            if (!uint.TryParse(action.Arguments[0], out uint range))
+                return;
+
+            Plugin.Action = $"Killing in {range}y";
+
+            // 只捕獲純量:半徑與步驟座標,不捕獲任何 IGameObject。
+            Vector3 center = action.Position;
+
+            _taskManager.Enqueue(() => BossMod_IPCSubscriber.SetMovement(true), "KillInRange-StopForCombat");
+
+            _taskManager.Enqueue(() =>
+                                 {
+                                     if (!EzThrottler.Throttle("KillInRange"))
+                                         return false;
+
+                                     // 每次檢查都重新列舉物件表,不跨幀保存任何原生指標。
+                                     List<IGameObject> gameObjects = Svc.Objects.Where(igo => igo is { ObjectKind: Dalamud.Game.ClientState.Objects.Enums.ObjectKind.BattleNpc, IsTargetable: true } &&
+                                                                                              igo.IsHostile() &&
+                                                                                              BelowDistanceToPoint(igo.Position, center, range, range / 2f))
+                                                                                .ToList();
+
+                                     if (gameObjects.Count == 0)
+                                         return true;
+
+                                     IGameObject? current = Svc.Targets.Target;
+                                     if (current != null && gameObjects.Contains(current))
+                                     {
+                                         if (GetDistanceToPlayer(current) < 30)
+                                             VNavmesh_IPCSubscriber.Path_Stop();
+                                         return false;
+                                     }
+
+                                     IGameObject target = gameObjects.OrderBy(GetDistanceToPlayer).First();
+
+                                     if (AcquireTargetCheck(target) && GetDistanceToPlayer(target) < 30)
+                                         VNavmesh_IPCSubscriber.Path_Stop();
+                                     else
+                                         VNavmesh_IPCSubscriber.SimpleMove_PathfindAndMoveTo(target.Position, false);
+
+                                     return false;
+                                 }, int.MaxValue, "KillInRange-Main");
+
+            _taskManager.Enqueue(() =>
+                                 {
+                                     // 副本本身不是「戰鬥時停下」模式的話,把 BossMod 的移動控制還回去。
+                                     if (!Plugin.StopForCombat)
+                                         BossMod_IPCSubscriber.SetMovement(false);
+                                 }, "KillInRange-RestoreMovement");
+            _taskManager.Enqueue(() => Plugin.Action = "");
+        }
+
         public unsafe void Jump(PathAction action)
         {
             Plugin.Action = $"Jumping";
@@ -374,6 +565,21 @@ namespace AutoDuty.Managers
             _taskManager.Enqueue(() => AddonHelper.ClickSelectString(Convert.ToInt32(action.Arguments[0])), "SelectString");
             _taskManager.DelayNext("SelectString", 500);
             _taskManager.Enqueue(() => !IsCasting, "SelectString");
+            _taskManager.Enqueue(() => Plugin.Action = "");
+        }
+
+        /// <summary>接受(或拒絕)JournalResult 視窗。新人訓練所那批路徑檔用它結算每一課。</summary>
+        public void SelectJournalResult(PathAction action)
+        {
+            if (action.Arguments.Count == 0)
+                return;
+
+            bool accept = bool.TryParse(action.Arguments[0], out bool parsed) && parsed;
+
+            _taskManager.Enqueue(() => Plugin.Action = $"JournalResult: {action.Arguments[0]}, {action.Note}", "JournalResult");
+            _taskManager.Enqueue(() => AddonHelper.SelectJournalResult(accept), "JournalResult");
+            _taskManager.DelayNext("JournalResult", 500);
+            _taskManager.Enqueue(() => !IsCasting, "JournalResult");
             _taskManager.Enqueue(() => Plugin.Action = "");
         }
 
