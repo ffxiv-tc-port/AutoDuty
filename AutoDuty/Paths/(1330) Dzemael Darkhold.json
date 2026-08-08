@@ -41,68 +41,26 @@
       "Note": ""
     },
     {
-      "Tag": "Unsynced",
-      "Name": "MoveTo",
+      "Tag": "Synced",
+      "Name": "StopForCombat",
       "Position": {
-        "X": -48.470882,
-        "Y": 44.37835,
-        "Z": -89.01802
-      },
-      "Arguments": [
-        ""
-      ],
-      "Conditions": [],
-      "Note": ""
-    },
-    {
-      "Tag": "Unsynced",
-      "Name": "MoveTo",
-      "Position": {
-        "X": -41.75999,
-        "Y": 42.120636,
-        "Z": -85.28036
+        "X": 77.23121,
+        "Y": 4.191577,
+        "Z": 210.3302
       },
       "Arguments": [
         "FALSE"
       ],
       "Conditions": [],
-      "Note": ""
+      "Note": "Prevents hugging the wall before reaching the second crystal."
     },
     {
-      "Tag": "None",
-      "Name": "KillInRange",
-      "Position": {
-        "X": 8.340107,
-        "Y": 29.747614,
-        "Z": -17.379728
-      },
-      "Arguments": [
-        "10"
-      ],
-      "Conditions": [],
-      "Note": ""
-    },
-    {
-      "Tag": "None",
-      "Name": "KillInRange",
-      "Position": {
-        "X": -11.394645,
-        "Y": 23.419563,
-        "Z": 34.24331
-      },
-      "Arguments": [
-        "10"
-      ],
-      "Conditions": [],
-      "Note": ""
-    },
-    {
-      "Tag": "Unsynced",
+      "Tag": "Synced",
       "Name": "StopForCombat",
       "Position": {
-        "X": 0.0,
-        "Y": 0.0,
-        "Z": 0.0
+        "X": 97.99722,
+        "Y": 1.2761085,
+        "Z": 177.64655
       },
       "Arguments": [
         "TRUE"
@@ -114,11 +72,25 @@
       "Tag": "Treasure",
       "Name": "TreasureCoffer",
       "Position": {
-        "X": -18.025879,
-        "Y": 23.350609,
-        "Z": 40.407238
+        "X": 81.78937,
+        "Y": 2.067525,
+        "Z": 127.45017
       },
       "Arguments": [],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "Unsynced",
+      "Name": "StopForCombat",
+      "Position": {
+        "X": 65.018776,
+        "Y": -14.497273,
+        "Z": 94.008194
+      },
+      "Arguments": [
+        "TRUE"
+      ],
       "Conditions": [],
       "Note": ""
     },
@@ -135,30 +107,18 @@
       "Note": "<-- Boss / ボス #1 -->"
     },
     {
-      "Tag": "Revival",
-      "Name": "Revival",
-      "Position": {
-        "X": 0.0,
-        "Y": 0.0,
-        "Z": 0.0
-      },
-      "Arguments": [],
-      "Conditions": [],
-      "Note": ""
-    },
-    {
       "Tag": "None",
       "Name": "Boss",
       "Position": {
-        "X": 35.897793,
-        "Y": 16.283735,
-        "Z": 93.68349
+        "X": 46.360134,
+        "Y": -14.405196,
+        "Z": 75.00261
       },
       "Arguments": [
         ""
       ],
       "Conditions": [],
-      "Note": "Liavinne"
+      "Note": "All-seeing Eye"
     },
     {
       "Tag": "Comment",
@@ -171,6 +131,68 @@
       "Arguments": [],
       "Conditions": [],
       "Note": "<-- Trash Packs / 雑魚 -->"
+    },
+    {
+      "Tag": "None",
+      "Name": "Interactable",
+      "Position": {
+        "X": 26.611492,
+        "Y": -13.482446,
+        "Z": 58.71247
+      },
+      "Arguments": [
+        "2000458"
+      ],
+      "Conditions": [],
+      "Note": "Magitek Transporter"
+    },
+    {
+      "Tag": "None",
+      "Name": "WaitFor",
+      "Position": {
+        "X": 0.0,
+        "Y": 0.0,
+        "Z": 0.0
+      },
+      "Arguments": [
+        "IsReady"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "ModifyIndex",
+      "Position": {
+        "X": 0.0,
+        "Y": 0.0,
+        "Z": 0.0
+      },
+      "Arguments": [
+        "-2"
+      ],
+      "Conditions": [
+        {
+          "$type": "AutoDuty.Data.PathActionConditionDistance, AutoDuty",
+          "origin": "Location",
+          "originId": 0,
+          "originLoc": {
+            "X": 29.563,
+            "Y": -14.207,
+            "Z": 61.993
+          },
+          "target": "Player",
+          "targetId": 0,
+          "targetLoc": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "operatorValue": "<",
+          "distance": 100.0
+        }
+      ],
+      "Note": "Goes back if you haven't taken the Transporter."
     },
     {
       "Tag": "Unsynced",
@@ -190,67 +212,11 @@
       "Tag": "Treasure",
       "Name": "TreasureCoffer",
       "Position": {
-        "X": 81.97482,
-        "Y": 16.409752,
-        "Z": 140.19354
+        "X": -225.68459,
+        "Y": -23.137669,
+        "Z": 42.028175
       },
       "Arguments": [],
-      "Conditions": [],
-      "Note": ""
-    },
-    {
-      "Tag": "None",
-      "Name": "Interactable",
-      "Position": {
-        "X": 79.35395,
-        "Y": 17.793236,
-        "Z": 148.62628
-      },
-      "Arguments": [
-        "2004090"
-      ],
-      "Conditions": [],
-      "Note": "Defiled Coffin"
-    },
-    {
-      "Tag": "None",
-      "Name": "KillInRange",
-      "Position": {
-        "X": 72.054016,
-        "Y": 16.518417,
-        "Z": 138.74574
-      },
-      "Arguments": [
-        "10"
-      ],
-      "Conditions": [],
-      "Note": ""
-    },
-    {
-      "Tag": "None",
-      "Name": "Interactable",
-      "Position": {
-        "X": 74.20715,
-        "Y": 18.378536,
-        "Z": 48.960712
-      },
-      "Arguments": [
-        "2004091"
-      ],
-      "Conditions": [],
-      "Note": "Defiled Coffin"
-    },
-    {
-      "Tag": "None",
-      "Name": "KillInRange",
-      "Position": {
-        "X": 74.72382,
-        "Y": 16.884855,
-        "Z": 64.02305
-      },
-      "Arguments": [
-        "10"
-      ],
       "Conditions": [],
       "Note": ""
     },
@@ -258,9 +224,9 @@
       "Tag": "Treasure",
       "Name": "TreasureCoffer",
       "Position": {
-        "X": 132.33266,
-        "Y": 16.448122,
-        "Z": 78.867
+        "X": -140.2709,
+        "Y": -25.818148,
+        "Z": 55.947014
       },
       "Arguments": [],
       "Conditions": [],
@@ -268,28 +234,28 @@
     },
     {
       "Tag": "None",
-      "Name": "Interactable",
+      "Name": "MoveTo",
       "Position": {
-        "X": 147.13266,
-        "Y": 17.999992,
-        "Z": 67.24258
+        "X": -111.099594,
+        "Y": -23.804768,
+        "Z": 4.6238256
       },
       "Arguments": [
-        "2004092"
+        ""
       ],
       "Conditions": [],
-      "Note": "Defiled Coffin"
+      "Note": ""
     },
     {
       "Tag": "None",
-      "Name": "KillInRange",
+      "Name": "MoveTo",
       "Position": {
-        "X": 132.23978,
-        "Y": 16.376793,
-        "Z": 67.865875
+        "X": -111.824066,
+        "Y": -24.439007,
+        "Z": -7.4638395
       },
       "Arguments": [
-        "15"
+        "FALSE"
       ],
       "Conditions": [],
       "Note": ""
@@ -321,30 +287,18 @@
       "Note": "<-- Boss / ボス #2 -->"
     },
     {
-      "Tag": "Revival",
-      "Name": "Revival",
-      "Position": {
-        "X": 0.0,
-        "Y": 0.0,
-        "Z": 0.0
-      },
-      "Arguments": [],
-      "Conditions": [],
-      "Note": ""
-    },
-    {
       "Tag": "None",
       "Name": "Boss",
       "Position": {
-        "X": 87.73187,
-        "Y": 22.1,
-        "Z": -41.859154
+        "X": -96.21404,
+        "Y": -30.500002,
+        "Z": -30.250416
       },
       "Arguments": [
         ""
       ],
       "Conditions": [],
-      "Note": "Spare Body"
+      "Note": "Taulurd"
     },
     {
       "Tag": "Comment",
@@ -362,27 +316,15 @@
       "Tag": "None",
       "Name": "Interactable",
       "Position": {
-        "X": 93.28349,
-        "Y": 22.1,
-        "Z": -49.031143
+        "X": -96.86854,
+        "Y": -30.246162,
+        "Z": -37.788185
       },
       "Arguments": [
-        "2004095"
+        "2000474"
       ],
       "Conditions": [],
-      "Note": "Aetherial Flow"
-    },
-    {
-      "Tag": "Revival",
-      "Name": "Revival",
-      "Position": {
-        "X": 0.0,
-        "Y": 0.0,
-        "Z": 0.0
-      },
-      "Arguments": [],
-      "Conditions": [],
-      "Note": ""
+      "Note": "Magitek Transporter"
     },
     {
       "Tag": "None",
@@ -399,6 +341,40 @@
       "Note": ""
     },
     {
+      "Tag": "None",
+      "Name": "ModifyIndex",
+      "Position": {
+        "X": 0.0,
+        "Y": 0.0,
+        "Z": 0.0
+      },
+      "Arguments": [
+        "-2"
+      ],
+      "Conditions": [
+        {
+          "$type": "AutoDuty.Data.PathActionConditionDistance, AutoDuty",
+          "origin": "Location",
+          "originId": 0,
+          "originLoc": {
+            "X": -97.16,
+            "Y": -30.42,
+            "Z": -29.681
+          },
+          "target": "Player",
+          "targetId": 0,
+          "targetLoc": {
+            "X": 0.0,
+            "Y": 0.0,
+            "Z": 0.0
+          },
+          "operatorValue": "<=",
+          "distance": 20.0
+        }
+      ],
+      "Note": "Goes back if you haven't taken the Transporter."
+    },
+    {
       "Tag": "Unsynced",
       "Name": "StopForCombat",
       "Position": {
@@ -413,28 +389,28 @@
       "Note": ""
     },
     {
-      "Tag": "Treasure",
-      "Name": "TreasureCoffer",
+      "Tag": "None",
+      "Name": "KillInRange",
       "Position": {
-        "X": -150.90598,
-        "Y": 15.770683,
-        "Z": 91.21432
+        "X": -6.961212,
+        "Y": -22.155823,
+        "Z": -160.72961
       },
-      "Arguments": [],
+      "Arguments": [
+        "25"
+      ],
       "Conditions": [],
       "Note": ""
     },
     {
       "Tag": "None",
-      "Name": "KillInRange",
+      "Name": "MoveTo",
       "Position": {
-        "X": -105.36718,
-        "Y": 13.850155,
-        "Z": 21.746346
+        "X": 47.791676,
+        "Y": -33.69053,
+        "Z": -139.74321
       },
-      "Arguments": [
-        "10"
-      ],
+      "Arguments": [],
       "Conditions": [],
       "Note": ""
     },
@@ -465,38 +441,46 @@
       "Note": "<-- Boss / ボス #3 -->"
     },
     {
-      "Tag": "Revival",
-      "Name": "Revival",
-      "Position": {
-        "X": 0.0,
-        "Y": 0.0,
-        "Z": 0.0
-      },
-      "Arguments": [],
-      "Conditions": [],
-      "Note": ""
-    },
-    {
       "Tag": "None",
       "Name": "Boss",
       "Position": {
-        "X": -55.337437,
-        "Y": 14.055,
-        "Z": -8.348314
+        "X": 79.07387,
+        "Y": -39.000008,
+        "Z": -170.15167
       },
       "Arguments": [
         ""
       ],
       "Conditions": [],
-      "Note": "Avere Bravearm"
+      "Note": "Batraal"
     }
   ],
   "Meta": {
-    "CreatedAt": 224,
+    "CreatedAt": 279,
     "Changelog": [
       {
+        "Version": 279,
+        "Change": "Added arm 1 treasure"
+      },
+      {
+        "Version": 290,
+        "Change": "Added safeguards for transitions"
+      },
+      {
+        "Version": 290,
+        "Change": "Moved B3 spot"
+      },
+      {
+        "Version": 291,
+        "Change": "Enhanced path stability"
+      },
+      {
+        "Version": 298,
+        "Change": "Added safety step before b3"
+      },
+      {
         "Version": 299,
-        "Change": "Added Trash/Boss Comments & Boss names. Added Unsynced steps. Added KillInRange steps. Added appropriate Revival steps. Removed excess MoveTo steps."
+        "Change": "Added Trash/Boss Comments. Added Unsynced steps. Removed excess MoveTo steps (kept the notable ones from previous Changes)."
       },
       {
         "Version": 304,
