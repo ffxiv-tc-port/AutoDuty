@@ -645,12 +645,65 @@ namespace AutoDuty.IPC
             Svc.Log.Info($"Wrath lease cancelled via {(CancellationReason) reason} for: {s}");
         }
 
+        /// <summary>
+        ///     租約我們只拿得到一個 handle，真狀態在 Wrath Combo 那一端。
+        ///     這個欄位記住「已經試過釋放但沒被對方確認」的那一份，用來把重試次數限制成一次。
+        /// </summary>
+        private static Guid? _unconfirmedReleaseLease;
+
         internal static void Release()
         {
-            if (_curLease.HasValue)
+            if (!_curLease.HasValue)
             {
-                ReleaseControl(_curLease.Value);
-                _curLease = null;
+                _unconfirmedReleaseLease = null;
+                return;
+            }
+
+            Guid lease = _curLease.Value;
+
+            // 判準＝誰持有真狀態：租約的真狀態在 Wrath Combo 手上，我們這邊只是一個 handle。
+            // 對方持有 ⇒ 確認對方放掉才放手，不能無條件把 _curLease 清成 null。
+            if (!IsEnabled)
+            {
+                // Wrath Combo 根本沒載入，租約隨它一起消失了，沒有東西要等對方放掉。
+                Svc.Log.Information($"Wrath Combo is not loaded - dropping Wrath lease {lease} handle without releasing.");
+                _curLease                = null;
+                _unconfirmedReleaseLease = null;
+                return;
+            }
+
+            bool isRetry = _unconfirmedReleaseLease == lease;
+
+            Svc.Log.Information(isRetry ?
+                                    $"Retrying release of Wrath lease {lease}." :
+                                    $"Releasing Wrath lease {lease}.");
+
+            // ⚠️ ReleaseControl 是 void，而且掛在 SafeWrapper.AnyException 底下（見 EzIPC.Init 那行）：
+            // 租約已失效、IPC 停用、或呼叫整個擲例外，在這裡通通長得跟成功一模一樣。
+            // 成功時 Wrath Combo 會**同步**回呼 AutoDuty.WrathComboCallback → CancelActions，
+            // 由它把 _curLease 清成 null —— 所以「呼叫後 _curLease 已經是 null」才是對方真的放掉的證據。
+            ReleaseControl(lease);
+
+            if (!_curLease.HasValue)
+            {
+                _unconfirmedReleaseLease = null;
+                return;
+            }
+
+            if (isRetry)
+            {
+                // 重試也沒被確認就不要無限拖著：本機放手。
+                // Wrath Combo 會自行清掉 leasee 外掛已不在的租約，所以這裡不會留下永久的孤兒租約。
+                Svc.Log.Information($"Wrath lease {lease} release is still unconfirmed after a retry - dropping the handle locally.");
+                _curLease                = null;
+                _unconfirmedReleaseLease = null;
+            }
+            else
+            {
+                // 保留 handle：租約很可能還在對方那裡有效，丟掉 handle 才是真的把它變成孤兒。
+                // 後續的 set 呼叫若拿到 InvalidLease，CheckResult 也會自行清掉並重新註冊。
+                _unconfirmedReleaseLease = lease;
+                Svc.Log.Information($"Wrath lease {lease} release was not confirmed by Wrath Combo - keeping the handle and retrying on the next release.");
             }
         }
 
