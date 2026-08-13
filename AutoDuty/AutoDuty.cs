@@ -266,6 +266,19 @@ public sealed class AutoDuty : IDalamudPlugin
             // 讓「呼叫了對方沒有的 IPC 方法」不再完全靜默。
             // 訂閱越早越好：事件只在 IPC **呼叫**當下才被查閱，在這裡訂閱就涵蓋往後所有呼叫。
             EzIpcFailureLog.Enable();
+
+            // ECommons.IPC 的 IPCBase 預設 wrapper 是 SafeWrapper.None(例外直接往外擲)，
+            // 而且它是 lazy 單例、在第一次存取當下就烘死。AutoDuty 的門面類一律自己 new 並
+            // 把 wrapper 當建構式參數傳進去,所以不依賴這個值;這裡設成我方最常用的
+            // IPCException,是為了「萬一有人改用 ECommonsIPC.X 單例」時不會退回會擲例外的 None。
+            ECommons.IPC.Subscribers.IPCBase.DefaultWrapper = ECommons.EzIpcManager.SafeWrapper.IPCException;
+
+            // WrathCombo.API 若沒初始化,第一次呼叫會擲 UninitializedException;它也能自己從
+            // ECommons 反射拿 PluginInterface,但那條路失敗時是靜默回 null,所以明確傳進去。
+            // 🔴 不加任何 ErrorType 抑制:讓它照常擲例外,由 Wrath_IPCSubscriber.WrathSafe
+            // 接住並轉交 EzIpcFailureLog —— 抑制掉的話 Wrath IPC 失敗會完全沒有 log。
+            WrathCombo.API.WrathIPCWrapper.Init(PluginInterface);
+
             ECommons.LanguageHelpers.Localization.Init("ChineseTraditional");
             PictoService.Initialize(PluginInterface);
 

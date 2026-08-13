@@ -59,6 +59,20 @@ internal static class EzIpcFailureLog
         EzIPC.OnSafeInvocationException -= OnSafeInvocationException;
     }
 
+    /// <summary>
+    /// 手動投遞一則 IPC 失敗。
+    /// <para>
+    /// 給**不走 EzIPC 的**跨外掛管線用 —— 目前是 Wrath Combo：它的用戶端程式庫
+    /// WrathCombo.API 有自己一套錯誤處理，不會觸發 <see cref="EzIPC.OnSafeInvocationException"/>。
+    /// <c>Wrath_IPCSubscriber</c> 自己 catch 之後轉交到這裡，才能與其他 IPC 失敗走同一條
+    /// 節流／格式／記錄等級的路。
+    /// </para>
+    /// <para>
+    /// ⚠️ 與事件路徑一樣，這個方法保證不擲例外（實作整段包在 try 裡）。
+    /// </para>
+    /// </summary>
+    internal static void Report(Exception e) => OnSafeInvocationException(e);
+
     private static void OnSafeInvocationException(Exception e)
     {
         // 這個處理常式是在 SafeWrapper 的 catch 區塊裡被呼叫的。
