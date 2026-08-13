@@ -50,7 +50,7 @@ namespace AutoDuty.Managers
             ("CameraFacing", "Face which Coords?", "Adds a CameraFacing step to the path; after moving to the position, AutoDuty will face the coordinates specified.\nExample: CameraFacing|720.66, 57.24, 9.18|722.05, 62.47, 15.55"),
             ("ClickTalk", "false", "Adds a ClickTalk step to the path; after moving to the position, AutoDuty will click the talk addon."),
             ("ConditionAction","condition;args,action;args", "Adds a ConditionAction step to the path; after moving to the position, AutoDuty will check the condition specified and invoke Action."),
-            ("ModifyIndex", "what number (0-based)", "Adds a ModifyIndex step to the path; after moving to the position, AutoDuty will modify the index to the number specified."),
+            ("ModifyIndex", "which step (+/- for relative)", "Adds a ModifyIndex step to the path; after moving to the position, AutoDuty will modify the index. A leading + or - makes it relative to this step (-1 redoes the previous step); otherwise it is an absolute 0-based index.\nExample: ModifyIndex|0, 0, 0|-1"),
             ("KillInRange", "Range", "Adds a KillInRange step to the path; AutoDuty will target and kill every hostile battle NPC within the specified range of the step position, then move on.\nExample: KillInRange|-12.12, 18.76, -148.05|15"),
             ("SelectJournalResult", "accept? (true/false)", "Adds a SelectJournalResult step to the path; after moving to the position, AutoDuty will accept (or decline) the JournalResult window.\nExample: SelectJournalResult|0, 0, 0|true"),
             ("JumpTo", "jump where? | how long before jump?", "Adds a JumpTo step to the path; AutoDuty will move towards the point without using the navmesh and then jump.\nExample: JumpTo|0, 0, 0|-12.12, 18.76, -148.05;500"),
@@ -211,10 +211,37 @@ namespace AutoDuty.Managers
             BossMod_IPCSubscriber.SetMovement(action.Arguments[0].Equals("on", StringComparison.InvariantCultureIgnoreCase));
         }
 
+        /// <summary>
+        /// 路徑檔的 ModifyIndex 步驟。引數開頭是 <c>+</c> 或 <c>-</c> 時是<b>相對</b>位移,
+        /// 否則才是絕對索引(0 起算)。這是上游語意。
+        /// 🔴 本 fork 先前一律當成絕對索引 —— 而 <c>int.TryParse("-1")</c> / <c>TryParse("+3")</c>
+        ///    都會成功,所以失敗形式是<b>靜默跳到錯的步驟</b>而不是例外。`-1` 更會把 Indexer 設成 -1,
+        ///    使 <c>StageReadingPath()</c> 開頭的 <c>Indexer == -1</c> 前置檢查每幀直接 return ⇒ 整條路徑停住。
+        ///    2026-08-13 稽核:326 個路徑檔的 80 個 ModifyIndex 用法<b>全部</b>是相對語意。
+        /// </summary>
         public void ModifyIndex(PathAction action)
         {
             if (!int.TryParse(action.Arguments[0], out int _index)) return;
-            Plugin.Indexer = _index;
+            ModifyIndex(_index, action.Arguments[0][0] is '+' or '-');
+        }
+
+        /// <summary>
+        /// 相對位移的基準點是「ModifyIndex 這一步自己的索引」。時序:
+        /// 本方法是以 TaskManager 任務的身分執行的,而從 <c>Stage.Action</c> 被設定(setter 裡呼叫
+        /// <c>ActionInvoke()</c> 把任務排進佇列)到任務真的執行為止,沒有任何地方動過 <c>Plugin.Indexer</c>
+        /// —— <c>StageAction()</c> 的 <c>Indexer++</c> 要 <c>!TaskManager.IsBusy</c> 才會跑,此刻佇列還沒空。
+        /// 而本方法結尾把 Stage 改回 <c>Reading_Path</c>,之後 <c>StageAction()</c> 再也不會被派送到
+        /// ⇒ 那個 <c>Indexer++</c> 不會補套上來。所以 <c>-1</c> 就是「退回前一步重做」。與上游行為一致。
+        /// </summary>
+        private void ModifyIndex(int index, bool modify)
+        {
+            int before = Plugin.Indexer;
+            if (modify)
+                Plugin.Indexer += index;
+            else
+                Plugin.Indexer = index;
+            // 使用者跑 LogLevel 2,診斷一律 Information。ModifyIndex 步驟很少,不會洗版。
+            Svc.Log.Information($"ModifyIndex: {before} -> {Plugin.Indexer} (arg={index}, relative={modify})");
             Plugin.Stage = Stage.Reading_Path;
         }
 
