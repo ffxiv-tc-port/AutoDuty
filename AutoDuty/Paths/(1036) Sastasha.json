@@ -367,6 +367,27 @@
       "Note": "Captain's Quarters Key"
     },
     {
+      "Tag": "None",
+      "Name": "ModifyIndex",
+      "Position": {
+        "X": 0.0,
+        "Y": 0.0,
+        "Z": 0.0
+      },
+      "Arguments": [
+        "-1"
+      ],
+      "Conditions": [
+        {
+          "$type": "AutoDuty.Data.PathActionConditionItemCount, AutoDuty",
+          "itemId": 2000512,
+          "quantity": 1,
+          "operatorValue": "<"
+        }
+      ],
+      "Note": ""
+    },
+    {
       "Tag": "Treasure",
       "Name": "Interactable",
       "Position": {
@@ -379,6 +400,27 @@
       ],
       "Conditions": [],
       "Note": "Key to the Hole"
+    },
+    {
+      "Tag": "Treasure",
+      "Name": "ModifyIndex",
+      "Position": {
+        "X": 0.0,
+        "Y": 0.0,
+        "Z": 0.0
+      },
+      "Arguments": [
+        "-1"
+      ],
+      "Conditions": [
+        {
+          "$type": "AutoDuty.Data.PathActionConditionItemCount, AutoDuty",
+          "itemId": 2000514,
+          "quantity": 1,
+          "operatorValue": "<"
+        }
+      ],
+      "Note": ""
     },
     {
       "Tag": "Treasure",
@@ -433,6 +475,27 @@
       ],
       "Conditions": [],
       "Note": "Waverider Gate Key"
+    },
+    {
+      "Tag": "None",
+      "Name": "ModifyIndex",
+      "Position": {
+        "X": 0.0,
+        "Y": 0.0,
+        "Z": 0.0
+      },
+      "Arguments": [
+        "-1"
+      ],
+      "Conditions": [
+        {
+          "$type": "AutoDuty.Data.PathActionConditionItemCount, AutoDuty",
+          "itemId": 2000513,
+          "quantity": 1,
+          "operatorValue": "<"
+        }
+      ],
+      "Note": ""
     },
     {
       "Tag": "None",
@@ -595,6 +658,10 @@
       {
         "Version": 304,
         "Change": "Version update"
+      },
+      {
+        "Version": 325,
+        "Change": "Safety check for keys"
       }
     ],
     "Notes": []
