@@ -19,7 +19,9 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 9.x
+          # 10.x:子模組 WrathCombo.API 的 LangVersion 是 14(上游用了 C# 14 的 extension 區塊
+          # 與 field 關鍵字),必須用 .NET 10 SDK 才編得動。目標框架仍是 net9 / API13,不變。
+          dotnet-version: 10.x
       - name: Download Dalamud (pinned TC-compatible build)
         shell: pwsh
         run: |

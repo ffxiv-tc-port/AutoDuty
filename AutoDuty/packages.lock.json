@@ -981,6 +981,15 @@
       },
       "ecommons": {
         "type": "Project"
+      },
+      "ecommons.ipc": {
+        "type": "Project",
+        "dependencies": {
+          "ECommons": "[3.0.1.15, )"
+        }
+      },
+      "wrathcombo.api": {
+        "type": "Project"
       }
     }
   }

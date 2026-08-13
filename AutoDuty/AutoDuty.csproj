@@ -60,6 +60,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ECommons\ECommons\ECommons.csproj" />
+    <ProjectReference Include="..\ECommons.IPC\ECommons.IPC\ECommons.IPC.csproj" />
+    <ProjectReference Include="..\WrathCombo.API\WrathCombo.API.csproj" />
     <PackageReference Include="Pictomancy" Version="0.0.1" />
     <Reference Include="Dalamud.Common">
       <HintPath>$(DalamudLibPath)Dalamud.Common.dll</HintPath>
