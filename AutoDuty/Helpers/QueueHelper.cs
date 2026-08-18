@@ -82,6 +82,8 @@ namespace AutoDuty.Helpers
             if (TrustHelper.State == ActionState.Running) return;
 
             AgentDawn* agentDawn = AgentDawn.Instance();
+            if (agentDawn == null) return;
+
             if (!agentDawn->IsAddonReady())
             {
                 if (!EzThrottler.Throttle("OpenDawn", 5000) || !AgentHUD.Instance()->IsMainCommandEnabled(82)) return;
@@ -91,7 +93,13 @@ namespace AutoDuty.Helpers
                 return;
             }
 
-            if (agentDawn->Data->ContentData.ExpansionCount < (_content!.ExVersion - 2))
+            // IsAddonReady() 只代表附加介面已就緒，不保證代理人的 Data 資料區塊已配置：
+            // 兩者生命週期不同步。每次重取、顯式判空、同幀即用；為 null 時安靜跳過本次
+            // 處理，下一幀（節流後）再試。
+            var dawnData = agentDawn->Data;
+            if (dawnData == null) return;
+
+            if (dawnData->ContentData.ExpansionCount < (_content!.ExVersion - 2))
             {
                 Svc.Log.Debug($"Queue Helper - You do not have expansion: {_content.ExVersion} unlocked stopping");
                 Stop();
@@ -107,7 +115,7 @@ namespace AutoDuty.Helpers
             {
                 if (EzThrottler.Throttle("_turnedOffTrustMembers", 500))
                 {
-                    agentDawn->Data->PartyData.ClearParty();
+                    dawnData->PartyData.ClearParty();
                     agentDawn->UpdateAddon();
                     SchedulerHelper.ScheduleAction("_turnedOffTrustMembers", () => _turnedOffTrustMembers = true, 250);
                 }
@@ -116,7 +124,7 @@ namespace AutoDuty.Helpers
             {
                 if (EzThrottler.Throttle("_turnedOnConfigMembers", 500))
                 {
-                    AgentDawnInterface.DawnMemberEntry* curMembers = agentDawn->Data->MemberData.GetMembers(agentDawn->Data->MemberData.CurrentMembersIndex);
+                    AgentDawnInterface.DawnMemberEntry* curMembers = dawnData->MemberData.GetMembers(dawnData->MemberData.CurrentMembersIndex);
                     var                                 members    = Plugin.Configuration.SelectedTrustMembers;
                     if (members.Count(x => x is not null) == 3)
                         members.OrderBy(x => TrustHelper.Members[(TrustMemberName)x!].Role)
@@ -127,7 +135,7 @@ namespace AutoDuty.Helpers
                                              byte                               index       = TrustHelper.Members[(TrustMemberName)member].Index;
                                              AgentDawnInterface.DawnMemberEntry memberEntry = curMembers[index];
 
-                                             agentDawn->Data->PartyData.AddMember(index, &memberEntry);
+                                             dawnData->PartyData.AddMember(index, &memberEntry);
                                          }
                                      });
                     agentDawn->UpdateAddon();
@@ -144,6 +152,8 @@ namespace AutoDuty.Helpers
         private void QueueSupport()
         {
             AgentDawnStory* agentDawnStory = AgentDawnStory.Instance();
+            if (agentDawnStory == null) return;
+
             if (!agentDawnStory->IsAddonReady())
             {
                 if (!EzThrottler.Throttle("OpenDawnStory", 5000) || !AgentHUD.Instance()->IsMainCommandEnabled(91)) return;
@@ -153,23 +163,29 @@ namespace AutoDuty.Helpers
                 return;
             }
 
-            if (agentDawnStory->Data->ContentData.ExpansionCount <= _content!.ExVersion)
+            // IsAddonReady() 只代表附加介面已就緒，不保證代理人的 Data 資料區塊已配置：
+            // 兩者生命週期不同步。每次重取、顯式判空、同幀即用；為 null 時安靜跳過本次
+            // 處理，下一幀（節流後）再試。
+            var dawnStoryData = agentDawnStory->Data;
+            if (dawnStoryData == null) return;
+
+            if (dawnStoryData->ContentData.ExpansionCount <= _content!.ExVersion)
             {
                 Svc.Log.Debug($"Queue Helper - You do not have expansion: {_content.ExVersion} unlocked. stopping");
                 Stop();
                 return;
             }
 
-            if (agentDawnStory->Data->ContentData.ContentEntries[agentDawnStory->Data->ContentData.SelectedContentEntry].ContentFinderConditionId != _content.RowId)
+            if (dawnStoryData->ContentData.ContentEntries[dawnStoryData->ContentData.SelectedContentEntry].ContentFinderConditionId != _content.RowId)
             {
-                Svc.Log.Debug($"Queue Helper - Clicking: {_content.EnglishName} {_content.RowId}");// instead of {agentDawnStory->Data->ContentData.ContentEntries[agentDawnStory->Data->ContentData.SelectedContentEntry].ContentFinderConditionId}");
+                Svc.Log.Debug($"Queue Helper - Clicking: {_content.EnglishName} {_content.RowId}");// instead of {dawnStoryData->ContentData.ContentEntries[dawnStoryData->ContentData.SelectedContentEntry].ContentFinderConditionId}");
 
                 RaptureAtkModule.Instance()->OpenDawnStory(_content.RowId);
             }
             else if(EzThrottler.Throttle("ClickRegisterButton", 10000))
             {
                 Svc.Log.Debug($"Queue Helper - Clicking: Register For Duty");
-                AgentDawnStory.Instance()->RegisterForDuty();
+                agentDawnStory->RegisterForDuty();
             }
         }
 
