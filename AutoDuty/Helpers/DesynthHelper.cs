@@ -34,28 +34,30 @@ namespace AutoDuty.Helpers
             if (!EzThrottler.Throttle("Desynth", 250))
                 return;
 
-            // Conditions 與 ActionManager 都是 [StaticAddress] 解析出來的靜態實例,台服特徵碼失配時
-            // Resolve 會靜默留下 null,原本兩者都無條件解參考。取進區域變數判空後同幀即用;
-            // 判空放在原本解參考的位置上,不提前到節流之前(EzThrottler.Throttle 有副作用)。
-            Conditions* conditions = Conditions.Instance();
-            if (conditions == null)
-                return;
-
-            if (conditions->Mounted)
+            // Conditions / ActionManager / InventoryManager 三者的 Instance() 都標
+            // [StaticAddress("…", 3)] —— 第二個位置參數是 relativeFollowOffset,isPointer 用預設的
+            // false。InteropGenerator 對 isPointer:false 產生的實作逐字是:
+            //     if (StaticAddressPointers.pInstance is null)
+            //         InteropGenerator.Runtime.ThrowHelper.ThrowNullAddress(名稱, 特徵碼);
+            //     return StaticAddressPointers.pInstance;
+            // 而 ThrowNullAddress 標了 [DoesNotReturn] 且真的 throw InvalidOperationException。
+            // ⇒ 這種 Instance() 只有兩種結局:回非 null,或丟例外。**永遠不會回 null。**
+            // 台服特徵碼失配時走的是「丟例外」那條,不是靜默回 null(舊註解在這一點上是錯的),
+            // 所以呼叫之後再判一次空是永遠不成立的死碼,已移除。
+            // ⚠️ 這個結論**只對 isPointer:false 成立**:isPointer:true 的版本判的是雙重指標、
+            //    回傳的是再解參考一次的值,那種 Instance() 真的會回 null,判空不可刪。
+            //    刪任何 Instance() 判空之前都要回去讀該型別的宣告確認是哪一種。
+            if (Conditions.Instance()->Mounted)
             {
-                ActionManager* actionManager = ActionManager.Instance();
-                if (actionManager != null)
-                    actionManager->UseAction(ActionType.GeneralAction, 23);
+                ActionManager.Instance()->UseAction(ActionType.GeneralAction, 23);
                 return;
             }
 
             Plugin.Action = "Desynthing Inventory";
 
-            // InventoryManager 同樣是 [StaticAddress] 靜態實例。這裡取一次,底下拆解道具時的
-            // GetInventorySlot 也重用同一個區域變數(同一幀內,不跨幀保存)。
+            // 取進區域變數是為了底下拆解道具時的 GetInventorySlot 重用同一個實例
+            // (同一幀內,不跨幀保存),不是為了判空 —— 理由同上。
             InventoryManager* inventoryManager = InventoryManager.Instance();
-            if (inventoryManager == null)
-                return;
 
             if (inventoryManager->GetEmptySlotsInBag() < 1)
             {
@@ -79,10 +81,14 @@ namespace AutoDuty.Helpers
                 return;
             }
             
-            // AgentSalvage.Instance() 走 AgentModule.Instance(),而後者在 UIModule 尚未建立時回 null
-            // (產生器出來的實作逐字是 agentModule == null ? null : ...)。原本這個方法裡有五處
-            // 無條件解參考(Show / ItemListRefresh / SelectedCategory / ItemCount / ItemList),
-            // 底下兩個分支都要用到,所以在分岔前取一次、判空後同幀即用。
+            // 🔴 這一個和上面那三個**不是同一種形狀,判空不可刪**:AgentSalvage 標的是
+            // [Agent(AgentId.Salvage)],Instance() 由 AgentGetterGenerator 產生,逐字是
+            //     var agentModule = AgentModule.Instance();
+            //     return agentModule == null ? null : (AgentSalvage*)agentModule->GetAgentByInternalId(…);
+            // 而 AgentModule.Instance() 是手寫的 `uiModule == null ? null : uiModule->GetAgentModule()`
+            // —— UIModule 尚未建立(登入畫面／跳圖載入中)時整條就是 null。
+            // 原本這個方法裡有五處無條件解參考(Show / ItemListRefresh / SelectedCategory /
+            // ItemCount / ItemList),底下兩個分支都要用到,所以在分岔前取一次、判空後同幀即用。
             AgentSalvage* agentSalvage = AgentSalvage.Instance();
             if (agentSalvage == null)
                 return;
