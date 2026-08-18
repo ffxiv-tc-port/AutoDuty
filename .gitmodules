@@ -9,3 +9,6 @@
 	path = WrathCombo.API
 	url = https://github.com/ffxiv-tc-port/WrathCombo.API.git
 	branch = tc-api13
+[submodule "ffxiv_pictomancy"]
+	path = ffxiv_pictomancy
+	url = https://github.com/ffxiv-tc-port/ffxiv_pictomancy-sourpuh.git
