@@ -64,7 +64,7 @@ namespace AutoDuty.Helpers
 
         private static void FollowUpdate(IFramework framework)
         {
-            if (_followTargetId == null || Svc.ClientState.LocalPlayer == null || !EzThrottler.Throttle("FollowUpdate", 50))
+            if (_followTargetId == null || Svc.Objects.LocalPlayer == null || !EzThrottler.Throttle("FollowUpdate", 50))
                 return;
 
             // 每次重查物件表。目標消失(護送 NPC 段落結束、團滅、離開副本、換區)時

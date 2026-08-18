@@ -684,7 +684,7 @@ namespace AutoDuty.Managers
             // 只快取 DataId 這個純量。傳進來的 gameObject 是呼叫端每幀用 ResolveObject
             // (依 GameObjectId 查表)重解出來的,所以此刻讀它的欄位是安全的;但不能把物件
             // 本身留到後續的幀——那等於持有一根建構時就凍結、之後永不重解析的原生指標。
-            var targetDataId = gameObject.DataId;
+            var targetDataId = gameObject.BaseId;
 
             // TryGetObjectByDataId 是「找最近的同 DataId 物件」,要對整個物件表做距離排序。
             // 把它連同所有解參考一起放進節流視窗,每秒一次而不是每幀一次。
@@ -753,7 +753,7 @@ namespace AutoDuty.Managers
                 }
                 else
                 {
-                    if (TryGetObjectIdByDataId(gameObject?.DataId ?? 0, out var nextObjectId))
+                    if (TryGetObjectIdByDataId(gameObject?.BaseId ?? 0, out var nextObjectId))
                     {
                         var next = ResolveObject(nextObjectId);
                         if (next != null)
@@ -780,8 +780,8 @@ namespace AutoDuty.Managers
             // 閉包只捕獲 GameObjectId,每個任務執行時才重查物件表。
             ulong? objectId = null;
             Plugin.Action = $"Interactable";
-            _taskManager.Enqueue(() => Player.Character->InCombat || (objectId = Svc.Objects.Where(x => x.DataId.EqualsAny(dataIds) && x.IsTargetable).OrderBy(GetDistanceToPlayer).FirstOrDefault()?.GameObjectId) != null, "Interactable-GetGameObjectUnlessInCombat");
-            _taskManager.Enqueue(() => { Plugin.Action = $"Interactable: {ResolveObject(objectId)?.DataId}"; }, "Interactable-SetActionVar");
+            _taskManager.Enqueue(() => Player.Character->InCombat || (objectId = Svc.Objects.Where(x => x.BaseId.EqualsAny(dataIds) && x.IsTargetable).OrderBy(GetDistanceToPlayer).FirstOrDefault()?.GameObjectId) != null, "Interactable-GetGameObjectUnlessInCombat");
+            _taskManager.Enqueue(() => { Plugin.Action = $"Interactable: {ResolveObject(objectId)?.BaseId}"; }, "Interactable-SetActionVar");
             _taskManager.Enqueue(() =>
             {
                 if (Player.Character->InCombat)
@@ -910,7 +910,7 @@ namespace AutoDuty.Managers
 
             if (objects != null)
             {
-                var protoArmOrDoor = objects.FirstOrDefault(x => x.IsTargetable && x.DataId is 14566 or 14616 && GetDistanceToPlayer(x) <= 25);
+                var protoArmOrDoor = objects.FirstOrDefault(x => x.IsTargetable && x.BaseId is 14566 or 14616 && GetDistanceToPlayer(x) <= 25);
                 if (protoArmOrDoor != null)
                     Svc.Targets.Target = protoArmOrDoor;
             }
@@ -931,12 +931,12 @@ namespace AutoDuty.Managers
         private static readonly uint[] praeGaiusIds = [9020u, 14453u, 14455u];
         private void PraeFrameworkUpdateGaius(IFramework _)
         {
-            if (!EzThrottler.Throttle("PraeUpdate", 50) || !IsReady || Svc.Targets.Target != null && praeGaiusIds.Contains(Svc.Targets.Target.DataId))
+            if (!EzThrottler.Throttle("PraeUpdate", 50) || !IsReady || Svc.Targets.Target != null && praeGaiusIds.Contains(Svc.Targets.Target.BaseId))
                 return;
 
             List<IGameObject>? objects = GetObjectsByObjectKind(Dalamud.Game.ClientState.Objects.Enums.ObjectKind.BattleNpc);
 
-            IGameObject? gaius = objects?.FirstOrDefault(x => x.IsTargetable && praeGaiusIds.Contains(x.DataId));
+            IGameObject? gaius = objects?.FirstOrDefault(x => x.IsTargetable && praeGaiusIds.Contains(x.BaseId));
             if (gaius != null)
                 Svc.Targets.Target = gaius;
         }
@@ -973,13 +973,13 @@ namespace AutoDuty.Managers
                     switch (action.Arguments[0])
                     {
                         case "1":
-                            _taskManager.Enqueue(() => (objectId = GetObjectsByObjectKind(Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventObj)?.FirstOrDefault(a => a.IsTargetable && (OID)a.DataId is OID.Blue or OID.Red or OID.Green)?.GameObjectId) != null, "DutySpecificCode");
+                            _taskManager.Enqueue(() => (objectId = GetObjectsByObjectKind(Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventObj)?.FirstOrDefault(a => a.IsTargetable && (OID)a.BaseId is OID.Blue or OID.Red or OID.Green)?.GameObjectId) != null, "DutySpecificCode");
                             _taskManager.Enqueue(() =>
                             {
                                 var gameObject = ResolveObject(objectId);
                                 if (gameObject != null)
                                 {
-                                    switch ((OID)gameObject.DataId)
+                                    switch ((OID)gameObject.BaseId)
                                     {
                                         case OID.Blue:
                                             GlobalStringStore = "2000213";

@@ -103,10 +103,10 @@ namespace AutoDuty.Windows
                         int                              curPath       = Math.Clamp(Plugin.CurrentPath, 0, curPaths.Count - 1);
 
                         Dictionary<string, JobWithRole>? pathSelection    = null;
-                        JobWithRole                      curJob = Svc.ClientState.LocalPlayer.GetJob().JobToJobWithRole();
+                        JobWithRole                      curJob = Svc.Objects.LocalPlayer.GetJob().JobToJobWithRole();
                         using (ImRaii.Disabled(curPath <= 0 ||
                                                !Plugin.Configuration.PathSelectionsByPath.ContainsKey(Plugin.CurrentTerritoryContent.TerritoryType) || 
-                                               !(pathSelection = Plugin.Configuration.PathSelectionsByPath[Plugin.CurrentTerritoryContent.TerritoryType]).Any(kvp => kvp.Value.HasJob(Svc.ClientState.LocalPlayer.GetJob()))))
+                                               !(pathSelection = Plugin.Configuration.PathSelectionsByPath[Plugin.CurrentTerritoryContent.TerritoryType]).Any(kvp => kvp.Value.HasJob(Svc.Objects.LocalPlayer.GetJob()))))
                         {
                             if (ImGui.Button("Clear Saved Path".Loc()))
                             {

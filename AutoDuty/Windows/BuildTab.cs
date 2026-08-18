@@ -161,7 +161,7 @@ namespace AutoDuty.Windows
                             case "Target":
                                 IGameObject? targetObject = Player.Object.TargetObject;
                                 IGameObject? gameObject = (targetObject ?? null) ?? ClosestObject;
-                                _arguments = [gameObject != null ? $"{gameObject.DataId}" : string.Empty];
+                                _arguments = [gameObject != null ? $"{gameObject.BaseId}" : string.Empty];
                                 _note = gameObject != null ? gameObject.Name.ExtractText() : string.Empty;
                                 break;
                             default:

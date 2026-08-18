@@ -64,7 +64,7 @@ namespace AutoDuty.Helpers
 
             EzThrottler.Throttle("Repair", 250);
 
-            if (Svc.ClientState.LocalPlayer == null)
+            if (Svc.Objects.LocalPlayer == null)
                 return;
 
             if (GotoHelper.State == ActionState.Running)

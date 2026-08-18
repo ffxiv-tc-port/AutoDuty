@@ -81,7 +81,7 @@ namespace AutoDuty.Helpers
             if (!this._statesExecuted.HasFlag(AutoEquipState.Setting_Up))
             {
                 DebugLog($"RecommendEquipModule - SetupForClassJob");
-                RecommendEquipModule.Instance()->SetupForClassJob((byte)Svc.ClientState.LocalPlayer!.ClassJob.RowId);
+                RecommendEquipModule.Instance()->SetupForClassJob((byte)Svc.Objects.LocalPlayer!.ClassJob.RowId);
                 this._statesExecuted |= AutoEquipState.Setting_Up;
             }
             else if (!this._statesExecuted.HasFlag(AutoEquipState.Equipping))

@@ -1914,7 +1914,7 @@ public sealed class AutoDuty : IDalamudPlugin
     {
         if (Interactables.Count == 0) return;
 
-        var list = Svc.Objects.Where(x => Interactables.Contains(x.DataId));
+        var list = Svc.Objects.Where(x => Interactables.Contains(x.BaseId));
 
         if (!list.Any()) return;
 
@@ -2165,8 +2165,8 @@ public sealed class AutoDuty : IDalamudPlugin
                 else
                     obj = ObjectHelper.GetObjectByName(Svc.Targets.Target?.Name.TextValue ?? "");
 
-                Svc.Log.Info($"{obj?.DataId}");
-                ImGui.SetClipboardText($"{obj?.DataId}");
+                Svc.Log.Info($"{obj?.BaseId}");
+                ImGui.SetClipboardText($"{obj?.BaseId}");
                 break;
             case "moveto":
                 var argss = args.Replace("moveto ", "").Split("|");
