@@ -23,10 +23,39 @@ namespace AutoDuty.Helpers
             if (addon == null)
                 return 0;
 
-            AtkComponentNode* atkResNode       = addon->GetComponentNodeById(88);
-            AtkResNode*       resNode          = atkResNode->Component->UldManager.NodeList[5];
-            AtkResNode*       resNodeChildNode = resNode->GetComponent()->UldManager.NodeList[0];
-            return Convert.ToUInt32(resNodeChildNode->GetAsAtkCounterNode()->NodeText.ExtractText());
+            // 🔴 與 ExtractHelper 同一類缺陷:四層鏈式裸讀 + 兩次沒有上界檢查的 NodeList 索引。
+            // NodeList 是裸指標陣列,超界讀到的是相鄰記憶體而不是例外;GetComponentNodeById
+            // 找不到節點就回 null。讀不到一律回 0,與上面 addon == null 的既有退路一致 ——
+            // SetLevel(0) 不會通過 level >= LevelInit-1,所以等級維持「未設定」而不是被寫成 0。
+            AtkComponentNode* atkResNode = addon->GetComponentNodeById(88);
+            if (atkResNode == null || atkResNode->Component == null)
+                return 0;
+
+            AtkUldManager* outerUld = &atkResNode->Component->UldManager;
+            if (outerUld->NodeList == null || outerUld->NodeListCount <= 5)
+                return 0;
+
+            AtkResNode* resNode = outerUld->NodeList[5];
+            if (resNode == null)
+                return 0;
+
+            AtkComponentBase* innerComponent = resNode->GetComponent();
+            if (innerComponent == null)
+                return 0;
+
+            AtkUldManager* innerUld = &innerComponent->UldManager;
+            if (innerUld->NodeList == null || innerUld->NodeListCount <= 0)
+                return 0;
+
+            AtkResNode* resNodeChildNode = innerUld->NodeList[0];
+            if (resNodeChildNode == null)
+                return 0;
+
+            AtkCounterNode* counterNode = resNodeChildNode->GetAsAtkCounterNode();
+            if (counterNode == null)
+                return 0;
+
+            return Convert.ToUInt32(counterNode->NodeText.ExtractText());
         }
 
 

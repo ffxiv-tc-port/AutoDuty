@@ -76,12 +76,47 @@ namespace AutoDuty.Helpers
             {
                 if (_currentCategory <= _stoppingCategory)
                 {
-                    var list = addonMaterialize->GetNodeById(12)->GetAsAtkComponentList();
+                    // 🔴 這兩條原本各是 5~6 層的鏈式裸讀。GetNodeById 找不到節點就回 null,
+                    // GetAsAtkXxx / GetComponent / GetTextNodeById 全是遊戲原生函式,對 null 的
+                    // this 直接解參考 —— 而 AVE 是 corrupted-state exception,try/catch 攔不到。
+                    // 另外 NodeList 是**裸指標陣列**,索引前必須自己驗 NodeListCount:
+                    // 它沒有任何邊界檢查,超界讀到的是相鄰記憶體而不是例外。
+                    var listNode = addonMaterialize->GetNodeById(12);
+                    if (listNode == null) return;
+
+                    var list = listNode->GetAsAtkComponentList();
 
                     if (list == null) return;
 
-                    var spiritbondTextNode = list->UldManager.NodeList[2]->GetComponent()->GetTextNodeById(5)->GetAsAtkTextNode();
-                    var categoryTextNode = addonMaterialize->GetNodeById(4)->GetAsAtkComponentDropdownList()->UldManager.NodeList[1]->GetAsAtkComponentCheckBox()->GetTextNodeById(3)->GetAsAtkTextNode();
+                    if (list->UldManager.NodeList == null || list->UldManager.NodeListCount <= 2) return;
+                    var spiritbondItemNode = list->UldManager.NodeList[2];
+                    if (spiritbondItemNode == null) return;
+
+                    var spiritbondComponent = spiritbondItemNode->GetComponent();
+                    if (spiritbondComponent == null) return;
+
+                    // GetTextNodeById 回傳的已經是 AtkTextNode*,但原本還多接了一次
+                    // GetAsAtkTextNode()(等於一道型別斷言)。保留那道斷言,只是先判空再呼叫。
+                    AtkTextNode* spiritbondTextNode = null;
+                    var spiritbondText = spiritbondComponent->GetTextNodeById(5);
+                    if (spiritbondText != null) spiritbondTextNode = spiritbondText->GetAsAtkTextNode();
+
+                    var dropdownNode = addonMaterialize->GetNodeById(4);
+                    if (dropdownNode == null) return;
+
+                    var dropdown = dropdownNode->GetAsAtkComponentDropdownList();
+                    if (dropdown == null) return;
+
+                    if (dropdown->UldManager.NodeList == null || dropdown->UldManager.NodeListCount <= 1) return;
+                    var categoryItemNode = dropdown->UldManager.NodeList[1];
+                    if (categoryItemNode == null) return;
+
+                    var categoryCheckBox = categoryItemNode->GetAsAtkComponentCheckBox();
+                    if (categoryCheckBox == null) return;
+
+                    AtkTextNode* categoryTextNode = null;
+                    var categoryText = categoryCheckBox->GetTextNodeById(3);
+                    if (categoryText != null) categoryTextNode = categoryText->GetAsAtkTextNode();
 
                     if (spiritbondTextNode == null || categoryTextNode == null) return;
 
