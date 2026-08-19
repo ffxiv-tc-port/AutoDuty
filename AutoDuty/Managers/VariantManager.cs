@@ -39,6 +39,20 @@ namespace AutoDuty.Managers
             _taskManager.Enqueue(() => AddonHelper.FireCallBack(addon, true, 8), "RegisterVariantDuty");
         }
 
-        private unsafe void OpenVVD() => AgentModule.Instance()->GetAgentByInternalId(AgentId.VVDFinder)->Show();
+        // AgentModule.Instance() 是手寫取得子(`uiModule == null ? null : uiModule->GetAgentModule()`),
+        // GetAgentByInternalId() 是原生 MemberFunction、代理人尚未建立時同樣回 null ——
+        // 原本整條裸解參考。兩層都判空;取不到就不開窗,佇列裡等待 VVDFinder 的那一步會繼續等。
+        private unsafe void OpenVVD()
+        {
+            AgentModule* agentModule = AgentModule.Instance();
+            if (agentModule == null)
+                return;
+
+            AgentInterface* agentVVDFinder = agentModule->GetAgentByInternalId(AgentId.VVDFinder);
+            if (agentVVDFinder == null)
+                return;
+
+            agentVVDFinder->Show();
+        }
     }
 }

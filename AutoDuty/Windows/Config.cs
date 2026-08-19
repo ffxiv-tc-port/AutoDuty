@@ -2164,34 +2164,53 @@ public static class ConfigTab
                         ImGui.AlignTextToFramePadding();
                         ImGui.SameLine();
 
+                        // RaptureGearsetModule.Instance() 是 FFXIVClientStructs 裡手寫的取得子
+                        // (`uiModule == null ? null : uiModule->GetRaptureGearsetModule()`),UIModule 尚未建立時會回 null。
+                        // 原本 module 取出後從沒判過空,卻在 IsValidGearset / GetGearset / NumGearsets 四處被解參考,
+                        // 而設定視窗是每幀重畫的。判空後同幀即用;為 null 時整列改顯示「尚未就緒」——
+                        // 不畫成空白,也不畫成看起來合法的「目前配裝」,免得使用者誤以為設定已生效。
                         RaptureGearsetModule* module = RaptureGearsetModule.Instance();
-                        
-                        if (Configuration.AutoOpenCoffersGearset != null && !module->IsValidGearset((int) Configuration.AutoOpenCoffersGearset))
+
+                        if (module == null)
                         {
-                            Configuration.AutoOpenCoffersGearset = null;
-                            Configuration.Save();
+                            ImGui.TextDisabled("Gearset data not ready".Loc());
                         }
-
-
-                        if (ImGui.BeginCombo("##CofferGearsetSelection", Configuration.AutoOpenCoffersGearset != null ? module->GetGearset(Configuration.AutoOpenCoffersGearset.Value)->NameString : "Current Gearset".Loc()))
+                        else
                         {
-                            if (ImGui.Selectable("Current Gearset".Loc()))
+                            if (Configuration.AutoOpenCoffersGearset != null && !module->IsValidGearset((int) Configuration.AutoOpenCoffersGearset))
                             {
                                 Configuration.AutoOpenCoffersGearset = null;
                                 Configuration.Save();
                             }
 
-                            for (int i = 0; i < module->NumGearsets; i++)
+                            // GetGearset() 是原生 MemberFunction,查無此 id 會回 null。
+                            // 預覽字串與清單列都先判空:取不到就退回「目前配裝」(預覽)或跳過該列(清單)。
+                            RaptureGearsetModule.GearsetEntry* selectedGearset =
+                                Configuration.AutoOpenCoffersGearset != null ? module->GetGearset(Configuration.AutoOpenCoffersGearset.Value) : null;
+
+                            if (ImGui.BeginCombo("##CofferGearsetSelection", selectedGearset != null ? selectedGearset->NameString : "Current Gearset".Loc()))
                             {
-                                RaptureGearsetModule.GearsetEntry* gearset = module->GetGearset(i);
-                                if(ImGui.Selectable(gearset->NameString))
+                                if (ImGui.Selectable("Current Gearset".Loc()))
                                 {
-                                    Configuration.AutoOpenCoffersGearset = gearset->Id;
+                                    Configuration.AutoOpenCoffersGearset = null;
                                     Configuration.Save();
                                 }
-                            }
 
-                            ImGui.EndCombo();
+                                for (int i = 0; i < module->NumGearsets; i++)
+                                {
+                                    RaptureGearsetModule.GearsetEntry* gearset = module->GetGearset(i);
+                                    if (gearset == null)
+                                        continue;
+
+                                    if(ImGui.Selectable(gearset->NameString))
+                                    {
+                                        Configuration.AutoOpenCoffersGearset = gearset->Id;
+                                        Configuration.Save();
+                                    }
+                                }
+
+                                ImGui.EndCombo();
+                            }
                         }
 
                         if (ImGui.Checkbox("Use Blacklist".Loc(), ref Configuration.AutoOpenCoffersBlacklistUse))

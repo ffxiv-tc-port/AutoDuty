@@ -48,7 +48,14 @@ namespace AutoDuty.Helpers
         {
             base.Stop();
 
-            RaptureGearsetModule.Instance()->UpdateGearset(RaptureGearsetModule.Instance()->CurrentGearsetIndex);
+            // RaptureGearsetModule.Instance() 是 FFXIVClientStructs 裡手寫的取得子
+            // (`uiModule == null ? null : uiModule->GetRaptureGearsetModule()`),UIModule 尚未建立時會回 null,
+            // 原本在同一行連續解參考兩次。取進區域變數判空後同幀即用;為 null 時跳過更新裝備組,
+            // 其餘收尾(狀態歸零、PortraitHelper)照常執行。
+            RaptureGearsetModule* gearsetModule = RaptureGearsetModule.Instance();
+            if (gearsetModule != null)
+                gearsetModule->UpdateGearset(gearsetModule->CurrentGearsetIndex);
+
             this._statesExecuted = AutoEquipState.None;
             this._index          = 0;
             this._gearset        = null;
@@ -75,19 +82,27 @@ namespace AutoDuty.Helpers
             if (!EzThrottler.Throttle(this.Name, 250))
                 return;
 
-            if (RecommendEquipModule.Instance()->IsUpdating)
+            // RecommendEquipModule.Instance() 是手寫的取得子
+            // (`uiModule == null ? null : uiModule->GetRecommendEquipModule()`),UIModule 尚未建立時會回 null,
+            // 原本三處都無條件解參考。取進區域變數判空後同幀即用;為 null 時本 tick 不動作,
+            // 下 tick 節流放行時再試(每幀熱路徑,不寫 log),逾時仍由 Start() 排的 TimeOut 收尾。
+            RecommendEquipModule* recommendEquipModule = RecommendEquipModule.Instance();
+            if (recommendEquipModule == null)
+                return;
+
+            if (recommendEquipModule->IsUpdating)
                     return;
 
             if (!this._statesExecuted.HasFlag(AutoEquipState.Setting_Up))
             {
                 DebugLog($"RecommendEquipModule - SetupForClassJob");
-                RecommendEquipModule.Instance()->SetupForClassJob((byte)Svc.Objects.LocalPlayer!.ClassJob.RowId);
+                recommendEquipModule->SetupForClassJob((byte)Svc.Objects.LocalPlayer!.ClassJob.RowId);
                 this._statesExecuted |= AutoEquipState.Setting_Up;
             }
             else if (!this._statesExecuted.HasFlag(AutoEquipState.Equipping))
             {
                 DebugLog($"RecommendEquipModule - EquipRecommendedGear");
-                RecommendEquipModule.Instance()->EquipRecommendedGear();
+                recommendEquipModule->EquipRecommendedGear();
                 this._statesExecuted |= AutoEquipState.Equipping;
             }
             else
@@ -107,17 +122,24 @@ namespace AutoDuty.Helpers
 
             EzThrottler.Throttle("AutoEquipGearSetter", 50);
 
+            // 同 AutoEquipUpdate:RaptureGearsetModule.Instance() 手寫取得子會在 UIModule 尚未建立時回 null,
+            // 底下四個分支原本都無條件解參考(其中兩處還是同一行連續兩次)。取進區域變數判空後同幀即用;
+            // 為 null 時本 tick 不動作,下 tick 再試(每幀熱路徑,不寫 log),逾時由 TimeOut 收尾。
+            RaptureGearsetModule* gearsetModule = RaptureGearsetModule.Instance();
+            if (gearsetModule == null)
+                return;
+
             if (!this._statesExecuted.HasFlag(AutoEquipState.Updating_Gearset))
             {
                 DebugLog($"RaptureGearsetModule - UpdateGearset");
-                RaptureGearsetModule.Instance()->UpdateGearset(RaptureGearsetModule.Instance()->CurrentGearsetIndex);
+                gearsetModule->UpdateGearset(gearsetModule->CurrentGearsetIndex);
                 this._statesExecuted |= AutoEquipState.Updating_Gearset;
                 EzThrottler.Throttle("AutoEquipGearSetter", 500, true);
             }
             else if (!this._statesExecuted.HasFlag(AutoEquipState.Getting_Recommended_Gear))
             {
                 DebugLog($"Gearsetter_IPCSubscriber - GetRecommendationsForGearset");
-                this._gearset     =  Gearsetter_IPCSubscriber.GetRecommendationsForGearset((byte)RaptureGearsetModule.Instance()->CurrentGearsetIndex);
+                this._gearset     =  Gearsetter_IPCSubscriber.GetRecommendationsForGearset((byte)gearsetModule->CurrentGearsetIndex);
                 this._statesExecuted |= AutoEquipState.Getting_Recommended_Gear;
             }
             else if (this._gearset != null && this._index < this._gearset.Count)
@@ -180,14 +202,14 @@ namespace AutoDuty.Helpers
             {
                 // Gearsetter returns the same ring slot for both hands if two instances of the same ring should be used. This allows equiping one of them and the other one.
                 DebugLog($"RaptureGearsetModule - UpdateGearsetSecondPass");
-                RaptureGearsetModule.Instance()->UpdateGearset(RaptureGearsetModule.Instance()->CurrentGearsetIndex);
+                gearsetModule->UpdateGearset(gearsetModule->CurrentGearsetIndex);
                 this._statesExecuted |= AutoEquipState.Updating_Gearset_Second_Pass;
                 EzThrottler.Throttle("AutoEquipGearSetter", 500, true);
             }
             else if (this._statesExecuted.HasFlag(AutoEquipState.Recommended_Gear_Need_Second_Pass) && !this._statesExecuted.HasFlag(AutoEquipState.Getting_Recommended_Gear_Second_Pass))
             {
                 DebugLog($"Gearsetter_IPCSubscriber - GetRecommendationsForGearset");
-                this._gearset     =  Gearsetter_IPCSubscriber.GetRecommendationsForGearset((byte)RaptureGearsetModule.Instance()->CurrentGearsetIndex);
+                this._gearset     =  Gearsetter_IPCSubscriber.GetRecommendationsForGearset((byte)gearsetModule->CurrentGearsetIndex);
                 this._index       = 0;
                 this._statesExecuted |= AutoEquipState.Getting_Recommended_Gear_Second_Pass;
             }

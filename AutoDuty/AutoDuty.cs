@@ -794,13 +794,25 @@ public sealed class AutoDuty : IDalamudPlugin
         }
     }
 
-    private unsafe bool StopLoop => Configuration.EnableTerminationActions && 
+    private unsafe bool StopLoop
+    {
+        get
+        {
+            // AgentHUD.Instance() 是產生器產出的取得子
+            // (`agentModule == null ? null : (AgentHUD*)agentModule->GetAgentByInternalId(AgentId.Hud)`),
+            // UIModule/代理人尚未建立時會回 null,原本無條件解參考。
+            // 取不到就讓「無休息經驗」這條停止條件不成立 —— 不能拿未知資料去觸發「停止循環」。
+            AgentHUD* agentHud = AgentHUD.Instance();
+
+            return Configuration.EnableTerminationActions &&
                                         (CurrentTerritoryContent == null ||
                                         (Configuration.StopLevel && Player.Level >= Configuration.StopLevelInt) ||
-                                        (Configuration.StopNoRestedXP && AgentHUD.Instance()->ExpRestedExperience == 0) ||
-                                        (Configuration.StopItemQty && (Configuration.StopItemAll 
+                                        (Configuration.StopNoRestedXP && agentHud != null && agentHud->ExpRestedExperience == 0) ||
+                                        (Configuration.StopItemQty && (Configuration.StopItemAll
                                             ? Configuration.StopItemQtyItemDictionary.All(x => InventoryManager.Instance()->GetInventoryItemCount(x.Key) >= x.Value.Value)
                                             : Configuration.StopItemQtyItemDictionary.Any(x => InventoryManager.Instance()->GetInventoryItemCount(x.Key) >= x.Value.Value))));
+        }
+    }
 
     private void TrustLeveling()
     {

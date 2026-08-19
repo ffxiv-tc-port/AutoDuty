@@ -281,7 +281,18 @@ namespace AutoDuty.Helpers
         private static unsafe void Stop(bool forceHide = false)
         {
             if (forceHide || (_getLevelsContent?.TrustMembers.TrueForAll(tm => tm.LevelIsSet || !tm.Available) ?? false))
-                AgentModule.Instance()->GetAgentByInternalId(AgentId.Dawn)->Hide();
+            {
+                // AgentModule.Instance()(手寫取得子)與 GetAgentByInternalId()(原生 MemberFunction)
+                // 兩層都可能回 null,原本整條裸解參考。取不到就跳過隱藏「復刻迷宮挑戰」代理人,
+                // 底下解除 Framework.Update、歸零狀態等收尾照常執行。
+                AgentModule* agentModule = AgentModule.Instance();
+                if (agentModule != null)
+                {
+                    AgentInterface* agentDawn = agentModule->GetAgentByInternalId(AgentId.Dawn);
+                    if (agentDawn != null)
+                        agentDawn->Hide();
+                }
+            }
             Svc.Framework.Update -= GetLevelsUpdate;
             State = ActionState.None; 
             Svc.Log.Info($"TrustHelper - Done getting trust levels for expansion {_getLevelsContent?.ExVersion}");
@@ -294,7 +305,11 @@ namespace AutoDuty.Helpers
         private static Content? _getLevelsContent = null;
         internal static unsafe void GetLevelsUpdate(IFramework framework)
         {
-            if (_getLevelsContent == null || Plugin.InDungeon || !AgentHUD.Instance()->IsMainCommandEnabled(82))
+            // AgentHUD.Instance() 是產生器產出的取得子
+            // (`agentModule == null ? null : (AgentHUD*)agentModule->GetAgentByInternalId(AgentId.Hud)`),
+            // UIModule/代理人尚未建立時會回 null,原本無條件解參考。取不到就與「內容為空」同樣處理:停掉這輪。
+            AgentHUD* agentHud = AgentHUD.Instance();
+            if (_getLevelsContent == null || Plugin.InDungeon || agentHud == null || !agentHud->IsMainCommandEnabled(82))
                 Stop();
 
             if (!EzThrottler.Throttle("GetLevelsUpdate", 5) || !PlayerHelper.IsValid) return;
@@ -304,7 +319,11 @@ namespace AutoDuty.Helpers
                 if (EzThrottler.Throttle("OpenDawn", 5000))
                 {
                     Svc.Log.Debug("TrustHelper - Opening Dawn");
-                    AgentModule.Instance()->GetAgentByInternalId(AgentId.Dawn)->Show();
+                    // 同上,兩層都判空;取不到就本次不開窗,下次節流放行(5 秒)時再試。
+                    AgentModule* openAgentModule = AgentModule.Instance();
+                    AgentInterface* openAgentDawn = openAgentModule == null ? null : openAgentModule->GetAgentByInternalId(AgentId.Dawn);
+                    if (openAgentDawn != null)
+                        openAgentDawn->Show();
                 }
                 return;
             }
