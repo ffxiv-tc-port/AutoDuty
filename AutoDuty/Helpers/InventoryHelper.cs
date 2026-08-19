@@ -114,7 +114,25 @@ namespace AutoDuty.Helpers
             return 0;
         }
 
-        internal static ushort CurrentItemLevel => *(ushort*)((nint)(AgentStatus.Instance()) + 48);
+        // 🔴 原本是手寫指標算術的裸讀:*(ushort*)((nint)(AgentStatus.Instance()) + 48)。
+        //    它繞過了 ->,所以「有沒有判空」在原始碼上完全看不出來,但危險程度更高:
+        //    AgentStatus.Instance() 是 [Agent] 產生器產出的取得子,本體即
+        //    「agentModule == null ? null : GetAgentByInternalId(...)」,兩層都能合法回 null,
+        //    而 null 時這一行會去讀位址 0x30(0 + 48)—— AccessViolationException,
+        //    corrupted-state exception,try/catch 攔不到,遊戲直接被帶走。
+        // fail-closed:讀不到就回 0。三個呼叫端對 0 的反應都是「裝備等級不足」——
+        //    ContentHelper.cs:173 會把該副本濾掉、MainTab 的 < 370 判斷會成立,
+        //    也就是保守地不去報名,而不是在未知狀態下宣稱夠格。
+        internal static ushort CurrentItemLevel
+        {
+            get
+            {
+                AgentStatus* agentStatus = AgentStatus.Instance();
+                if (agentStatus == null)
+                    return 0;
+                return *(ushort*)((nint)agentStatus + 48);
+            }
+        }
 
         /*internal unsafe static uint CurrentItemLevelUI()
         {

@@ -100,7 +100,18 @@ public unsafe class OverrideCamera : IDisposable
                 return;
             if (IgnoreUserInput || inputMode == 0) // let user override...
             {
-                var dt = Framework.Instance()->FrameDeltaTime;
+                // 🔴 上面那圈 try/catch 擋的是「特徵碼失配 -> ThrowNullAddress 丟
+                //    InvalidOperationException」(就是上面註解講的那個),但那不是唯一的失敗形式。
+                //    Framework.Instance() 是 [StaticAddress("48 8B 1D ?? ?? ?? ?? 8B 7C 24 64", 3,
+                //    isPointer: true)],產生器對 isPointer:true 產出的是
+                //    「if (ppInstance is null) Throw...; return *ppInstance;」——
+                //    判空判的是**外層指標槽的位址**(特徵碼有沒有解析成功),回傳的卻是**槽裡的內容**,
+                //    而那個內容在遊戲還沒建好/正在拆掉 Framework 時合法為 null,從頭到尾沒被判過。
+                //    裸解參考它是 AccessViolationException —— 上面註解自己也寫了 catch 攔不到。
+                // fail-closed:拿不到就當這一幀 dt = 0。Original() 已先跑過,
+                //    遊戲自己的鏡頭處理原封不動。每幀都會跑,刻意不寫 log。
+                var framework = Framework.Instance();
+                var dt = framework == null ? 0f : framework->FrameDeltaTime;
                 var deltaH = (DesiredAzimuth - self->DirH.Radians()).Normalized();
                 var deltaV = (DesiredAltitude - self->DirV.Radians()).Normalized();
                 var maxH = SpeedH.Rad * dt;
