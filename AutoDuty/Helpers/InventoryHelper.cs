@@ -91,16 +91,40 @@ namespace AutoDuty.Helpers
 
         internal static void EquipGear(Item item, InventoryType type, int slotIndex, RaptureGearsetModule.GearsetItemIndex targetSlot) => InventoryManager.Instance()->MoveItemSlot(type, (ushort)slotIndex, InventoryType.EquippedItems, (ushort)targetSlot, true);
 
-        internal static (InventoryType, ushort) GetFirstAvailableSlot(params InventoryType[] types)
+        /// <summary>
+        /// 依序掃過 <paramref name="types"/> 列出的容器，找出第一個空格；全部都沒有空格就回 <see langword="false"/>。
+        /// </summary>
+        /// <remarks>
+        /// 🔴 原本回 <c>(InventoryType, ushort)</c>，用 <c>slot &gt; 0</c> 判「這個容器有空格」——
+        /// <b>哨兵值 0 與合法的第 0 格撞值</b>。槽位索引的值域是 <c>0 .. Size-1</c>（<c>Size</c> 是
+        /// <c>int</c> 且非負），<b>0 永遠是合法索引</b>，所以 <c>ushort</c> 裡根本沒有可用來當「找不到」的值。
+        /// <para>
+        /// 實際後果：某個背包的第一個空格剛好是第 0 格時，該背包會被判成「沒有空格」而跳過；
+        /// 四個背包都是這種狀況就整組回報失敗。呼叫端 <c>AutoEquipHelper</c> 已經先用
+        /// <c>GetEmptySlotsInBag() &gt;= 1</c> 確認過背包有空位，於是走進那句
+        /// <c>"no empty inventory slot found.. somehow"</c> —— 那個 <c>somehow</c> 就是這個 bug 的徵狀。
+        /// </para>
+        /// <para>
+        /// 🔑 修法不是把哨兵換成另一個值，而是<b>讓「找不到」根本無法用 slot 表示</b>：
+        /// 成功與否走回傳的 <c>bool</c>，<c>out</c> 的槽位只在回 <see langword="true"/> 時有意義。
+        /// 這也與本檔既有的 <see cref="TryGetContainer"/>／<see cref="TryGetItem"/> 一致。
+        /// </para>
+        /// </remarks>
+        internal static bool TryGetFirstAvailableSlot(out InventoryType foundType, out ushort foundSlot, params InventoryType[] types)
         {
             foreach (InventoryType type in types)
             {
-                ushort slot = GetFirstAvailableSlot(type);
-                if(slot > 0)
-                    return (type, slot);
+                if (TryGetFirstAvailableSlot(type, out ushort slot))
+                {
+                    foundType = type;
+                    foundSlot = slot;
+                    return true;
+                }
             }
 
-            return (InventoryType.Invalid, 0);
+            foundType = InventoryType.Invalid;
+            foundSlot = 0;
+            return false;
         }
 
         /// <summary>
@@ -145,20 +169,32 @@ namespace AutoDuty.Helpers
             return true;
         }
 
-        internal static ushort GetFirstAvailableSlot(InventoryType container)
+        /// <summary>
+        /// 找出 <paramref name="container"/> 裡第一個空格；容器讀不到、或掃完都沒有空格就回 <see langword="false"/>。
+        /// </summary>
+        /// <remarks>
+        /// 🔴 原本回 <c>ushort</c> 並拿 <b>0</b> 當「找不到」，但 0 同時是合法的第 0 格 ——
+        /// 三種結果（容器讀不到／沒有空格／第 0 格是空的）壓在同一個值上，呼叫端分不出來。
+        /// 現在「找不到」由回傳的 <c>bool</c> 表示，<paramref name="slot"/> 只在回
+        /// <see langword="true"/> 時有意義，第 0 格因此能被正常回報。
+        /// <para>
+        /// fail-closed 的方向不變：容器取不到就當成「這個容器沒有可用空格」，
+        /// 讓呼叫端跳過而不是對著讀不到的資料搬東西。
+        /// </para>
+        /// </remarks>
+        internal static bool TryGetFirstAvailableSlot(InventoryType container, out ushort slot)
         {
-            // fail-closed：容器取不到就回 0，與「掃完整個容器都沒有空格」共用同一條退路
-            // （這是本方法既有的「找不到」表示法，沒有新增語意）。
-            // ⚠️ 已知的既有陷阱（本次刻意不動）：0 同時也是一個**合法的格子索引**，
-            //    而唯一的呼叫端 GetFirstAvailableSlot(params) 用 `slot > 0` 判成功，
-            //    所以「第 0 格是空的」會被當成「找不到」。那是先前就存在的哨兵撞值問題。
-            if (!TryGetContainer(container, out InventoryContainer* cont)) return 0;
+            slot = 0;
+            if (!TryGetContainer(container, out InventoryContainer* cont)) return false;
             for (int i = 0; i < cont->Size; i++)
             {
                 if (cont->Items[i].ItemId == 0)
-                    return (ushort)i;
+                {
+                    slot = (ushort)i;
+                    return true;
+                }
             }
-            return 0;
+            return false;
         }
 
         // 🔴 原本是手寫指標算術的裸讀:*(ushort*)((nint)(AgentStatus.Instance()) + 48)。

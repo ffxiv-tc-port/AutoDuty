@@ -180,9 +180,12 @@ namespace AutoDuty.Helpers
                         }
                         else
                         {
-                            (InventoryType inv, ushort slot) = InventoryHelper.GetFirstAvailableSlot(InventoryHelper.Bag);
-
-                            if (slot <= 0)
+                            // 🔴 原本是 `(inv, slot) = GetFirstAvailableSlot(Bag);` 再用 `slot <= 0` 判失敗。
+                            //    0 既是「找不到」的哨兵、也是合法的第 0 格 —— 空格剛好落在某個背包第 0 格時
+                            //    會被誤判成「這個背包沒空位」。上面已經用 GetEmptySlotsInBag() >= 1 確認過
+                            //    背包確實有空位，所以那正是下面這句 "somehow" 會被印出來的實際成因。
+                            //    改用 Try 版：成敗看回傳值，slot 只在成功時有意義。
+                            if (!InventoryHelper.TryGetFirstAvailableSlot(out InventoryType inv, out ushort slot, InventoryHelper.Bag))
                             {
                                 DebugLog("Moving to inventory ignored because no empty inventory slot found.. somehow");
                             }
