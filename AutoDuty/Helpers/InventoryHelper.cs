@@ -103,9 +103,56 @@ namespace AutoDuty.Helpers
             return (InventoryType.Invalid, 0);
         }
 
+        /// <summary>
+        /// 依 <paramref name="type"/> 取出背包容器；取不到（或還沒配置好 <c>Items</c>）就回 <see langword="false"/>。
+        /// </summary>
+        /// <remarks>
+        /// 🔴 <c>GetInventoryContainer</c> 是 <c>[MemberFunction]</c>，<b>合法回 <c>null</c></b>：
+        /// 傳進去的 <c>InventoryType</c> 不是這個角色現在持有的容器（例如雇員／部隊倉庫沒開、
+        /// 或值本身來自別的外掛的 IPC 而不是我們自己算出來的）時就是 <c>null</c>。
+        /// <para>
+        /// 🔴 <c>Items</c> 是 <c>InventoryContainer</c> 偏移 0x08 的<b>裸指標</b>，容器存在但還沒載入時是 <c>null</c>；
+        /// 而 <c>cont-&gt;Size</c>（偏移 0x14）在 <c>cont</c> 為 <c>null</c> 時<b>不會當場崩</b>，
+        /// 是靜默去讀位址 0x14 —— AccessViolationException 在 .NET Core 是 corrupted-state exception，
+        /// <c>try/catch</c> 攔不到。
+        /// </para>
+        /// </remarks>
+        internal static bool TryGetContainer(InventoryType type, out InventoryContainer* container)
+        {
+            container = InventoryManager.Instance()->GetInventoryContainer(type);
+            if (container == null || container->Items == null)
+            {
+                container = null;
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// 讀取 <paramref name="type"/> 容器第 <paramref name="index"/> 格；讀不到回 <see langword="false"/>。
+        /// </summary>
+        /// <remarks>
+        /// 🔴 除了容器判空，這裡還補上 <c>Size</c> 上界：索引有幾個呼叫端是從別的外掛的 IPC
+        /// （Gearsetter 的建議清單）拿來的，<b>不是我們自己算的</b>。越界讀到的是相鄰記憶體
+        /// 而不是 null，失敗形式完全靜默 —— 這與艦隊裡那個實機爆過兩千多次的「半套邊界檢查」同形。
+        /// </remarks>
+        internal static bool TryGetItem(InventoryType type, int index, out InventoryItem item)
+        {
+            item = default;
+            if (!TryGetContainer(type, out InventoryContainer* container)) return false;
+            if (index < 0 || index >= container->Size) return false;
+            item = container->Items[index];
+            return true;
+        }
+
         internal static ushort GetFirstAvailableSlot(InventoryType container)
         {
-            InventoryContainer* cont = InventoryManager.Instance()->GetInventoryContainer(container);
+            // fail-closed：容器取不到就回 0，與「掃完整個容器都沒有空格」共用同一條退路
+            // （這是本方法既有的「找不到」表示法，沒有新增語意）。
+            // ⚠️ 已知的既有陷阱（本次刻意不動）：0 同時也是一個**合法的格子索引**，
+            //    而唯一的呼叫端 GetFirstAvailableSlot(params) 用 `slot > 0` 判成功，
+            //    所以「第 0 格是空的」會被當成「找不到」。那是先前就存在的哨兵撞值問題。
+            if (!TryGetContainer(container, out InventoryContainer* cont)) return 0;
             for (int i = 0; i < cont->Size; i++)
             {
                 if (cont->Items[i].ItemId == 0)
@@ -183,15 +230,32 @@ namespace AutoDuty.Helpers
             return itemLevelTotal / 12;
         }*/
 
-        internal static InventoryItem LowestEquippedItem()
+        /// <summary>
+        /// 找出目前裝備中耐久最低的一件；裝備容器讀不到就回 <see langword="false"/>。
+        /// </summary>
+        /// <remarks>
+        /// 🔑 刻意做成 Try 版而不是「讀不到就回 <c>default</c>」：<c>default(InventoryItem)</c> 的
+        /// <c>Condition</c> 是 <b>0</b>，而 <see cref="CanRepair(uint)"/> 的判斷是
+        /// <c>Condition / 300f &lt;= percent</c> —— 回 <c>default</c> 等於<b>斷言「裝備全損、該去修了」</b>，
+        /// 會讓修理流程照著根本沒讀到的資料動作。呼叫端要分得出「讀不到」與「真的很低」。
+        /// <para>
+        /// 🔴 迴圈上界原本寫死 13，沒有對 <c>Size</c> 做任何檢查。這裡夾成 <c>min(13, Size)</c>：
+        /// 正常情況下裝備容器就是 14 格，行為與原本逐字相同；只有在容器還沒配置滿時才會少讀，
+        /// 而那正是原本會讀到相鄰記憶體的情況。
+        /// </para>
+        /// </remarks>
+        internal static bool TryGetLowestEquippedItem(out InventoryItem lowest)
         {
-            var equipedItems = InventoryManager.Instance()->GetInventoryContainer(InventoryType.EquippedItems);
+            lowest = default;
+            if (!TryGetContainer(InventoryType.EquippedItems, out InventoryContainer* equipedItems)) return false;
+
             uint itemLowestCondition = 60000;
             uint itemLowest = 0;
 
             Svc.Log.Verbose("Lowest Equipped Item checks:");
 
-            for (uint i = 0; i < 13; i++)
+            uint count = (uint)Math.Min(13, equipedItems->Size);
+            for (uint i = 0; i < count; i++)
             {
                 InventoryItem item = equipedItems->Items[i];
                 Svc.Log.Verbose($"{i}: {item.ItemId} {item.Condition}");
@@ -205,18 +269,28 @@ namespace AutoDuty.Helpers
 
             Svc.Log.Verbose($"lowest Index {itemLowest}");
 
-            return equipedItems->Items[itemLowest];
+            if (itemLowest >= (uint)equipedItems->Size) return false;
+            lowest = equipedItems->Items[itemLowest];
+            return true;
         }
+
+        internal static InventoryItem LowestEquippedItem()
+            => TryGetLowestEquippedItem(out InventoryItem lowest) ? lowest : default;
 
         public static IEnumerable<InventoryItem> GetInventorySelection(params InventoryType[] types)
         {
             IEnumerable<InventoryItem> items = [];
             foreach (InventoryType type in types)
             {
-                InventoryContainer container = *InventoryManager.Instance()->GetInventoryContainer(type);
+                // 🔴 原本是 `InventoryContainer container = *InventoryManager...GetInventoryContainer(type);`
+                //    —— **前置的 `*` 解參考**，取得器合法回 null 時就是直接讀位址 0。
+                //    這個形狀特別陰：它沒有 `->`，所以所有以 `->` 為軸的判空掃描都看不到它。
+                //    取不到就跳過這個容器，與下面 `IsLoaded == false` 走的是同一條路（行為不變）。
+                if (!TryGetContainer(type, out InventoryContainer* containerPtr)) continue;
+                InventoryContainer container = *containerPtr;
                 if(container.IsLoaded)
                 {
-                    for (uint i = 0; i < container.Size; i++) 
+                    for (uint i = 0; i < container.Size; i++)
                         items = items.Append(container.Items[i]);
                 }
             }
@@ -225,7 +299,10 @@ namespace AutoDuty.Helpers
         }
 
         internal static bool CanRepair() => CanRepair(Plugin.Configuration.AutoRepairPct);// && (!Plugin.Configuration.AutoRepairSelf || CanRepairItem(LowestEquippedItem().GetItemId()));
-        internal static bool CanRepair(uint percent) => (LowestEquippedItem().Condition / 300f) <= percent;// && (!Plugin.Configuration.AutoRepairSelf || CanRepairItem(LowestEquippedItem().GetItemId()));
+        // 🔑 fail-closed 的方向是「這一輪不修」：讀不到裝備容器時回 false，讓下一輪重判，
+        //    而不是在未知狀態下宣稱該去修理（那會讓自動化真的跑去修理 NPC、花掉暗物質）。
+        //    容器讀得到時的算式與原本逐字相同，既有行為沒有改變。
+        internal static bool CanRepair(uint percent) => TryGetLowestEquippedItem(out InventoryItem lowest) && (lowest.Condition / 300f) <= percent;// && (!Plugin.Configuration.AutoRepairSelf || CanRepairItem(LowestEquippedItem().GetItemId()));
 
         //artisan
         internal static bool CanRepairItem(uint itemID)

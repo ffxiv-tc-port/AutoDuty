@@ -153,7 +153,15 @@ namespace AutoDuty.Helpers
                     if (itemData == null) return;
                     var equipSlotIndex = targetSlot;// InventoryHelper.GetEquippedSlot(itemData.Value);
 
-                    if (InventoryManager.Instance()->GetInventoryContainer(inventoryType.Value)->Items[(int)sourceInventorySlot].ItemId != itemId)
+                    // 🔴 這三處原本都是 `InventoryManager.Instance()->GetInventoryContainer(x)->Items[i]` 的裸鏈。
+                    //    `GetInventoryContainer` 合法回 null，而且這裡的 inventoryType 與 sourceInventorySlot
+                    //    是 **Gearsetter 外掛透過 IPC 給的**，不是我們自己算出來的 —— 容器不存在、
+                    //    或索引超出 Size 都不是理論可能而已。改用 InventoryHelper.TryGetItem，
+                    //    它同時做容器判空與 Size 上界（越界讀到的是相鄰記憶體而不是 null，失敗完全靜默）。
+                    // fail-closed：讀不到就走原本「槽位裡的東西跟預期不符」那條路 ——
+                    //    標記需要第二輪、跳過這一件，而不是照著讀不到的資料把裝備搬來搬去。
+                    if (!InventoryHelper.TryGetItem(inventoryType.Value, (int)sourceInventorySlot, out InventoryItem sourceItem)
+                        || sourceItem.ItemId != itemId)
                     {
                         DebugLog($"Item in slot does not match expected item");
                         this._statesExecuted |= AutoEquipState.Recommended_Gear_Need_Second_Pass;
@@ -161,8 +169,10 @@ namespace AutoDuty.Helpers
                         return;
                     }
 
+                    // fail-closed：讀不到目前裝備欄就當「那一格是空的」＝不做「把舊裝備收回背包」這個動作。
+                    // 反過來（當成有東西）會對著讀不到的資料呼叫 MoveItemSlot。
                     if (Plugin.Configuration.AutoEquipRecommendedGearGearsetterOldToInventory && equipSlotIndex is not RaptureGearsetModule.GearsetItemIndex.MainHand and not RaptureGearsetModule.GearsetItemIndex.OffHand &&
-                        !InventoryManager.Instance()->GetInventoryContainer(InventoryType.EquippedItems)->Items[(int)equipSlotIndex].IsEmpty())
+                        InventoryHelper.TryGetItem(InventoryType.EquippedItems, (int)equipSlotIndex, out InventoryItem oldItem) && !oldItem.IsEmpty())
                     {
                         if (InventoryManager.Instance()->GetEmptySlotsInBag() < 1)
                         {
@@ -189,7 +199,10 @@ namespace AutoDuty.Helpers
 
                     DebugLog("Actually equipping");
                     InventoryHelper.EquipGear(itemData.Value, (InventoryType)inventoryType, (int)sourceInventorySlot, equipSlotIndex);
-                    if (InventoryManager.Instance()->GetInventoryContainer(InventoryType.EquippedItems)->Items[(int)equipSlotIndex].ItemId == itemId)
+                    // fail-closed：這是「裝上去成功了沒」的確認。讀不到就不推進 _index，
+                    // 下一輪會重試同一件 —— 把「確認不了」當成「成功」會靜默跳過一件裝備。
+                    if (InventoryHelper.TryGetItem(InventoryType.EquippedItems, (int)equipSlotIndex, out InventoryItem equipped)
+                        && equipped.ItemId == itemId)
                     {
                         DebugLog($"Successfully Equipped {itemData.Value.Name} to {equipSlotIndex.ToCustomString()}");
                         this._index++;
