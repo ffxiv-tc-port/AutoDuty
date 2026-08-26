@@ -3,6 +3,7 @@ using ECommons.DalamudServices;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -67,10 +68,10 @@ namespace AutoDuty.Updater
             {
                 var uri = new Uri("https://github.com/login/device/code");
                 var parameters = new FormUrlEncodedContent([new KeyValuePair<string, string>("client_id", CLIENT_ID)]);
-                _client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                if (!_client.DefaultRequestHeaders.Accept.Any(h => h.MediaType == "application/json"))
+                    _client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                 var response = await _client.PostAsync(uri, parameters);
                 var jsonString = await response.Content.ReadAsStringAsync();
-                _client.Dispose();
                 return JsonSerializer.Deserialize<UserCode>(jsonString, BuildTab.jsonSerializerOptions);
             }
             catch (Exception ex)
@@ -91,10 +92,10 @@ namespace AutoDuty.Updater
                     new KeyValuePair<string, string>("device_code", userCode.Device_Code),
                     new KeyValuePair<string, string>("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
                 ]);
-                _client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                if (!_client.DefaultRequestHeaders.Accept.Any(h => h.MediaType == "application/json"))
+                    _client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                 var response = await _client.PostAsync(uri, parameters);
                 var jsonString = await response.Content.ReadAsStringAsync();
-                _client.Dispose();
                 return JsonSerializer.Deserialize<PollResponseClass>(jsonString, BuildTab.jsonSerializerOptions);
             }
             catch (Exception ex)

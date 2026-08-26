@@ -124,12 +124,37 @@ namespace AutoDuty.IPC
         public static void SetPreset(string name, string preset)
         {
             if (Plugin.Configuration.AutoManageBossModAISettings)
+            {
                 if (Presets_GetActive() != name)
                 {
                     Svc.Log.Debug($"BossMod Setting Preset: {name}");
                     AddPreset(name, preset);
                     Presets_SetActive(name);
                 }
+                // Presets.SetActive only assigns RotationModuleManager.Preset, which AIBehaviour
+                // overwrites from AIManager.AiPreset every tick (see AIBehaviour.Execute). Without
+                // also driving AI.SetPreset (-> AIManager.SetAIPreset), the AI tick loop reverts our
+                // assignment on the very next frame and none of the transient movement/positional
+                // strategies below ever take effect.
+                // Only actually arm it while in combat: the preset's NormalMovement/StayCloseToTarget
+                // modules have no combat gate (unlike GoToPositional), so activating them during plain
+                // corridor navigation fights vnavmesh for movement control over an entirely separate
+                // pathfinder, and neither system wins - the character just stands still. This call runs
+                // on every SetPreset invocation (not just the first, guarded above), since duty-start
+                // calls this before combat starts and the combat-transition call needs its own check.
+                if (BossModReborn_IPCSubscriber.IsEnabled && PlayerHelper.InCombat && BossModReborn_IPCSubscriber.Presets_GetActive() != name)
+                    BossModReborn_IPCSubscriber.Presets_SetActive(name);
+            }
+        }
+
+        // Clears just the real AI.SetPreset arm (see SetPreset's comment) without touching the
+        // generic Presets.SetActive state - call this once combat/an action finishes and control
+        // is handing back to vnavmesh for plain navigation, so NormalMovement/StayCloseToTarget
+        // stop fighting it again on the next corridor stretch.
+        public static void DisableRealAIPreset()
+        {
+            if (Plugin.Configuration.AutoManageBossModAISettings && BossModReborn_IPCSubscriber.IsEnabled)
+                BossModReborn_IPCSubscriber.Presets_SetActive("");
         }
 
         public static void DisablePresets()
@@ -141,6 +166,8 @@ namespace AutoDuty.IPC
                     Svc.Log.Debug($"BossMod Disabling Presets");
                     Presets_ClearActive();
                 }
+                if (BossModReborn_IPCSubscriber.IsEnabled)
+                    BossModReborn_IPCSubscriber.Presets_SetActive("");
             }
         }
 
@@ -383,7 +410,7 @@ namespace AutoDuty.IPC
 
         internal static bool IsEnabled => IPCSubscriber_Common.IsReady("WrathCombo");
 
-        private static EzIPCDisposalToken[] _disposalTokens = EzIPC.Init(typeof(Wrath_IPCSubscriber), "WrathCombo", SafeWrapper.IPCException);
+        private static EzIPCDisposalToken[] _disposalTokens = EzIPC.Init(typeof(Wrath_IPCSubscriber), "WrathCombo", SafeWrapper.AnyException);
 
         /// <summary>
         ///     Register your plugin for control of Wrath Combo.

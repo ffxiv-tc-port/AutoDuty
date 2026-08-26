@@ -1,12 +1,12 @@
 {
   "Author": "Herculezz",
   "Name": "AutoDuty",
-  "Punchline": "AutoDuty",
-  "Description": "A plugin to run dungeons for you with Trust, Duty Support, Squadrons, Variants, and Regular, Requires BossMod, vnavmesh and a Rotation Plugin (Wrath Combo, BossMod AutoRotation, or RotationSolverReborn)",
+  "Punchline": "自動跑本，解放雙手。",
+  "Description": "自動幫你跑副本，支援信賴的同伴、達人指引、士官兵團、多變或一般模式。需搭配 BossModReborn、vnavmesh 與一款戰鬥循環插件（WrathCombo 或 BossMod AutoRotation）使用。",
   "InternalName": "AutoDuty",
   "DalamudApiLevel": "12",
-  "RepoUrl": "https://github.com/ffxivcode/AutoDuty",
-  "IconUrl": "https://s3.puni.sh/media/plugin/54/icon-15ug2vnr9m1.png",
+  "RepoUrl": "https://github.com/ffxiv-tc-port/AutoDuty",
+  "IconUrl": "https://raw.githubusercontent.com/ffxiv-tc-port/DalamudPluginsTC/main/icons/AutoDuty.png",
   "ImageUrls": [
     "https://s3.puni.sh/media/plugin/54/image-15l1o9gf3yg.png",
     "https://s3.puni.sh/media/plugin/54/image-gc84lu4pdpb.png",
