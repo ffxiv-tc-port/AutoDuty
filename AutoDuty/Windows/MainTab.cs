@@ -52,7 +52,9 @@ namespace AutoDuty.Windows
         }
 
         private static int _currentStepIndex = -1;
-        private static readonly string _pathsURL = "https://github.com/ffxivcode/AutoDuty/tree/master/AutoDuty/Paths";
+        // 「找不到路徑檔」訊息裡給使用者看的網址。指向本 fork,與實際下載來源
+        // (GitHubHelper.PathRepoBaseUrl)保持同一個 repo/分支。
+        private static readonly string _pathsURL = "https://github.com/ffxiv-tc-port/AutoDuty/tree/tc-7.20/AutoDuty/Paths";
 
         // New search text field for filtering duties
         private static string _searchText = string.Empty;
@@ -101,10 +103,10 @@ namespace AutoDuty.Windows
                         int                              curPath       = Math.Clamp(Plugin.CurrentPath, 0, curPaths.Count - 1);
 
                         Dictionary<string, JobWithRole>? pathSelection    = null;
-                        JobWithRole                      curJob = Svc.ClientState.LocalPlayer.GetJob().JobToJobWithRole();
+                        JobWithRole                      curJob = Svc.Objects.LocalPlayer.GetJob().JobToJobWithRole();
                         using (ImRaii.Disabled(curPath <= 0 ||
                                                !Plugin.Configuration.PathSelectionsByPath.ContainsKey(Plugin.CurrentTerritoryContent.TerritoryType) || 
-                                               !(pathSelection = Plugin.Configuration.PathSelectionsByPath[Plugin.CurrentTerritoryContent.TerritoryType]).Any(kvp => kvp.Value.HasJob(Svc.ClientState.LocalPlayer.GetJob()))))
+                                               !(pathSelection = Plugin.Configuration.PathSelectionsByPath[Plugin.CurrentTerritoryContent.TerritoryType]).Any(kvp => kvp.Value.HasJob(Svc.Objects.LocalPlayer.GetJob()))))
                         {
                             if (ImGui.Button("Clear Saved Path".Loc()))
                             {

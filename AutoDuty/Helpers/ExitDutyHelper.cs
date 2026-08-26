@@ -50,7 +50,19 @@ namespace AutoDuty.Helpers
 
         private static unsafe void Exit()
         {
-            AgentModule.Instance()->GetAgentByInternalId(AgentId.ContentsFinderMenu)->Show();
+            // 這條鏈有兩層都可能回 null:AgentModule.Instance() 是手寫取得子
+            // (`uiModule == null ? null : uiModule->GetAgentModule()`),GetAgentByInternalId() 則是原生
+            // MemberFunction、代理人尚未建立時同樣回 null。原本整條裸解參考。
+            // 兩層都判空後同幀即用;為 null 時本 tick 不動作,下 tick 重試(每幀熱路徑,不寫 log)。
+            AgentModule* agentModule = AgentModule.Instance();
+            if (agentModule == null)
+                return;
+
+            AgentInterface* agentContentsFinderMenu = agentModule->GetAgentByInternalId(AgentId.ContentsFinderMenu);
+            if (agentContentsFinderMenu == null)
+                return;
+
+            agentContentsFinderMenu->Show();
             if (GenericHelpers.TryGetAddonByName("ContentsFinderMenu", out AtkUnitBase* addonContentsFinderMenu))
             {
                 AddonHelper.FireCallBack(addonContentsFinderMenu, true, 0);

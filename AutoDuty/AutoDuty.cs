@@ -14,6 +14,7 @@ using System.Collections.Generic;
 using System.IO;
 using ECommons;
 using ECommons.DalamudServices;
+using ECommons.LanguageHelpers;
 using AutoDuty.Windows;
 using AutoDuty.IPC;
 using AutoDuty.External;
@@ -33,7 +34,6 @@ using Dalamud.Game.ClientState.Conditions;
 using AutoDuty.Properties;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
-using Serilog.Events;
 using AutoDuty.Updater;
 
 namespace AutoDuty;
@@ -194,13 +194,43 @@ public sealed class AutoDuty : IDalamudPlugin
     internal PluginState States = PluginState.None;
     internal int Indexer = -1;
     internal bool MainListClicked = false;
-    internal IBattleChara? BossObject;
+    // ⚠️ 不要把 IGameObject 存進欄位跨幀用。
+    // Dalamud 的 GameObject.Address 在建構時就凍結、永不重新解析
+    // (GameObject.cs:137-139,所有屬性都走 Struct => (GameObject*)this.Address),
+    // 而 IGameObject.IsValid() 只檢查「玩家有沒有登入」、完全不驗證位址
+    // (GameObject.cs:170-177)。所以存 IGameObject == 存一根原生指標。
+    // BossObject 會跨很多幀存活(ActionsManager.BossMoveCheck 是 TaskManager 的
+    // 檢查式,會反覆重跑並解 BossObject.Struct()->InCombat),王在分階段消失/重生、
+    // 團滅或離開副本時就是攔不到的 AccessViolation。
+    // 改成只存 GameObjectId、每次讀取時重查物件表:既有的 BossObject != null
+    // 守衛自動變成有效的存活檢查,查不到就走 null 分支而不是崩潰。
+    private ulong? bossObjectId = null;
+
+    internal IBattleChara? BossObject
+    {
+        get => this.bossObjectId is null ? null : Svc.Objects.SearchById(this.bossObjectId.Value) as IBattleChara;
+        set => this.bossObjectId = value?.GameObjectId;
+    }
     internal static IGameObject? ClosestObject => Svc.Objects.Where(o => o.IsTargetable && o.ObjectKind.EqualsAny(Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventObj, Dalamud.Game.ClientState.Objects.Enums.ObjectKind.BattleNpc)).OrderBy(ObjectHelper.GetDistanceToPlayer).TryGetFirst(out var gameObject) ? gameObject : null;
     internal OverrideCamera OverrideCamera;
     internal MainWindow MainWindow { get; init; }
     internal Overlay Overlay { get; init; }
     internal bool InDungeon => ContentHelper.DictionaryContent.ContainsKey(Svc.ClientState.TerritoryType);
     internal bool SkipTreasureCoffer = false;
+
+    /// <summary>
+    /// 多變迷宮(Variant Dungeon)目前走到的分歧編號,給
+    /// <see cref="Data.PathActionConditionVariantPath"/> 判斷步驟該不該執行。
+    /// ⚠️ 目前沒有任何程式碼會改變它 —— 上游是由 VariantVote 動作在投票時寫入的,
+    /// 而我方刻意不移植 VariantVote(2026-08-08 查證):它的唯一消費者是
+    /// (1315) The Merchant's Tale,而台服沒有這個副本 —— TerritoryType 1315 是空佔位列,
+    /// 對應 CFC 1066 超過台服表末列 1065,台服也沒有任何曉月之後的異聞迷宮。
+    /// 所以它恆為 0,只有 pathIndices 含 0 的條件會成立。
+    /// 等台服實裝該副本(判準:CFC 表出現指向 territory 1315 的列)再移植,
+    /// 屆時 BMR 模組的正確型別名字串才是已知的(上游路徑檔傳的名字對 BMR 少一個 N,本來就是靜默 no-op)。
+    /// </summary>
+    internal byte VariantPath = 0;
+
     internal string Action = "";
     internal string PathFile = "";
     internal TaskManager TaskManager;
@@ -233,6 +263,22 @@ public sealed class AutoDuty : IDalamudPlugin
         {
             Plugin = this;
             ECommonsMain.Init(PluginInterface, Plugin, Module.DalamudReflector, Module.ObjectFunctions);
+            // 讓「呼叫了對方沒有的 IPC 方法」不再完全靜默。
+            // 訂閱越早越好：事件只在 IPC **呼叫**當下才被查閱，在這裡訂閱就涵蓋往後所有呼叫。
+            EzIpcFailureLog.Enable();
+
+            // ECommons.IPC 的 IPCBase 預設 wrapper 是 SafeWrapper.None(例外直接往外擲)，
+            // 而且它是 lazy 單例、在第一次存取當下就烘死。AutoDuty 的門面類一律自己 new 並
+            // 把 wrapper 當建構式參數傳進去,所以不依賴這個值;這裡設成我方最常用的
+            // IPCException,是為了「萬一有人改用 ECommonsIPC.X 單例」時不會退回會擲例外的 None。
+            ECommons.IPC.Subscribers.IPCBase.DefaultWrapper = ECommons.EzIpcManager.SafeWrapper.IPCException;
+
+            // WrathCombo.API 若沒初始化,第一次呼叫會擲 UninitializedException;它也能自己從
+            // ECommons 反射拿 PluginInterface,但那條路失敗時是靜默回 null,所以明確傳進去。
+            // 🔴 不加任何 ErrorType 抑制:讓它照常擲例外,由 Wrath_IPCSubscriber.WrathSafe
+            // 接住並轉交 EzIpcFailureLog —— 抑制掉的話 Wrath IPC 失敗會完全沒有 log。
+            WrathCombo.API.WrathIPCWrapper.Init(PluginInterface);
+
             ECommons.LanguageHelpers.Localization.Init("ChineseTraditional");
             PictoService.Initialize(PluginInterface);
 
@@ -296,29 +342,29 @@ public sealed class AutoDuty : IDalamudPlugin
             Svc.Commands.AddHandler("/ad", new CommandInfo(OnCommand) { });
             Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
             {
-                HelpMessage = "\n/autoduty or /ad -> opens main window\n" +
-                "/autoduty or /ad config or cfg -> opens config window / modifies config\n" +
-                "/autoduty or /ad start -> starts autoduty when in a Duty\n" +
-                "/autoduty or /ad stop -> stops everything\n" +
-                "/autoduty or /ad pause -> pause route\n" +
-                "/autoduty or /ad resume -> resume route\n" +
-                "/autoduty or /ad turnin -> GC Turnin\n" +
-                "/autoduty or /ad desynth -> Desynth's your inventory\n" +
-                "/autoduty or /ad repair -> Repairs your gear\n" +
-                "/autoduty or /ad equiprec-> Equips recommended gear\n" +
-                "/autoduty or /ad extract -> Extract's materia from equipment\n" +
-                "/autoduty or /ad turnin -> GC Turnin\n" +
-                "/autoduty or /ad goto -> goes to\n" +
-                "/autoduty or /ad dataid -> Logs and copies your target's dataid to clipboard\n" +
-                "/autoduty or /ad exitduty -> exits duty\n" +
-                "/autoduty or /ad queue -> queues duty\n" +
-                "/autoduty or /ad moveto -> move's to territorytype and location sent\n" +
-                "/autoduty or /ad overlay -> opens overlay\n" +
-                "/autoduty or /ad overlay lock-> toggles locking the overlay\n" +
-                "/autoduty or /ad overlay nobg-> toggles the overlay's background\n" +
-                "/autoduty or /ad movetoflag -> moves to the flag map marker\n" +
-                "/autoduty or /ad run -> starts auto duty in territory type specified\n" +
-                "/autoduty or /ad tt -> logs and copies to clipboard the Territory Type number for duty specified\n"
+                HelpMessage = "\n/autoduty or /ad -> opens main window\n".Loc() +
+                "/autoduty or /ad config or cfg -> opens config window / modifies config\n".Loc() +
+                "/autoduty or /ad start -> starts autoduty when in a Duty\n".Loc() +
+                "/autoduty or /ad stop -> stops everything\n".Loc() +
+                "/autoduty or /ad pause -> pause route\n".Loc() +
+                "/autoduty or /ad resume -> resume route\n".Loc() +
+                "/autoduty or /ad turnin -> GC Turnin\n".Loc() +
+                "/autoduty or /ad desynth -> Desynth's your inventory\n".Loc() +
+                "/autoduty or /ad repair -> Repairs your gear\n".Loc() +
+                "/autoduty or /ad equiprec-> Equips recommended gear\n".Loc() +
+                "/autoduty or /ad extract -> Extract's materia from equipment\n".Loc() +
+                "/autoduty or /ad turnin -> GC Turnin\n".Loc() +
+                "/autoduty or /ad goto -> goes to\n".Loc() +
+                "/autoduty or /ad dataid -> Logs and copies your target's dataid to clipboard\n".Loc() +
+                "/autoduty or /ad exitduty -> exits duty\n".Loc() +
+                "/autoduty or /ad queue -> queues duty\n".Loc() +
+                "/autoduty or /ad moveto -> move's to territorytype and location sent\n".Loc() +
+                "/autoduty or /ad overlay -> opens overlay\n".Loc() +
+                "/autoduty or /ad overlay lock-> toggles locking the overlay\n".Loc() +
+                "/autoduty or /ad overlay nobg-> toggles the overlay's background\n".Loc() +
+                "/autoduty or /ad movetoflag -> moves to the flag map marker\n".Loc() +
+                "/autoduty or /ad run -> starts auto duty in territory type specified\n".Loc() +
+                "/autoduty or /ad tt -> logs and copies to clipboard the Territory Type number for duty specified\n".Loc()
             });
 
             PluginInterface.UiBuilder.Draw += DrawUI;
@@ -334,7 +380,11 @@ public sealed class AutoDuty : IDalamudPlugin
             Svc.DutyState.DutyWiped += DutyState_DutyWiped;
             Svc.DutyState.DutyRecommenced += DutyState_DutyRecommenced;
             Svc.DutyState.DutyCompleted += DutyState_DutyCompleted;
-            Svc.Log.MinimumLogLevel = LogEventLevel.Debug;
+            // 此行原設為 LogEventLevel.Debug 但無實際作用：非開發模式外掛的預設值
+            // (ScopedPluginLogService.GetDefaultLevel) 本來就已經是 Debug，等於設回原值。
+            // 外掛自訂等級只能比全域記錄等級更嚴格、不能更寬鬆，真正要看到 Debug 內容
+            // 要到 /xllog 調整全域等級（LogTab.cs 的說明文字已經這樣告知使用者）。
+            // 保留此註解避免日後又加回這行無效設定。
             PluginInterface.UiBuilder.Draw += UiBuilderOnDraw;
         }
         catch (Exception e)
@@ -509,9 +559,9 @@ public sealed class AutoDuty : IDalamudPlugin
             var startingPlanner = ctx.Source == RunSource.Planner;
             if (runningPlanner != startingPlanner)
             {
-                MainWindow.ShowPopup("Mode", runningPlanner
-                    ? "Planner is running. Stop it first."
-                    : "AutoDuty is running. Stop it first.");
+                MainWindow.ShowPopup("Mode".Loc(), runningPlanner
+                    ? "Planner is running. Stop it first.".Loc()
+                    : "AutoDuty is running. Stop it first.".Loc());
                 return;
             }
         }
@@ -744,13 +794,25 @@ public sealed class AutoDuty : IDalamudPlugin
         }
     }
 
-    private unsafe bool StopLoop => Configuration.EnableTerminationActions && 
+    private unsafe bool StopLoop
+    {
+        get
+        {
+            // AgentHUD.Instance() 是產生器產出的取得子
+            // (`agentModule == null ? null : (AgentHUD*)agentModule->GetAgentByInternalId(AgentId.Hud)`),
+            // UIModule/代理人尚未建立時會回 null,原本無條件解參考。
+            // 取不到就讓「無休息經驗」這條停止條件不成立 —— 不能拿未知資料去觸發「停止循環」。
+            AgentHUD* agentHud = AgentHUD.Instance();
+
+            return Configuration.EnableTerminationActions &&
                                         (CurrentTerritoryContent == null ||
                                         (Configuration.StopLevel && Player.Level >= Configuration.StopLevelInt) ||
-                                        (Configuration.StopNoRestedXP && AgentHUD.Instance()->ExpRestedExperience == 0) ||
-                                        (Configuration.StopItemQty && (Configuration.StopItemAll 
+                                        (Configuration.StopNoRestedXP && agentHud != null && agentHud->ExpRestedExperience == 0) ||
+                                        (Configuration.StopItemQty && (Configuration.StopItemAll
                                             ? Configuration.StopItemQtyItemDictionary.All(x => InventoryManager.Instance()->GetInventoryItemCount(x.Key) >= x.Value.Value)
                                             : Configuration.StopItemQtyItemDictionary.Any(x => InventoryManager.Instance()->GetInventoryItemCount(x.Key) >= x.Value.Value))));
+        }
+    }
 
     private void TrustLeveling()
     {
@@ -1331,6 +1393,39 @@ public sealed class AutoDuty : IDalamudPlugin
             return;
         }
 
+        // 步驟條件:全部成立才執行。空集合(絕大多數步驟)不進這個分支,行為與加入條件之前相同。
+        if (PathAction.Conditions.Count > 0)
+        {
+            PathActionCondition? unfulfilled = null;
+            foreach (PathActionCondition condition in PathAction.Conditions)
+            {
+                bool ok;
+                try
+                {
+                    ok = condition.IsFulfilled();
+                }
+                catch (Exception ex)
+                {
+                    // 條件算不出來就當成不成立(跳過該步驟),而不是讓例外把整個 Framework.Update 打斷。
+                    Svc.Log.Warning($"Path condition {condition.ParseKey} threw, treating as not fulfilled: {ex}");
+                    ok = false;
+                }
+
+                if (!ok)
+                {
+                    unfulfilled = condition;
+                    break;
+                }
+            }
+
+            if (unfulfilled != null)
+            {
+                Svc.Log.Debug($"Skipping path entry {PathAction.Name} because condition [{unfulfilled.Describe()}] is not fulfilled");
+                Indexer++;
+                return;
+            }
+        }
+
         if (PathAction.Position == Vector3.Zero)
         {
             Stage = Stage.Action;
@@ -1525,7 +1620,7 @@ public sealed class AutoDuty : IDalamudPlugin
         {
             CurrentTerritoryContent = null;
             PathFile = "";
-            MainWindow.ShowPopup("Error", "Unable to load content for Territory");
+            MainWindow.ShowPopup("Error".Loc(), "Unable to load content for Territory".Loc());
             return;
         }
         //MainWindow.OpenTab("Mini");
@@ -1831,7 +1926,7 @@ public sealed class AutoDuty : IDalamudPlugin
     {
         if (Interactables.Count == 0) return;
 
-        var list = Svc.Objects.Where(x => Interactables.Contains(x.DataId));
+        var list = Svc.Objects.Where(x => Interactables.Contains(x.BaseId));
 
         if (!list.Any()) return;
 
@@ -1968,6 +2063,7 @@ public sealed class AutoDuty : IDalamudPlugin
         FileHelper.FileSystemWatcher.Dispose();
         FileHelper.FileWatcher.Dispose();
         WindowSystem.RemoveAllWindows();
+        EzIpcFailureLog.Disable();
         ECommonsMain.Dispose();
         MainWindow.Dispose();
         OverrideCamera.Dispose();
@@ -2081,8 +2177,8 @@ public sealed class AutoDuty : IDalamudPlugin
                 else
                     obj = ObjectHelper.GetObjectByName(Svc.Targets.Target?.Name.TextValue ?? "");
 
-                Svc.Log.Info($"{obj?.DataId}");
-                ImGui.SetClipboardText($"{obj?.DataId}");
+                Svc.Log.Info($"{obj?.BaseId}");
+                ImGui.SetClipboardText($"{obj?.BaseId}");
                 break;
             case "moveto":
                 var argss = args.Replace("moveto ", "").Split("|");

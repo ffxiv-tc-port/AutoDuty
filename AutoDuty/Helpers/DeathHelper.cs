@@ -11,6 +11,7 @@ using System;
 namespace AutoDuty.Helpers
 {
     using System.Numerics;
+    using global::AutoDuty.Multibox;
 
     internal static class DeathHelper
     {
@@ -20,6 +21,12 @@ namespace AutoDuty.Helpers
             get => _deathState;
             set
             {
+                // 🔴 這行必須在下面那個 DutyMode 早退之前:MultiboxUtility.Set() 會把
+                // DutyModeEnum 設成 Regular,若擺在早退之後,多開模式下(非 Unsynced)
+                // 死亡同步永遠不會送出。內部自帶 Config.MultiBox 閘門,沒開就是 no-op。
+                if (_deathState != value)
+                    MultiboxUtility.IsDead(value == PlayerLifeState.Dead);
+
                 if (Plugin.Configuration.DutyModeEnum.EqualsAny(DutyMode.Regular, DutyMode.Trial, DutyMode.Raid) && !Plugin.Configuration.Unsynced)
                     return;
                 else if (value == PlayerLifeState.Dead)

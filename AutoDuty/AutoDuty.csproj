@@ -31,6 +31,12 @@
     <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+
+    <!-- 🔴 建 AutoDuty.sln 時,不在方案裡的 ProjectReference(ffxiv_pictomancy 子模組)不會
+         繼承方案的 Release/x64,會退回自己的預設 Debug 並被靜默複製進 bin/x64/Release。
+         2026-08-19 實測:不設這個屬性時 sln 建置吐出 Pictomancy -> bin/Debug/Pictomancy.dll。
+         (CI 與發版走的是 AutoDuty.csproj 直建,不受影響;這條是保護本機 sln 建置。) -->
+    <ShouldUnsetParentConfigurationAndPlatform>false</ShouldUnsetParentConfigurationAndPlatform>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -60,7 +66,18 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ECommons\ECommons\ECommons.csproj" />
-    <PackageReference Include="Pictomancy" Version="0.0.1" />
+    <ProjectReference Include="..\ECommons.IPC\ECommons.IPC\ECommons.IPC.csproj" />
+    <ProjectReference Include="..\WrathCombo.API\WrathCombo.API.csproj" />
+    <!-- Pictomancy 原本是 NuGet 套件 Pictomancy 0.0.1(上游 sourpuh 發佈的版本);上游 AutoDuty
+         在 06679186「api 13 + picto submodule to nuget」把子模組換成了 NuGet。
+         2026-08-19 用 SHA-256 確認這對艦隊是個靜默缺口:AutoDuty/bin/Release/Pictomancy.dll 與
+         NuGet 快取 pictomancy/0.0.1/lib/net9.0-windows7.0/Pictomancy.dll 位元組完全相同
+         (5edb0429…、檔案日期停在 2025-08-06),也就是艦隊在 ffxiv_pictomancy fork 上做的任何
+         修正 AutoDuty 一項都吃不到,失敗形式與 ECommons 那次一樣完全靜默。
+         改成引用子模組原始碼,並與 ICE、Splatoon、Ocelot 釘同一個 commit(788bc33)。
+         ⚠️ 不要改回 PackageReference:Pictomancy 0.0.2 以後只發 net10.0-windows7.0,
+            0.0.1 是最後一個支援 net9.0-windows7.0 的版本,升版會 NU1202。 -->
+    <ProjectReference Include="..\ffxiv_pictomancy\Pictomancy\Pictomancy.csproj" />
     <Reference Include="Dalamud.Common">
       <HintPath>$(DalamudLibPath)Dalamud.Common.dll</HintPath>
     </Reference>

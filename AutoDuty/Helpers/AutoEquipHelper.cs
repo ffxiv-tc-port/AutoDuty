@@ -48,7 +48,14 @@ namespace AutoDuty.Helpers
         {
             base.Stop();
 
-            RaptureGearsetModule.Instance()->UpdateGearset(RaptureGearsetModule.Instance()->CurrentGearsetIndex);
+            // RaptureGearsetModule.Instance() 是 FFXIVClientStructs 裡手寫的取得子
+            // (`uiModule == null ? null : uiModule->GetRaptureGearsetModule()`),UIModule 尚未建立時會回 null,
+            // 原本在同一行連續解參考兩次。取進區域變數判空後同幀即用;為 null 時跳過更新裝備組,
+            // 其餘收尾(狀態歸零、PortraitHelper)照常執行。
+            RaptureGearsetModule* gearsetModule = RaptureGearsetModule.Instance();
+            if (gearsetModule != null)
+                gearsetModule->UpdateGearset(gearsetModule->CurrentGearsetIndex);
+
             this._statesExecuted = AutoEquipState.None;
             this._index          = 0;
             this._gearset        = null;
@@ -75,19 +82,27 @@ namespace AutoDuty.Helpers
             if (!EzThrottler.Throttle(this.Name, 250))
                 return;
 
-            if (RecommendEquipModule.Instance()->IsUpdating)
+            // RecommendEquipModule.Instance() 是手寫的取得子
+            // (`uiModule == null ? null : uiModule->GetRecommendEquipModule()`),UIModule 尚未建立時會回 null,
+            // 原本三處都無條件解參考。取進區域變數判空後同幀即用;為 null 時本 tick 不動作,
+            // 下 tick 節流放行時再試(每幀熱路徑,不寫 log),逾時仍由 Start() 排的 TimeOut 收尾。
+            RecommendEquipModule* recommendEquipModule = RecommendEquipModule.Instance();
+            if (recommendEquipModule == null)
+                return;
+
+            if (recommendEquipModule->IsUpdating)
                     return;
 
             if (!this._statesExecuted.HasFlag(AutoEquipState.Setting_Up))
             {
                 DebugLog($"RecommendEquipModule - SetupForClassJob");
-                RecommendEquipModule.Instance()->SetupForClassJob((byte)Svc.ClientState.LocalPlayer!.ClassJob.RowId);
+                recommendEquipModule->SetupForClassJob((byte)Svc.Objects.LocalPlayer!.ClassJob.RowId);
                 this._statesExecuted |= AutoEquipState.Setting_Up;
             }
             else if (!this._statesExecuted.HasFlag(AutoEquipState.Equipping))
             {
                 DebugLog($"RecommendEquipModule - EquipRecommendedGear");
-                RecommendEquipModule.Instance()->EquipRecommendedGear();
+                recommendEquipModule->EquipRecommendedGear();
                 this._statesExecuted |= AutoEquipState.Equipping;
             }
             else
@@ -107,17 +122,24 @@ namespace AutoDuty.Helpers
 
             EzThrottler.Throttle("AutoEquipGearSetter", 50);
 
+            // 同 AutoEquipUpdate:RaptureGearsetModule.Instance() 手寫取得子會在 UIModule 尚未建立時回 null,
+            // 底下四個分支原本都無條件解參考(其中兩處還是同一行連續兩次)。取進區域變數判空後同幀即用;
+            // 為 null 時本 tick 不動作,下 tick 再試(每幀熱路徑,不寫 log),逾時由 TimeOut 收尾。
+            RaptureGearsetModule* gearsetModule = RaptureGearsetModule.Instance();
+            if (gearsetModule == null)
+                return;
+
             if (!this._statesExecuted.HasFlag(AutoEquipState.Updating_Gearset))
             {
                 DebugLog($"RaptureGearsetModule - UpdateGearset");
-                RaptureGearsetModule.Instance()->UpdateGearset(RaptureGearsetModule.Instance()->CurrentGearsetIndex);
+                gearsetModule->UpdateGearset(gearsetModule->CurrentGearsetIndex);
                 this._statesExecuted |= AutoEquipState.Updating_Gearset;
                 EzThrottler.Throttle("AutoEquipGearSetter", 500, true);
             }
             else if (!this._statesExecuted.HasFlag(AutoEquipState.Getting_Recommended_Gear))
             {
                 DebugLog($"Gearsetter_IPCSubscriber - GetRecommendationsForGearset");
-                this._gearset     =  Gearsetter_IPCSubscriber.GetRecommendationsForGearset((byte)RaptureGearsetModule.Instance()->CurrentGearsetIndex);
+                this._gearset     =  Gearsetter_IPCSubscriber.GetRecommendationsForGearset((byte)gearsetModule->CurrentGearsetIndex);
                 this._statesExecuted |= AutoEquipState.Getting_Recommended_Gear;
             }
             else if (this._gearset != null && this._index < this._gearset.Count)
@@ -131,7 +153,15 @@ namespace AutoDuty.Helpers
                     if (itemData == null) return;
                     var equipSlotIndex = targetSlot;// InventoryHelper.GetEquippedSlot(itemData.Value);
 
-                    if (InventoryManager.Instance()->GetInventoryContainer(inventoryType.Value)->Items[(int)sourceInventorySlot].ItemId != itemId)
+                    // 🔴 這三處原本都是 `InventoryManager.Instance()->GetInventoryContainer(x)->Items[i]` 的裸鏈。
+                    //    `GetInventoryContainer` 合法回 null，而且這裡的 inventoryType 與 sourceInventorySlot
+                    //    是 **Gearsetter 外掛透過 IPC 給的**，不是我們自己算出來的 —— 容器不存在、
+                    //    或索引超出 Size 都不是理論可能而已。改用 InventoryHelper.TryGetItem，
+                    //    它同時做容器判空與 Size 上界（越界讀到的是相鄰記憶體而不是 null，失敗完全靜默）。
+                    // fail-closed：讀不到就走原本「槽位裡的東西跟預期不符」那條路 ——
+                    //    標記需要第二輪、跳過這一件，而不是照著讀不到的資料把裝備搬來搬去。
+                    if (!InventoryHelper.TryGetItem(inventoryType.Value, (int)sourceInventorySlot, out InventoryItem sourceItem)
+                        || sourceItem.ItemId != itemId)
                     {
                         DebugLog($"Item in slot does not match expected item");
                         this._statesExecuted |= AutoEquipState.Recommended_Gear_Need_Second_Pass;
@@ -139,8 +169,10 @@ namespace AutoDuty.Helpers
                         return;
                     }
 
+                    // fail-closed：讀不到目前裝備欄就當「那一格是空的」＝不做「把舊裝備收回背包」這個動作。
+                    // 反過來（當成有東西）會對著讀不到的資料呼叫 MoveItemSlot。
                     if (Plugin.Configuration.AutoEquipRecommendedGearGearsetterOldToInventory && equipSlotIndex is not RaptureGearsetModule.GearsetItemIndex.MainHand and not RaptureGearsetModule.GearsetItemIndex.OffHand &&
-                        !InventoryManager.Instance()->GetInventoryContainer(InventoryType.EquippedItems)->Items[(int)equipSlotIndex].IsEmpty())
+                        InventoryHelper.TryGetItem(InventoryType.EquippedItems, (int)equipSlotIndex, out InventoryItem oldItem) && !oldItem.IsEmpty())
                     {
                         if (InventoryManager.Instance()->GetEmptySlotsInBag() < 1)
                         {
@@ -148,9 +180,12 @@ namespace AutoDuty.Helpers
                         }
                         else
                         {
-                            (InventoryType inv, ushort slot) = InventoryHelper.GetFirstAvailableSlot(InventoryHelper.Bag);
-
-                            if (slot <= 0)
+                            // 🔴 原本是 `(inv, slot) = GetFirstAvailableSlot(Bag);` 再用 `slot <= 0` 判失敗。
+                            //    0 既是「找不到」的哨兵、也是合法的第 0 格 —— 空格剛好落在某個背包第 0 格時
+                            //    會被誤判成「這個背包沒空位」。上面已經用 GetEmptySlotsInBag() >= 1 確認過
+                            //    背包確實有空位，所以那正是下面這句 "somehow" 會被印出來的實際成因。
+                            //    改用 Try 版：成敗看回傳值，slot 只在成功時有意義。
+                            if (!InventoryHelper.TryGetFirstAvailableSlot(out InventoryType inv, out ushort slot, InventoryHelper.Bag))
                             {
                                 DebugLog("Moving to inventory ignored because no empty inventory slot found.. somehow");
                             }
@@ -167,7 +202,10 @@ namespace AutoDuty.Helpers
 
                     DebugLog("Actually equipping");
                     InventoryHelper.EquipGear(itemData.Value, (InventoryType)inventoryType, (int)sourceInventorySlot, equipSlotIndex);
-                    if (InventoryManager.Instance()->GetInventoryContainer(InventoryType.EquippedItems)->Items[(int)equipSlotIndex].ItemId == itemId)
+                    // fail-closed：這是「裝上去成功了沒」的確認。讀不到就不推進 _index，
+                    // 下一輪會重試同一件 —— 把「確認不了」當成「成功」會靜默跳過一件裝備。
+                    if (InventoryHelper.TryGetItem(InventoryType.EquippedItems, (int)equipSlotIndex, out InventoryItem equipped)
+                        && equipped.ItemId == itemId)
                     {
                         DebugLog($"Successfully Equipped {itemData.Value.Name} to {equipSlotIndex.ToCustomString()}");
                         this._index++;
@@ -180,14 +218,14 @@ namespace AutoDuty.Helpers
             {
                 // Gearsetter returns the same ring slot for both hands if two instances of the same ring should be used. This allows equiping one of them and the other one.
                 DebugLog($"RaptureGearsetModule - UpdateGearsetSecondPass");
-                RaptureGearsetModule.Instance()->UpdateGearset(RaptureGearsetModule.Instance()->CurrentGearsetIndex);
+                gearsetModule->UpdateGearset(gearsetModule->CurrentGearsetIndex);
                 this._statesExecuted |= AutoEquipState.Updating_Gearset_Second_Pass;
                 EzThrottler.Throttle("AutoEquipGearSetter", 500, true);
             }
             else if (this._statesExecuted.HasFlag(AutoEquipState.Recommended_Gear_Need_Second_Pass) && !this._statesExecuted.HasFlag(AutoEquipState.Getting_Recommended_Gear_Second_Pass))
             {
                 DebugLog($"Gearsetter_IPCSubscriber - GetRecommendationsForGearset");
-                this._gearset     =  Gearsetter_IPCSubscriber.GetRecommendationsForGearset((byte)RaptureGearsetModule.Instance()->CurrentGearsetIndex);
+                this._gearset     =  Gearsetter_IPCSubscriber.GetRecommendationsForGearset((byte)gearsetModule->CurrentGearsetIndex);
                 this._index       = 0;
                 this._statesExecuted |= AutoEquipState.Getting_Recommended_Gear_Second_Pass;
             }

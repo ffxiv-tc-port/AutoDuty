@@ -13,10 +13,23 @@ using System.Linq;
 namespace AutoDuty.Helpers
 {
     using System;
+    using global::AutoDuty.Multibox;
     using static Data.Classes;
 
     internal unsafe class QueueHelper : ActiveHelperBase<QueueHelper>
     {
+        /// <summary>
+        /// 只等待並接受副本確認視窗,不自己排隊。
+        /// 📌 供 Multibox 用戶端使用:排隊是主機端做的,用戶端只負責接下彈出的確認。
+        /// </summary>
+        internal static void InvokeAcceptOnly()
+        {
+            _dutyMode = DutyMode.None;
+            Svc.Log.Information("Queueing: Accepting only");
+            Instance.Start();
+            Plugin.Action = "Queueing: Waiting to accept";
+        }
+
         internal static void Invoke(Content? content, DutyMode dutyMode)
         {
             if (State != ActionState.Running && content != null && dutyMode != DutyMode.None)
@@ -69,16 +82,33 @@ namespace AutoDuty.Helpers
             if (TrustHelper.State == ActionState.Running) return;
 
             AgentDawn* agentDawn = AgentDawn.Instance();
+            if (agentDawn == null) return;
+
             if (!agentDawn->IsAddonReady())
             {
-                if (!EzThrottler.Throttle("OpenDawn", 5000) || !AgentHUD.Instance()->IsMainCommandEnabled(82)) return;
+                if (!EzThrottler.Throttle("OpenDawn", 5000)) return;
+
+                // AgentHUD.Instance() 與 RaptureAtkModule.Instance() 都會在 UIModule 尚未建立時回 null
+                // (產生器出來的實作就是 agentModule == null ? null : ...,RaptureAtkModule 亦同),
+                // 原本兩者都無條件解參考。取進區域變數、判空後同幀即用;為 null 時安靜跳過本次
+                // 處理,下次節流放行時再試。
+                AgentHUD* agentHud = AgentHUD.Instance();
+                if (agentHud == null || !agentHud->IsMainCommandEnabled(82)) return;
 
                 Svc.Log.Debug("Queue Helper - Opening Dawn");
-                RaptureAtkModule.Instance()->OpenDawn(_content.RowId);
+                RaptureAtkModule* raptureAtkModule = RaptureAtkModule.Instance();
+                if (raptureAtkModule != null)
+                    raptureAtkModule->OpenDawn(_content.RowId);
                 return;
             }
 
-            if (agentDawn->Data->ContentData.ExpansionCount < (_content!.ExVersion - 2))
+            // IsAddonReady() 只代表附加介面已就緒，不保證代理人的 Data 資料區塊已配置：
+            // 兩者生命週期不同步。每次重取、顯式判空、同幀即用；為 null 時安靜跳過本次
+            // 處理，下一幀（節流後）再試。
+            var dawnData = agentDawn->Data;
+            if (dawnData == null) return;
+
+            if (dawnData->ContentData.ExpansionCount < (_content!.ExVersion - 2))
             {
                 Svc.Log.Debug($"Queue Helper - You do not have expansion: {_content.ExVersion} unlocked stopping");
                 Stop();
@@ -88,13 +118,15 @@ namespace AutoDuty.Helpers
             if ((byte) agentDawn->SelectedContentId != _content.DawnRowId)
             {
                 Svc.Log.Debug($"Queue Helper - Clicking: {_content.EnglishName} at {_content.RowId} with dawn {_content.DawnRowId} instead of {agentDawn->SelectedContentId}");
-                RaptureAtkModule.Instance()->OpenDawn(_content.RowId);
+                RaptureAtkModule* raptureAtkModule = RaptureAtkModule.Instance();
+                if (raptureAtkModule != null)
+                    raptureAtkModule->OpenDawn(_content.RowId);
             }
             else if (!_turnedOffTrustMembers)
             {
                 if (EzThrottler.Throttle("_turnedOffTrustMembers", 500))
                 {
-                    agentDawn->Data->PartyData.ClearParty();
+                    dawnData->PartyData.ClearParty();
                     agentDawn->UpdateAddon();
                     SchedulerHelper.ScheduleAction("_turnedOffTrustMembers", () => _turnedOffTrustMembers = true, 250);
                 }
@@ -103,7 +135,7 @@ namespace AutoDuty.Helpers
             {
                 if (EzThrottler.Throttle("_turnedOnConfigMembers", 500))
                 {
-                    AgentDawnInterface.DawnMemberEntry* curMembers = agentDawn->Data->MemberData.GetMembers(agentDawn->Data->MemberData.CurrentMembersIndex);
+                    AgentDawnInterface.DawnMemberEntry* curMembers = dawnData->MemberData.GetMembers(dawnData->MemberData.CurrentMembersIndex);
                     var                                 members    = Plugin.Configuration.SelectedTrustMembers;
                     if (members.Count(x => x is not null) == 3)
                         members.OrderBy(x => TrustHelper.Members[(TrustMemberName)x!].Role)
@@ -114,7 +146,7 @@ namespace AutoDuty.Helpers
                                              byte                               index       = TrustHelper.Members[(TrustMemberName)member].Index;
                                              AgentDawnInterface.DawnMemberEntry memberEntry = curMembers[index];
 
-                                             agentDawn->Data->PartyData.AddMember(index, &memberEntry);
+                                             dawnData->PartyData.AddMember(index, &memberEntry);
                                          }
                                      });
                     agentDawn->UpdateAddon();
@@ -131,73 +163,158 @@ namespace AutoDuty.Helpers
         private void QueueSupport()
         {
             AgentDawnStory* agentDawnStory = AgentDawnStory.Instance();
+            if (agentDawnStory == null) return;
+
             if (!agentDawnStory->IsAddonReady())
             {
-                if (!EzThrottler.Throttle("OpenDawnStory", 5000) || !AgentHUD.Instance()->IsMainCommandEnabled(91)) return;
+                if (!EzThrottler.Throttle("OpenDawnStory", 5000)) return;
+
+                // 同 QueueTrust:AgentHUD 與 RaptureAtkModule 在 UIModule 未建立時都會回 null。
+                AgentHUD* agentHud = AgentHUD.Instance();
+                if (agentHud == null || !agentHud->IsMainCommandEnabled(91)) return;
                 
                 Svc.Log.Debug("Queue Helper - Opening DawnStory");
-                RaptureAtkModule.Instance()->OpenDawnStory(_content.Id);
+                RaptureAtkModule* raptureAtkModule = RaptureAtkModule.Instance();
+                if (raptureAtkModule != null)
+                    raptureAtkModule->OpenDawnStory(_content.Id);
                 return;
             }
 
-            if (agentDawnStory->Data->ContentData.ExpansionCount <= _content!.ExVersion)
+            // IsAddonReady() 只代表附加介面已就緒，不保證代理人的 Data 資料區塊已配置：
+            // 兩者生命週期不同步。每次重取、顯式判空、同幀即用；為 null 時安靜跳過本次
+            // 處理，下一幀（節流後）再試。
+            var dawnStoryData = agentDawnStory->Data;
+            if (dawnStoryData == null) return;
+
+            if (dawnStoryData->ContentData.ExpansionCount <= _content!.ExVersion)
             {
                 Svc.Log.Debug($"Queue Helper - You do not have expansion: {_content.ExVersion} unlocked. stopping");
                 Stop();
                 return;
             }
 
-            if (agentDawnStory->Data->ContentData.ContentEntries[agentDawnStory->Data->ContentData.SelectedContentEntry].ContentFinderConditionId != _content.RowId)
+            if (dawnStoryData->ContentData.ContentEntries[dawnStoryData->ContentData.SelectedContentEntry].ContentFinderConditionId != _content.RowId)
             {
-                Svc.Log.Debug($"Queue Helper - Clicking: {_content.EnglishName} {_content.RowId}");// instead of {agentDawnStory->Data->ContentData.ContentEntries[agentDawnStory->Data->ContentData.SelectedContentEntry].ContentFinderConditionId}");
+                Svc.Log.Debug($"Queue Helper - Clicking: {_content.EnglishName} {_content.RowId}");// instead of {dawnStoryData->ContentData.ContentEntries[dawnStoryData->ContentData.SelectedContentEntry].ContentFinderConditionId}");
 
-                RaptureAtkModule.Instance()->OpenDawnStory(_content.RowId);
+                RaptureAtkModule* raptureAtkModule = RaptureAtkModule.Instance();
+                if (raptureAtkModule != null)
+                    raptureAtkModule->OpenDawnStory(_content.RowId);
             }
             else if(EzThrottler.Throttle("ClickRegisterButton", 10000))
             {
                 Svc.Log.Debug($"Queue Helper - Clicking: Register For Duty");
-                AgentDawnStory.Instance()->RegisterForDuty();
+                agentDawnStory->RegisterForDuty();
             }
+        }
+
+        /// <summary>
+        /// 取出副本列表目前選取項目的顯示名稱;取不到就回 "?"。
+        ///
+        /// 這是純診斷用途,原本整條鏈零檢查:
+        ///   items[(int)DutyList->SelectedItemIndex].Renderer->GetTextNodeById(5)->GetAsAtkTextNode()->NodeText
+        /// 三個問題:
+        ///  ① SelectedItemIndex 沿用 AtkComponentList 的語意,**沒有選取時是 -1**,
+        ///     而且沒有任何上界比對 → 直接丟 ArgumentOutOfRangeException。
+        ///  ② Renderer 可能是 null,而 GetTextNodeById 是 [MemberFunction] 原生呼叫,
+        ///     對 null 呼叫即 AccessViolationException(corrupted-state,try/catch 攔不到)。
+        ///  ③ GetTextNodeById 找不到節點時回 null,原本直接再接 GetAsAtkTextNode()。
+        /// 回 "?" 而不是空字串,是為了讓診斷訊息看得出「不知道」而不是「名字是空的」。
+        /// </summary>
+        private string GetSelectedDutyListItemName(List<AtkComponentTreeListItem> items)
+        {
+            if (_addonContentsFinder == null)
+                return "?";
+
+            var dutyList = _addonContentsFinder->DutyList;
+            if (dutyList == null)
+                return "?";
+
+            var index = dutyList->SelectedItemIndex;
+            if (index < 0 || index >= items.Count)
+                return "?";
+
+            var renderer = items[index].Renderer;
+            if (renderer == null)
+                return "?";
+
+            var textNode = renderer->GetTextNodeById(5);
+            if (textNode == null || textNode->AtkResNode.Type != NodeType.Text)
+                return "?";
+
+            return textNode->NodeText.ToString().Replace("...", "");
         }
 
         private void QueueRegular()
         {
-            if (ContentsFinder.Instance()->IsUnrestrictedParty != Plugin.Configuration.Unsynced)
+            // ContentsFinder 是 [StaticAddress] 解析出來的靜態實例,特徵碼失配時 Resolve 會靜默
+            // 留下 null;AgentContentsFinder.Instance() 則在 UIModule 未建立時回 null。本方法原本
+            // 有六處無條件解參考(行號會隨編輯漂移,不寫死),而且整段被 try/catch 包住 ——
+            // ⚠️ AccessViolationException 在 .NET Core 是 corrupted-state exception,catch 攔不到,
+            //    例外隔離不算防護。改成方法開頭各取一次、判空後同幀即用;兩者任一為 null 時
+            //    整個 tick 不動作(排隊變成靜默 no-op 而不是崩潰)。
+            ContentsFinder*      contentsFinder      = ContentsFinder.Instance();
+            AgentContentsFinder* agentContentsFinder = AgentContentsFinder.Instance();
+            if (contentsFinder == null || agentContentsFinder == null)
+                return;
+
+            if (contentsFinder->IsUnrestrictedParty != Plugin.Configuration.Unsynced)
             {
                 Svc.Log.Debug("Queue Helper - Setting UnrestrictedParty");
-                ContentsFinder.Instance()->IsUnrestrictedParty = Plugin.Configuration.Unsynced;
+                contentsFinder->IsUnrestrictedParty = Plugin.Configuration.Unsynced;
                 return;
             }
 
             GenericHelpers.TryGetAddonByName("ContentsFinder", out _addonContentsFinder);
             if (!_allConditionsMetToJoin && (_addonContentsFinder == null || !GenericHelpers.IsAddonReady((AtkUnitBase*)_addonContentsFinder)))
             {
-                if (!AgentHUD.Instance()->IsMainCommandEnabled(33))
+                AgentHUD* agentHud = AgentHUD.Instance();
+                if (agentHud == null || !agentHud->IsMainCommandEnabled(33))
                     return;
                 Svc.Log.Debug($"Queue Helper - Opening ContentsFinder to {_content!.Name}");
-                AgentContentsFinder.Instance()->OpenRegularDuty(_content.ContentFinderCondition);
+                agentContentsFinder->OpenRegularDuty(_content.ContentFinderCondition);
                 return;
             }
 
+            // 上面那個 && 在 _allConditionsMetToJoin 為 true 時會短路,addon 的 null 檢查整個被跳過;
+            // 而 TryGetAddonByName 找不到 addon 時會把 out 參數設成 null ——
+            // 也就是排隊條件都符合之後,ContentsFinder 一關閉,下一 tick 就會對空指標取 DutyList。
+            // 這裡補一道與 _allConditionsMetToJoin 無關的閘,失敗形式是「這一 tick 不動作」。
+            if (_addonContentsFinder == null || _addonContentsFinder->DutyList == null)
+                return;
+
             if (_addonContentsFinder->DutyList->Items.LongCount == 0)
                 return;
-            
+
             var vectorDutyListItems = _addonContentsFinder->DutyList->Items;
             List<AtkComponentTreeListItem> listAtkComponentTreeListItems = [];
             if (vectorDutyListItems.Count == 0)
                 return;
             
-            vectorDutyListItems.ForEach(pointAtkComponentTreeListItem => listAtkComponentTreeListItems.Add(*(pointAtkComponentTreeListItem.Value)));
-
-            if (!_allConditionsMetToJoin && AgentContentsFinder.Instance()->SelectedDuty.Id != _content!.ContentFinderCondition)
+            // 向量裡的項目指標可能是空的,解參考前先擋掉(原本是無條件 *p.Value)。
+            vectorDutyListItems.ForEach(pointAtkComponentTreeListItem =>
             {
-                Svc.Log.Debug($"Queue Helper - Opening ContentsFinder to {_content.Name} because we have the wrong selection of {listAtkComponentTreeListItems[(int)_addonContentsFinder->DutyList->SelectedItemIndex].Renderer->GetTextNodeById(5)->GetAsAtkTextNode()->NodeText.ToString().Replace("...", "")}");
-                AgentContentsFinder.Instance()->OpenRegularDuty(_content.ContentFinderCondition);
+                if (pointAtkComponentTreeListItem.Value != null)
+                    listAtkComponentTreeListItems.Add(*(pointAtkComponentTreeListItem.Value));
+            });
+
+            if (!_allConditionsMetToJoin && agentContentsFinder->SelectedDuty.Id != _content!.ContentFinderCondition)
+            {
+                // 原本這行把整條原生解參考鏈寫在字串插值裡 —— 插值一律先求值,
+                // 所以不管記錄等級開到多低都會執行。先取進區域變數,插值只用區域變數。
+                var wrongSelectionName = GetSelectedDutyListItemName(listAtkComponentTreeListItems);
+                Svc.Log.Debug($"Queue Helper - Opening ContentsFinder to {_content.Name} because we have the wrong selection of {wrongSelectionName}");
+                agentContentsFinder->OpenRegularDuty(_content.ContentFinderCondition);
                 EzThrottler.Throttle("QueueHelper", 500, true);
                 return;
             }
 
-            var selectedDutyName = _addonContentsFinder->AtkValues[18].GetValueAsString().Replace("\u0002\u001a\u0002\u0002\u0003", string.Empty).Replace("\u0002\u001a\u0002\u0001\u0003", string.Empty).Replace("\u0002\u001f\u0001\u0003", "\u2013");
+            // AtkValues 是原生指標陣列,沒有 Length 可以靠 —— 索引 18 必須先比對 AtkValuesCount。
+            // 越界讀到的是垃圾型別 + 垃圾指標,而 GetValueAsString() 會照那個型別把它當字串指標解參考。
+            // 取不到時視為「目前沒有選取任何副本」,走既有的 SelectDuty 分支(與原本空字串的行為一致)。
+            var selectedDutyName = string.Empty;
+            if (_addonContentsFinder->AtkValues != null && _addonContentsFinder->AtkValuesCount > 18)
+                selectedDutyName = _addonContentsFinder->AtkValues[18].GetValueAsString().Replace("\u0002\u001a\u0002\u0002\u0003", string.Empty).Replace("\u0002\u001a\u0002\u0001\u0003", string.Empty).Replace("\u0002\u001f\u0001\u0003", "\u2013");
             if (selectedDutyName != _content!.Name && !string.IsNullOrEmpty(selectedDutyName))
             {
                 Svc.Log.Debug($"Queue Helper - We have {selectedDutyName} selected, not {_content.Name}, Clearing.");
@@ -217,6 +334,11 @@ namespace AutoDuty.Helpers
                 _allConditionsMetToJoin = true;
                 Svc.Log.Debug("Queue Helper - All Conditions Met, Clicking Join");
                 AddonHelper.FireCallBack((AtkUnitBase*)_addonContentsFinder, true, 12, 0);
+
+                // 主機端按下報名的同一刻,通知各用戶端準備接受彈出的確認視窗。
+                // 未啟用多開 / 非主機端時整段跳過。
+                if (MultiboxUtility.Config is { MultiBox: true, Host: true })
+                    MultiboxUtility.Server.Queue();
                 return;
             }
             Svc.Log.Debug("end");
@@ -227,7 +349,11 @@ namespace AutoDuty.Helpers
             if (_content == null || Plugin.InDungeon || Svc.ClientState.TerritoryType == _content?.TerritoryType)
                 Stop();
 
-            if (!EzThrottler.Throttle("QueueHelper", 250)|| !PlayerHelper.IsReadyFull || ContentsFinderConfirm() || Conditions.Instance()->InDutyQueue) return;
+            // Conditions 也是 [StaticAddress] 靜態實例,特徵碼失配時會靜默留下 null,原本直接解參考。
+            // 判空條件擺在原本解參考的位置上,以保留 || 的短路順序 —— EzThrottler.Throttle 與
+            // ContentsFinderConfirm() 都有副作用,不能被提前或延後求值。
+            Conditions* conditions = Conditions.Instance();
+            if (!EzThrottler.Throttle("QueueHelper", 250)|| !PlayerHelper.IsReadyFull || ContentsFinderConfirm() || conditions == null || conditions->InDutyQueue) return;
 
             switch (_dutyMode)
             {
@@ -276,9 +402,20 @@ namespace AutoDuty.Helpers
         {
             if (addonContentsFinder == null) return;
             
+            // DutyList 是 addon 內的元件指標,addon 剛開/正在關的那幾幀可能還是 null。目前唯一的
+            // 呼叫端(QueueRegular)上游已判過,但這是 private static、擋不住未來新增的呼叫端,
+            // 所以自己再擋一次(失敗形式=這一 tick 不動作)。
+            if (addonContentsFinder->DutyList == null) return;
+
             var vectorDutyListItems = addonContentsFinder->DutyList->Items;
             List<AtkComponentTreeListItem> listAtkComponentTreeListItems = [];
-            vectorDutyListItems.ForEach(pointAtkComponentTreeListItem => listAtkComponentTreeListItems.Add(*(pointAtkComponentTreeListItem.Value)));
+            // 與 QueueRegular 同型:向量裡的項目指標可能是空的,解參考前先擋掉
+            // (原本是無條件 *p.Value)。
+            vectorDutyListItems.ForEach(pointAtkComponentTreeListItem =>
+            {
+                if (pointAtkComponentTreeListItem.Value != null)
+                    listAtkComponentTreeListItems.Add(*(pointAtkComponentTreeListItem.Value));
+            });
             AddonHelper.FireCallBack((AtkUnitBase*)addonContentsFinder, true, 3, HeadersCount(addonContentsFinder->DutyList->SelectedItemIndex, listAtkComponentTreeListItems) + 1); // - (HeadersCount(addonContentsFinder->DutyList->SelectedItemIndex, listAtkComponentTreeListItems) + 1));
         }
     }

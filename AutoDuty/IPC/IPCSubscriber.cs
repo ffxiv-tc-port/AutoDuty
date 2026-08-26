@@ -1,5 +1,12 @@
 ﻿using ECommons.DalamudServices;
 using ECommons.EzIpcManager;
+using ECommons.IPC.Subscribers;
+using ECommons.IPC.Subscribers.AutoRetainer;
+using ECommons.IPC.Subscribers.BossMod;
+using ECommons.IPC.Subscribers.Gearsetter;
+using ECommons.IPC.Subscribers.PandorasBox;
+using ECommons.IPC.Subscribers.Vnavmesh;
+using ECommons.IPC.Subscribers.YesAlready;
 using ECommons.Reflection;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
@@ -9,7 +16,25 @@ using System.Globalization;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
+using WrathCombo.API;
+using ApiConfigOption = WrathCombo.API.Enum.AutoRotationConfigOption;
+using ApiDpsMode = WrathCombo.API.Enum.DPSRotationMode;
+using ApiHealerMode = WrathCombo.API.Enum.HealerRotationMode;
+using ApiSetResult = WrathCombo.API.Enum.SetResult;
 #nullable disable
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 這一層是**門面**：外部呼叫點看到的名字、參數與回傳型別與遷移前逐字相同，
+// 底下的委派管線換成 ECommons.IPC 套件（以及 Wrath 的 WrathCombo.API）。
+//
+// 🔴 wrapper 一律用「明確傳入建構式」而不是 IPCBase.DefaultWrapper：
+//    套件的 ECommonsIPC.X 是 lazy 單例，wrapper 在第一次存取當下就烘死，而我們這裡
+//    有兩種語意並存（BossMod／Wrath 是 AnyException，其餘是 IPCException）。
+//    自己 new 一份並把 wrapper 當建構式參數傳進去，就不必靠初始化順序，
+//    也不會因為別處先碰了 ECommonsIPC.X 而被烘成別人的 wrapper。
+//
+// 套件給不了的成員在 IPCSubscriberSidecar.cs，分類理由寫在那個檔的檔頭。
+// ─────────────────────────────────────────────────────────────────────────────
 
 namespace AutoDuty.IPC
 {
@@ -19,23 +44,28 @@ namespace AutoDuty.IPC
 
     internal static class AutoRetainer_IPCSubscriber
     {
-        private static EzIPCDisposalToken[] _disposalTokens = EzIPC.Init(typeof(AutoRetainer_IPCSubscriber), "AutoRetainer.PluginState", SafeWrapper.IPCException);
+        private static readonly AutoRetainerIPC Pkg = new(SafeWrapper.IPCException);
 
         internal static bool IsEnabled => IPCSubscriber_Common.IsReady("AutoRetainer");
 
-        [EzIPC] internal static readonly Func<bool> IsBusy;
-        [EzIPC] internal static readonly Func<Dictionary<ulong, HashSet<string>>> GetEnabledRetainers;
-        [EzIPC] internal static readonly Func<bool> AreAnyRetainersAvailableForCurrentChara;
-        [EzIPC] internal static readonly Action AbortAllTasks;
-        [EzIPC] internal static readonly Action DisableAllFunctions;
-        [EzIPC] internal static readonly Action EnableMultiMode;
-        [EzIPC] internal static readonly Func<int> GetInventoryFreeSlotCount;
-        [EzIPC] internal static readonly Action EnqueueHET;
-        [EzIPC("AutoRetainer.GC.EnqueueInitiation", applyPrefix: false)] internal static readonly Action EnqueueGCInitiation;
+        internal static bool IsBusy() => Pkg.IsBusy();
+        internal static bool AreAnyRetainersAvailableForCurrentChara() => Pkg.AreAnyRetainersAvailableForCurrentChara();
+        internal static void AbortAllTasks() => Pkg.AbortAllTasks();
+        internal static void DisableAllFunctions() => Pkg.DisableAllFunctions();
+        internal static void EnableMultiMode() => Pkg.EnableMultiMode();
+        internal static int GetInventoryFreeSlotCount() => Pkg.GetInventoryFreeSlotCount();
+        internal static void EnqueueGCInitiation() => Pkg.EnqueueInitiation();
 
-        internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
+        /// <summary>側車：套件沒有這個端點。</summary>
+        internal static Dictionary<ulong, HashSet<string>> GetEnabledRetainers() => AutoRetainerExtraIPC.GetEnabledRetainers();
+
+        /// <summary>側車：套件的型別是 <c>Action&lt;bool, bool&gt;</c>，我方是 <c>Action&lt;Action&gt;</c>。</summary>
+        internal static void EnqueueHET(Action onFailure) => AutoRetainerExtraIPC.EnqueueHET(onFailure);
+
+        internal static void Dispose() => AutoRetainerExtraIPC.Dispose();
     }
 
+    /// <summary>套件沒有 AutoBot 的訂閱類，整類不遷。</summary>
     internal static class AM_IPCSubscriber
     {
         private static EzIPCDisposalToken[] _disposalTokens = EzIPC.Init(typeof(AM_IPCSubscriber), "AutoBot", SafeWrapper.IPCException);
@@ -49,6 +79,7 @@ namespace AutoDuty.IPC
         internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
     }
 
+    /// <summary>套件沒有 Marketbuddy 的訂閱類，整類不遷。</summary>
     internal static class Marketbuddy_IPCSubscriber
     {
         private static EzIPCDisposalToken[] _disposalTokens = EzIPC.Init(typeof(Marketbuddy_IPCSubscriber), "Marketbuddy", SafeWrapper.IPCException);
@@ -62,6 +93,7 @@ namespace AutoDuty.IPC
         internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
     }
 
+    /// <summary>套件沒有 ARDiscard 的訂閱類，整類不遷。</summary>
     internal static class DiscardHelper_IPCSubscriber
     {
         private static EzIPCDisposalToken[] _disposalTokens = EzIPC.Init(typeof(DiscardHelper_IPCSubscriber), "ARDiscard", SafeWrapper.AnyException);
@@ -73,6 +105,9 @@ namespace AutoDuty.IPC
         internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
     }
 
+    /// <summary>
+    /// 套件的 BossModIPC 沒有 <c>AI.*</c> 這一組端點（那是 BossModReborn 專有的），整類不遷。
+    /// </summary>
     internal static class BossModReborn_IPCSubscriber
     {
         private static EzIPCDisposalToken[] _disposalTokens = EzIPC.Init(typeof(BossModReborn_IPCSubscriber), "BossMod", SafeWrapper.AnyException);
@@ -89,24 +124,27 @@ namespace AutoDuty.IPC
 
     internal static class BossMod_IPCSubscriber
     {
-        private static EzIPCDisposalToken[] _disposalTokens = EzIPC.Init(typeof(BossMod_IPCSubscriber), "BossMod", SafeWrapper.AnyException);
+        private static readonly BossModIPC Pkg = new(SafeWrapper.AnyException);
 
         internal static bool IsEnabled => IPCSubscriber_Common.IsReady("BossMod") || IPCSubscriber_Common.IsReady("BossModReborn");
 
-        [EzIPC] internal static readonly Func<uint, bool> HasModuleByDataId;
-        [EzIPC] internal static readonly Func<IReadOnlyList<string>, bool, List<string>> Configuration;
-        [EzIPC("Presets.Get", true)] internal static readonly Func<string, string?> Presets_Get;
-        [EzIPC("Presets.Create", true)] internal static readonly Func<string, bool, bool> Presets_Create;
-        [EzIPC("Presets.Delete", true)] internal static readonly Func<string, bool> Presets_Delete;
-        [EzIPC("Presets.GetActive", true)] internal static readonly Func<string> Presets_GetActive;
-        [EzIPC("Presets.SetActive", true)] internal static readonly Func<string, bool> Presets_SetActive;
-        [EzIPC("Presets.ClearActive", true)] internal static readonly Func<bool> Presets_ClearActive;
-        [EzIPC("Presets.GetForceDisabled", true)] internal static readonly Func<bool> Presets_GetForceDisabled; 
-        [EzIPC("Presets.SetForceDisabled", true)] internal static readonly Func<bool> Presets_SetForceDisabled;
-        /** string presetName, string moduleTypeName, string trackName, string value*/
-        [EzIPC("Presets.AddTransientStrategy")] internal static readonly Func<string, string, string, string, bool> Presets_AddTransientStrategy;
+        internal static bool HasModuleByDataId(uint dataId) => Pkg.HasModuleByDataId(dataId);
+        internal static List<string> Configuration(IReadOnlyList<string> args, bool b) => Pkg.Configuration(args, b);
+        internal static string Presets_Get(string name) => Pkg.Presets_Get(name);
+        internal static bool Presets_Create(string preset, bool overwrite) => Pkg.Presets_Create(preset, overwrite);
+        internal static bool Presets_Delete(string name) => Pkg.Presets_Delete(name);
+        internal static string Presets_GetActive() => Pkg.Presets_GetActive();
+        internal static bool Presets_SetActive(string name) => Pkg.Presets_SetActive(name);
+        internal static bool Presets_ClearActive() => Pkg.Presets_ClearActive();
+        internal static bool Presets_GetForceDisabled() => Pkg.Presets_GetForceDisabled();
+        internal static bool Presets_SetForceDisabled() => Pkg.Presets_SetForceDisabled();
 
-        internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
+        /// <summary>🔴 側車：套件把它宣告成自訂 delegate，本版 ECommons 綁不上會停在 null。</summary>
+        /// <remarks>string presetName, string moduleTypeName, string trackName, string value</remarks>
+        internal static bool Presets_AddTransientStrategy(string presetName, string moduleTypeName, string trackName, string value) =>
+            BossModExtraIPC.Presets_AddTransientStrategy(presetName, moduleTypeName, trackName, value);
+
+        internal static void Dispose() => BossModExtraIPC.Dispose();
 
         public static void AddPreset(string name, string preset)
         {
@@ -208,89 +246,95 @@ namespace AutoDuty.IPC
         }
     }
 
-    
+
     internal static class YesAlready_IPCSubscriber
     {
-        private static EzIPCDisposalToken[] _disposalTokens = EzIPC.Init(typeof(YesAlready_IPCSubscriber), "YesAlready", SafeWrapper.IPCException);
+        private static readonly YesAlreadyIPC Pkg = new(SafeWrapper.IPCException);
 
         internal static bool IsEnabled => IPCSubscriber_Common.IsReady("YesAlready");
 
-        [EzIPC("SetPluginEnabled")] private static readonly Action<bool> SetPluginEnabled;
-        [EzIPC("IsPluginEnabled")] public static readonly Func<bool> IsPluginEnabled;
+        public static bool IsPluginEnabled() => Pkg.IsPluginEnabled();
 
-        internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
+        internal static void Dispose() { }
 
-        public static void SetState(bool on) => 
-            SetPluginEnabled(on);
+        public static void SetState(bool on) =>
+            Pkg.SetPluginEnabled(on);
     }
 
     internal static class Gearsetter_IPCSubscriber
     {
-        private static EzIPCDisposalToken[] _disposalTokens = EzIPC.Init(typeof(Gearsetter_IPCSubscriber), "Gearsetter", SafeWrapper.IPCException);
+        private static readonly GearsetterIPC Pkg = new(SafeWrapper.IPCException);
 
         internal static bool IsEnabled => IPCSubscriber_Common.IsReady("Gearsetter");
 
-        [EzIPC] internal static readonly Func<byte, List<(uint ItemId, InventoryType? SourceInventory, byte? SourceInventorySlot, RaptureGearsetModule.GearsetItemIndex TargetSlot)>> GetRecommendationsForGearset;
+        internal static List<(uint ItemId, InventoryType? SourceInventory, byte? SourceInventorySlot, RaptureGearsetModule.GearsetItemIndex TargetSlot)> GetRecommendationsForGearset(byte gearset) =>
+            Pkg.GetRecommendationsForGearset(gearset);
 
-        internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
+        internal static void Dispose() { }
     }
 
     internal static class VNavmesh_IPCSubscriber
     {
-        private static EzIPCDisposalToken[] _disposalTokens = EzIPC.Init(typeof(VNavmesh_IPCSubscriber), "vnavmesh", SafeWrapper.IPCException);
+        private static readonly VnavmeshIPC Pkg = new(SafeWrapper.IPCException);
 
         internal static bool IsEnabled => IPCSubscriber_Common.IsReady("vnavmesh");
 
-        [EzIPC("Nav.IsReady",            true)] internal static readonly Func<bool>                                                           Nav_IsReady;
-        [EzIPC("Nav.BuildProgress",      true)] internal static readonly Func<float>                                                          Nav_BuildProgress;
-        [EzIPC("Nav.Reload",             true)] internal static readonly Func<bool>                                                           Nav_Reload;
-        [EzIPC("Nav.Rebuild",            true)] internal static readonly Func<bool>                                                           Nav_Rebuild;
-        [EzIPC("Nav.Pathfind",           true)] internal static readonly Func<Vector3, Vector3, bool, Task<List<Vector3>>>                    Nav_Pathfind;
-        [EzIPC("Nav.PathfindCancelable", true)] internal static readonly Func<Vector3, Vector3, bool, CancellationToken, Task<List<Vector3>>> Nav_PathfindCancelable;
-        [EzIPC("Nav.PathfindCancelAll",  true)] internal static readonly Action                                                               Nav_PathfindCancelAll;
-        [EzIPC("Nav.PathfindInProgress", true)] internal static readonly Func<bool>                                                           Nav_PathfindInProgress;
-        [EzIPC("Nav.PathfindNumQueued",  true)] internal static readonly Func<int>                                                            Nav_PathfindNumQueued;
-        [EzIPC("Nav.IsAutoLoad",         true)] internal static readonly Func<bool>                                                           Nav_IsAutoLoad;
-        [EzIPC("Nav.SetAutoLoad",        true)] internal static readonly Action<bool>                                                         Nav_SetAutoLoad;
+        internal static bool  Nav_IsReady()       => Pkg.IsReady();
+        internal static float Nav_BuildProgress() => Pkg.BuildProgress();
+        internal static bool  Nav_Reload()        => Pkg.Reload();
+        internal static bool  Nav_Rebuild()       => Pkg.Rebuild();
 
-        [EzIPC("Query.Mesh.NearestPoint", true)] internal static readonly Func<Vector3, float, float, Vector3> Query_Mesh_NearestPoint;
-        [EzIPC("Query.Mesh.PointOnFloor", true)] internal static readonly Func<Vector3, bool, float, Vector3> Query_Mesh_PointOnFloor;
+        internal static void Path_Stop()                            => Pkg.Stop();
+        internal static bool Path_IsRunning()                       => Pkg.IsRunning();
+        internal static int  Path_NumWaypoints()                    => Pkg.NumWaypoints();
+        internal static bool Path_GetMovementAllowed()              => Pkg.GetMovementAllowed();
+        internal static void Path_SetMovementAllowed(bool allowed)  => Pkg.SetMovementAllowed(allowed);
+        internal static bool Path_GetAlignCamera()                  => Pkg.GetAlignCamera();
+        internal static void Path_SetAlignCamera(bool align)        => Pkg.SetAlignCamera(align);
+        internal static float Path_GetTolerance()                   => Pkg.GetTolerance();
+        internal static void Path_SetTolerance(float tolerance)     => Pkg.SetTolerance(tolerance);
 
-        [EzIPC("Path.MoveTo", true)] internal static readonly Action<List<Vector3>, bool> Path_MoveTo;
-        [EzIPC("Path.Stop", true)] internal static readonly Action Path_Stop;
-        [EzIPC("Path.IsRunning", true)] internal static readonly Func<bool> Path_IsRunning;
-        [EzIPC("Path.NumWaypoints", true)] internal static readonly Func<int> Path_NumWaypoints;
-        [EzIPC("Path.GetMovementAllowed", true)] internal static readonly Func<bool> Path_GetMovementAllowed;
-        [EzIPC("Path.SetMovementAllowed", true)] internal static readonly Action<bool> Path_SetMovementAllowed;
-        [EzIPC("Path.GetAlignCamera", true)] internal static readonly Func<bool> Path_GetAlignCamera;
-        [EzIPC("Path.SetAlignCamera", true)] internal static readonly Action<bool> Path_SetAlignCamera;
-        [EzIPC("Path.GetTolerance", true)] internal static readonly Func<float> Path_GetTolerance;
-        [EzIPC("Path.SetTolerance", true)] internal static readonly Action<float> Path_SetTolerance;
+        internal static bool SimpleMove_PathfindInProgress() => Pkg.PathfindInProgress();
 
-        [EzIPC("SimpleMove.PathfindAndMoveTo", true)] internal static readonly Func<Vector3, bool, bool> SimpleMove_PathfindAndMoveTo;
-        [EzIPC("SimpleMove.PathfindInProgress", true)] internal static readonly Func<bool> SimpleMove_PathfindInProgress;
+        // ── 以下走側車，理由見 IPCSubscriberSidecar.cs ──
+        internal static Task<List<Vector3>> Nav_Pathfind(Vector3 from, Vector3 to, bool fly) => VNavmeshExtraIPC.Nav_Pathfind(from, to, fly);
+        internal static Task<List<Vector3>> Nav_PathfindCancelable(Vector3 from, Vector3 to, bool fly, CancellationToken token) => VNavmeshExtraIPC.Nav_PathfindCancelable(from, to, fly, token);
+        internal static void Nav_PathfindCancelAll()      => VNavmeshExtraIPC.Nav_PathfindCancelAll();
+        internal static bool Nav_PathfindInProgress()     => VNavmeshExtraIPC.Nav_PathfindInProgress();
+        internal static int  Nav_PathfindNumQueued()      => VNavmeshExtraIPC.Nav_PathfindNumQueued();
+        internal static bool Nav_IsAutoLoad()             => VNavmeshExtraIPC.Nav_IsAutoLoad();
+        internal static void Nav_SetAutoLoad(bool on)     => VNavmeshExtraIPC.Nav_SetAutoLoad(on);
 
-        [EzIPC("Window.IsOpen", true)] internal static readonly Func<bool> Window_IsOpen;
-        [EzIPC("Window.SetOpen", true)] internal static readonly Action<bool> Window_SetOpen;
+        internal static Vector3 Query_Mesh_NearestPoint(Vector3 p, float halfExtentXZ, float halfExtentY) => VNavmeshExtraIPC.Query_Mesh_NearestPoint(p, halfExtentXZ, halfExtentY);
+        internal static Vector3 Query_Mesh_PointOnFloor(Vector3 p, bool allowUnlandable, float halfExtentXZ) => VNavmeshExtraIPC.Query_Mesh_PointOnFloor(p, allowUnlandable, halfExtentXZ);
 
-        [EzIPC("DTR.IsShown", true)] internal static readonly Func<bool> DTR_IsShown;
-        [EzIPC("DTR.SetShown", true)] internal static readonly Action<bool> DTR_SetShown;
+        internal static void Path_MoveTo(List<Vector3> waypoints, bool fly) => VNavmeshExtraIPC.Path_MoveTo(waypoints, fly);
+        internal static bool SimpleMove_PathfindAndMoveTo(Vector3 position, bool canFly) => VNavmeshExtraIPC.SimpleMove_PathfindAndMoveTo(position, canFly);
 
-        internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
+        internal static bool Window_IsOpen()          => VNavmeshExtraIPC.Window_IsOpen();
+        internal static void Window_SetOpen(bool on)  => VNavmeshExtraIPC.Window_SetOpen(on);
+        internal static bool DTR_IsShown()            => VNavmeshExtraIPC.DTR_IsShown();
+        internal static void DTR_SetShown(bool on)    => VNavmeshExtraIPC.DTR_SetShown(on);
+
+        internal static void Dispose() => VNavmeshExtraIPC.Dispose();
     }
 
     internal static class PandorasBox_IPCSubscriber
     {
-        private static EzIPCDisposalToken[] _disposalTokens = EzIPC.Init(typeof(PandorasBox_IPCSubscriber), "PandorasBox", SafeWrapper.IPCException);
+        private static readonly PandorasBoxIPC Pkg = new(SafeWrapper.IPCException);
 
         internal static bool IsEnabled => IPCSubscriber_Common.IsReady("PandorasBox");
 
-        [EzIPC] internal static readonly Action<string, int> PauseFeature;
-        [EzIPC] internal static readonly Action<string, bool> SetFeatureEnabled;
-        [EzIPC] internal static readonly Func<string, bool> GetFeatureEnabled;
-        [EzIPC] internal static readonly Action<string, string, bool> SetConfigEnabled;
+        internal static void PauseFeature(string feature, int ms)        => Pkg.PauseFeature(feature, ms);
+        internal static void SetFeatureEnabled(string feature, bool on)  => Pkg.SetFeatureEnabled(feature, on);
 
-        internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
+        /// <summary>側車：套件回傳 <c>bool?</c>，我方是 <c>bool</c>。</summary>
+        internal static bool GetFeatureEnabled(string feature) => PandorasBoxExtraIPC.GetFeatureEnabled(feature);
+
+        /// <summary>側車：套件第三個參數是 <c>bool?</c>，我方是 <c>bool</c>。</summary>
+        internal static void SetConfigEnabled(string feature, string config, bool on) => PandorasBoxExtraIPC.SetConfigEnabled(feature, config, on);
+
+        internal static void Dispose() => PandorasBoxExtraIPC.Dispose();
     }
 
     public static class Wrath_IPCSubscriber
@@ -298,26 +342,33 @@ namespace AutoDuty.IPC
         /// <summary>
         ///     Why a lease was cancelled.
         /// </summary>
+        /// <remarks>
+        ///     值與 <see cref="WrathCombo.API.Enum.CancellationReason"/> 逐一對齊；
+        ///     這裡保留自己一份是因為 <see cref="CancelActions"/> 收到的是裸 int。
+        /// </remarks>
         public enum CancellationReason
         {
             [Description("The Wrath user manually elected to revoke your lease.")]
-            WrathUserManuallyCancelled,
+            WrathUserManuallyCancelled = 0,
 
             [Description("Your plugin was detected as having been disabled, " +
                          "not that you're likely to see this.")]
-            LeaseePluginDisabled,
+            LeaseePluginDisabled = 1,
 
             [Description("The Wrath plugin is being disabled.")]
-            WrathPluginDisabled,
+            WrathPluginDisabled = 2,
 
             [Description("Your lease was released by IPC call, " +
                          "theoretically this was done by you.")]
-            LeaseeReleased,
+            LeaseeReleased = 3,
 
             [Description("IPC Services have been disabled remotely. "                 +
                          "Please see the commit history for /res/ipc_status.txt. \n " +
                          "https://github.com/PunishXIV/WrathCombo/commits/main/res/ipc_status.txt")]
-            AllServicesSuspended,
+            AllServicesSuspended = 4,
+
+            [Description("Player job has been changed and leases will have to be reapplied.")]
+            JobChanged = 5,
         }
 
         /// <summary>
@@ -342,6 +393,11 @@ namespace AutoDuty.IPC
             OnlyAttackInCombat   = 13, //bool
         }
 
+        /// <remarks>
+        ///     🔴 這個列舉是 <c>ConfigurationMain.Wrath_TargetingTank</c> 等設定欄位的**型別**，
+        ///     換掉會動到使用者設定檔的序列化，所以維持在本類底下、不改用套件的同名列舉。
+        ///     值與 <see cref="WrathCombo.API.Enum.DPSRotationMode"/> 逐一對齊。
+        /// </remarks>
         public enum DPSRotationMode
         {
             Manual          = 0,
@@ -410,51 +466,53 @@ namespace AutoDuty.IPC
 
         internal static bool IsEnabled => IPCSubscriber_Common.IsReady("WrathCombo");
 
-        private static EzIPCDisposalToken[] _disposalTokens = EzIPC.Init(typeof(Wrath_IPCSubscriber), "WrathCombo", SafeWrapper.AnyException);
+        // ── Wrath 的委派管線：WrathCombo.API（官方 IPC 用戶端程式庫），不走 EzIPC ──
+        //
+        // 🔴 觀測性：WrathCombo.API 有自己的一套錯誤處理，**不會**觸發
+        //    EzIPC.OnSafeInvocationException，也就是不會經過 EzIpcFailureLog。
+        //    若照它預設的 ErrorType.All 全部靜音，Wrath IPC 失敗會變成完全沒有 log
+        //    ——那正是 EzIpcFailureLog 當初被寫出來要解決的問題。
+        //    所以我們讓它照常擲例外（AutoDuty.cs 裡 Init 時不加任何 suppress），
+        //    在這裡自己 catch → 交給 EzIpcFailureLog 節流印出 → 回傳與遷移前相同的 default。
+        //    ⇒ 對呼叫端來說語意等同原本的 SafeWrapper.AnyException，但失敗看得見。
+
+        private static T WrathSafe<T>(Func<T> call)
+        {
+            try
+            {
+                return call();
+            }
+            catch (Exception e)
+            {
+                EzIpcFailureLog.Report(e);
+                // 與 WrathCombo.API 自己的 SafeInvokeRawMethod 同一個約定：SetResult 回 IGNORED
+                // 而不是 default(=Okay)。default 會讓「呼叫根本沒送到」長得跟「設定成功」一樣。
+                if (typeof(T) == typeof(ApiSetResult))
+                    return (T)(object)ApiSetResult.IGNORED;
+                return default;
+            }
+        }
+
+        private static void WrathSafe(Action call)
+        {
+            try
+            {
+                call();
+            }
+            catch (Exception e)
+            {
+                EzIpcFailureLog.Report(e);
+            }
+        }
 
         /// <summary>
-        ///     Register your plugin for control of Wrath Combo.
+        ///     把 WrathCombo.API 的 <see cref="ApiSetResult"/> 轉回本類的 <see cref="SetResult"/>。
+        ///     兩者的每一個成員值都一樣，所以是純粹的數值轉換。
+        ///     ⚠️ 呼叫整個失敗時回 <see cref="SetResult.IGNORED"/>（遷移前是 <c>default</c> 也就是
+        ///     <see cref="SetResult.Okay"/>）——<see cref="CheckResult"/> 對 IGNORED 已經回 false，
+        ///     所以這是把「失敗被當成成功」改成「失敗被當成失敗」，只在 IPC 本來就不通時才看得出差別。
         /// </summary>
-        /// <param name="internalPluginName">
-        ///     The internal name of your plugin.<br />
-        ///     Needs to be the actual internal name of your plugin, as it will be used
-        ///     to check if your plugin is still loaded.
-        /// </param>
-        /// <param name="pluginName">
-        ///     The name you want shown to Wrath users for options your plugin controls.
-        /// </param>
-        /// <param name="leaseCancelledCallback">
-        ///     Your method to be called when your lease is cancelled, usually
-        ///     by the user.<br />
-        ///     The <see cref="CancellationReason" /> and a string with any additional
-        ///     info will be passed to your method.
-        /// </param>
-        /// <returns>
-        ///     Your lease ID to be used in <c>set</c> calls.<br />
-        ///     Or <c>null</c> if your lease was not registered, which can happen for
-        ///     multiple reasons:
-        ///     <list type="bullet">
-        ///         <item>
-        ///             <description>
-        ///                 A lease exists with the <c>pluginName</c>.
-        ///             </description>
-        ///         </item>
-        ///         <item>
-        ///             <description>
-        ///                 Your lease was revoked by the user recently.
-        ///             </description>
-        ///         </item>
-        ///         <item>
-        ///             <description>
-        ///                 The IPC service is currently disabled.
-        ///             </description>
-        ///         </item>
-        ///     </list>
-        /// </returns>
-        /// <remarks>
-        ///     Each lease is limited to controlling <c>60</c> configurations.
-        /// </remarks>
-        [EzIPC] private static readonly Func<string, string, string?, Guid?> RegisterForLeaseWithCallback;
+        private static SetResult FromApi(ApiSetResult result) => (SetResult)(int)result;
 
         /// <summary>
         ///     Get the current state of the Auto-Rotation setting in Wrath Combo.
@@ -464,23 +522,8 @@ namespace AutoDuty.IPC
         ///     This is only the state of Auto-Rotation, not whether any combos are
         ///     enabled in Auto-Mode.
         /// </remarks>
-        [EzIPC] internal static readonly Func<bool> GetAutoRotationState;
-
-        /// <summary>
-        ///     Set the state of Auto-Rotation in Wrath Combo.
-        /// </summary>
-        /// <param name="lease">Your lease ID from <see cref="RegisterForLease" /></param>
-        /// <param name="enabled">
-        ///     Optionally whether to enable Auto-Rotation.<br />
-        ///     Only used to disable Auto-Rotation, as enabling it is the default.
-        /// </param>
-        /// <seealso cref="GetAutoRotationState" />
-        /// <remarks>
-        ///     This is only the state of Auto-Rotation, not whether any combos are
-        ///     enabled in Auto-Mode.
-        /// </remarks>
-        /// <value>+1 <c>set</c></value>
-        [EzIPC] private static readonly Func<Guid, bool, SetResult> SetAutoRotationState;
+        internal static bool GetAutoRotationState() =>
+            WrathSafe(WrathIPCWrapper.GetAutoRotationState);
 
         /// <summary>
         ///     Checks if the current job has a Single and Multi-Target combo configured
@@ -489,58 +532,37 @@ namespace AutoDuty.IPC
         /// <returns>
         ///     If the user's current job is fully ready for Auto-Rotation.
         /// </returns>
-        [EzIPC] internal static readonly Func<bool> IsCurrentJobAutoRotationReady;
-
-        /// <summary>
-        ///     Sets up the user's current job for Auto-Rotation.<br />
-        ///     This will enable the Single and Multi-Target combos, and enable them in
-        ///     Auto-Mode.<br />
-        ///     This will try to use the user's existing settings, only enabling default
-        ///     states for jobs that are not configured.
-        /// </summary>
-        /// <value>
-        ///     +2 <c>set</c><br />
-        ///     (can be up to 38 for non-simple jobs, the highest being healers)
-        /// </value>
-        /// <param name="lease">Your lease ID from <see cref="RegisterForLease" /></param>
-        /// <remarks>This can take a little bit to finish.</remarks>
-        [EzIPC] private static readonly Func<Guid, SetResult> SetCurrentJobAutoRotationReady;
-
-        /// <summary>
-        ///     This cancels your lease, removing your control of Wrath Combo.
-        /// </summary>
-        /// <param name="lease">Your lease ID from <see cref="RegisterForLease" /></param>
-        /// <remarks>
-        ///     Will call your <c>leaseCancelledCallback</c> method if you provided one,
-        ///     with the reason <see cref="CancellationReason.LeaseeReleased" />.
-        /// </remarks>
-        [EzIPC] private static readonly Action<Guid> ReleaseControl;
+        internal static bool IsCurrentJobAutoRotationReady() =>
+            WrathSafe(WrathIPCWrapper.IsCurrentJobAutoRotationReady);
 
         /// <summary>
         ///     Get the state of Auto-Rotation Configuration in Wrath Combo.
         /// </summary>
         /// <param name="option">The option to check the value of.</param>
         /// <returns>The correctly-typed value of the configuration.</returns>
-        [EzIPC] private static readonly Func<AutoRotationConfigOption, object?> GetAutoRotationConfigState;
+        private static object GetAutoRotationConfigState(AutoRotationConfigOption option) =>
+            WrathSafe(() => WrathIPCWrapper.GetAutoRotationConfigState((ApiConfigOption)(int)option));
 
-        /// <summary>
-        ///     Set the state of Auto-Rotation Configuration in Wrath Combo.
-        /// </summary>
-        /// <param name="lease">Your lease ID from <see cref="RegisterForLease" /></param>
-        /// <param name="option">
-        ///     The Auto-Rotation Configuration option you want to set.<br />
-        ///     This is a subset of the Auto-Rotation options, flattened into a single
-        ///     enum.
-        /// </param>
-        /// <param name="value">
-        ///     The value you want to set the option to.<br />
-        ///     All valid options can be parsed from an int, or the exact expected types.
-        /// </param>
-        /// <value>+1 <c>set</c></value>
-        /// <seealso cref="AutoRotationConfigOption"/>
-        /// <seealso cref="DPSRotationMode"/>
-        /// <seealso cref="HealerRotationMode"/>
-        [EzIPC] private static readonly Func<Guid, AutoRotationConfigOption, object, SetResult> SetAutoRotationConfigState;
+        private static SetResult SetAutoRotationState(Guid lease, bool enabled) =>
+            FromApi(WrathSafe(() => WrathIPCWrapper.SetAutoRotationState(lease, enabled)));
+
+        private static SetResult SetCurrentJobAutoRotationReady(Guid lease) =>
+            FromApi(WrathSafe(() => WrathIPCWrapper.SetCurrentJobAutoRotationReady(lease)));
+
+        private static SetResult SetAutoRotationConfigState(Guid lease, AutoRotationConfigOption option, bool value) =>
+            FromApi(WrathSafe(() => WrathIPCWrapper.SetAutoRotationConfigState(lease, (ApiConfigOption)(int)option, value)));
+
+        private static SetResult SetAutoRotationConfigState(Guid lease, AutoRotationConfigOption option, DPSRotationMode value) =>
+            FromApi(WrathSafe(() => WrathIPCWrapper.SetAutoRotationConfigState(lease, (ApiConfigOption)(int)option, (ApiDpsMode)(int)value)));
+
+        private static SetResult SetAutoRotationConfigState(Guid lease, AutoRotationConfigOption option, HealerRotationMode value) =>
+            FromApi(WrathSafe(() => WrathIPCWrapper.SetAutoRotationConfigState(lease, (ApiConfigOption)(int)option, (ApiHealerMode)(int)value)));
+
+        private static Guid? RegisterForLeaseWithCallback(string internalPluginName, string pluginName, string ipcPrefixForCallback) =>
+            WrathSafe(() => WrathIPCWrapper.RegisterForLeaseWithCallback(internalPluginName, pluginName, ipcPrefixForCallback));
+
+        private static void ReleaseControl(Guid lease) =>
+            WrathSafe(() => WrathIPCWrapper.ReleaseControl(lease));
 
         public static bool DoThing(Func<SetResult> action)
         {
@@ -578,7 +600,7 @@ namespace AutoDuty.IPC
             }
         }
 
-        internal static bool SetJobAutoReady() => 
+        internal static bool SetJobAutoReady() =>
             Register() && DoThing(() => SetCurrentJobAutoRotationReady(_curLease!.Value));
 
         internal static void SetAutoMode(bool on)
@@ -632,6 +654,7 @@ namespace AutoDuty.IPC
                 case CancellationReason.WrathPluginDisabled:
                 case CancellationReason.LeaseeReleased:
                 case CancellationReason.AllServicesSuspended:
+                case CancellationReason.JobChanged:
                 default:
                     break;
             }
@@ -640,19 +663,71 @@ namespace AutoDuty.IPC
             Svc.Log.Info($"Wrath lease cancelled via {(CancellationReason) reason} for: {s}");
         }
 
+        /// <summary>
+        ///     租約我們只拿得到一個 handle，真狀態在 Wrath Combo 那一端。
+        ///     這個欄位記住「已經試過釋放但沒被對方確認」的那一份，用來把重試次數限制成一次。
+        /// </summary>
+        private static Guid? _unconfirmedReleaseLease;
+
         internal static void Release()
         {
-            if (_curLease.HasValue)
+            if (!_curLease.HasValue)
             {
-                ReleaseControl(_curLease.Value);
-                _curLease = null;
+                _unconfirmedReleaseLease = null;
+                return;
+            }
+
+            Guid lease = _curLease.Value;
+
+            // 判準＝誰持有真狀態：租約的真狀態在 Wrath Combo 手上，我們這邊只是一個 handle。
+            // 對方持有 ⇒ 確認對方放掉才放手，不能無條件把 _curLease 清成 null。
+            if (!IsEnabled)
+            {
+                // Wrath Combo 根本沒載入，租約隨它一起消失了，沒有東西要等對方放掉。
+                Svc.Log.Information($"Wrath Combo is not loaded - dropping Wrath lease {lease} handle without releasing.");
+                _curLease                = null;
+                _unconfirmedReleaseLease = null;
+                return;
+            }
+
+            bool isRetry = _unconfirmedReleaseLease == lease;
+
+            Svc.Log.Information(isRetry ?
+                                    $"Retrying release of Wrath lease {lease}." :
+                                    $"Releasing Wrath lease {lease}.");
+
+            // ⚠️ ReleaseControl 是 void，而且失敗會被 WrathSafe 記進 log 後吞掉（見上面那段說明）：
+            // 租約已失效、IPC 停用、或呼叫整個擲例外，在這裡通通長得跟成功一模一樣。
+            // 成功時 Wrath Combo 會**同步**回呼 AutoDuty.WrathComboCallback → CancelActions，
+            // 由它把 _curLease 清成 null —— 所以「呼叫後 _curLease 已經是 null」才是對方真的放掉的證據。
+            ReleaseControl(lease);
+
+            if (!_curLease.HasValue)
+            {
+                _unconfirmedReleaseLease = null;
+                return;
+            }
+
+            if (isRetry)
+            {
+                // 重試也沒被確認就不要無限拖著：本機放手。
+                // Wrath Combo 會自行清掉 leasee 外掛已不在的租約，所以這裡不會留下永久的孤兒租約。
+                Svc.Log.Information($"Wrath lease {lease} release is still unconfirmed after a retry - dropping the handle locally.");
+                _curLease                = null;
+                _unconfirmedReleaseLease = null;
+            }
+            else
+            {
+                // 保留 handle：租約很可能還在對方那裡有效，丟掉 handle 才是真的把它變成孤兒。
+                // 後續的 set 呼叫若拿到 InvalidLease，CheckResult 也會自行清掉並重新註冊。
+                _unconfirmedReleaseLease = lease;
+                Svc.Log.Information($"Wrath lease {lease} release was not confirmed by Wrath Combo - keeping the handle and retrying on the next release.");
             }
         }
 
         internal static void Dispose()
         {
             Release();
-            IPCSubscriber_Common.DisposeAll(_disposalTokens);
         }
     }
 

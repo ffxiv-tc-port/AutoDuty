@@ -15,11 +15,13 @@ jobs:
       - name: Install .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 9.x
+          # 10.x:子模組 WrathCombo.API 的 LangVersion 是 14(上游用了 C# 14 的 extension 區塊
+          # 與 field 關鍵字),必須用 .NET 10 SDK 才編得動。目標框架仍是 net9 / API13,不變。
+          dotnet-version: 10.x
       - name: Download Dalamud (pinned TC-compatible build)
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri https://github.com/ffxiv-tc-port/DalamudPluginsTC/releases/download/dalamud-pin-v12.0.2/dalamud-api12-net9.zip -OutFile dalamud-pinned.zip
+          Invoke-WebRequest -Uri https://github.com/ffxiv-tc-port/DalamudPluginsTC/releases/download/dalamud-pin-v13.0.0.16/dalamud-api13-net9.zip -OutFile dalamud-pinned.zip
           Expand-Archive -Force dalamud-pinned.zip "$env:AppData\FFXIVSimpleLauncher\Dalamud\Injector\"
           Expand-Archive -Force dalamud-pinned.zip "$env:AppData\xivlauncher\Addon\Hooks\dev\"
       - name: Compute version
@@ -50,3 +52,5 @@ jobs:
             AutoDuty.zip
             AutoDuty/bin/Release/AutoDuty/AutoDuty.json
           generate_release_notes: true
+
+# 2026-08-16: repo 重建後 workflow_dispatch-only workflow 未被 Actions 重新註冊,touch 本檔強制重掃

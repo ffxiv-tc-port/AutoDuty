@@ -85,8 +85,11 @@ public class MainWindow : Window, IDisposable
                 var minRuns = Math.Max(1, item.CompletedRuns);
                 item.TargetRuns = Math.Max(minRuns, runs);
                 item.CompletedRuns = Math.Clamp(item.CompletedRuns, 0, item.TargetRuns);
-                Plugin.Configuration.Save();
             }
+
+            // 滑桿在拖曳期間每一幀都回 true，存檔只能在放開滑鼠（編輯結束）那一刻做一次
+            if (ImGui.IsItemDeactivatedAfterEdit())
+                Plugin.Configuration.Save();
 
             return;
         }
@@ -96,10 +99,10 @@ public class MainWindow : Window, IDisposable
                           || (!Plugin.Configuration.UseSliderInputs && ImGui.InputInt("Times".Loc(), ref loopTimes));
 
         if (loopChanged)
-        {
             Plugin.Configuration.LoopTimes = Math.Max(1, loopTimes);
+
+        if (ImGui.IsItemDeactivatedAfterEdit())
             Plugin.Configuration.Save();
-        }
     }
 
     internal static void StopResumePause()
@@ -464,7 +467,9 @@ public class MainWindow : Window, IDisposable
             {
                 ImGui.PushStyleColor(ImGuiCol.Tab, x.color.Value);
             }
-            if (ImGuiEx.BeginTabItem(x.name, openTabName == x.name ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None))
+            // Display text is localized, but the widget ID (after ###) and the navigation key
+            // (openTabName / BeginChild) stay on the original English name.
+            if (ImGui.BeginTabItem(x.name.Loc() + "###" + x.name, openTabName == x.name ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None))
             {
                 if (x.color != null) 
                     ImGui.PopStyleColor();

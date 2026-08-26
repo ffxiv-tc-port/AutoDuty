@@ -97,6 +97,17 @@ namespace AutoDuty.Helpers
             }
             else if (ObjectHelper.GetDistanceToPlayer(TripleTriadCardVendorLocation) <= 4 && VNavmesh_IPCSubscriber.Path_NumWaypoints() == 0)
             {
+                // ⚠️ 這裡原本的順序是反的:先 `IsAddonReady(addonExchange)`(會解參考上一個
+                // tick 存下來的 static 指標),而唯一會重新解析它的 TryGetAddonByName 被擋在
+                // 這個檢查之後的分支裡。addonExchange 是 static 且 Stop() 不歸零,舊指標會跨
+                // session、跨換區、跨副本存活,下一個 tick 就對已關閉的 addon 解參考 →
+                // 攔不到的 AccessViolation。
+                // 修法:每個 tick 先無條件重新解析。TryGetAddonByName 找不到時會把 out 參數
+                // 設成 null(ECommons AddonHelpers),所以指標會自動歸零——這正是同 repo 的
+                // RepairHelper / QueueHelper 之所以用同樣的 static 欄位卻安全的原因。
+                if (!GenericHelpers.TryGetAddonByName("TripleTriadCoinExchange", out addonExchange))
+                    addonExchange = null;
+
                 if (addonExchange == null || !GenericHelpers.IsAddonReady(addonExchange))
                 {
                     readerExchange = null;
@@ -105,7 +116,7 @@ namespace AutoDuty.Helpers
                         Svc.Log.Debug($"Clicking SelectIconString");
                         AddonHelper.ClickSelectIconString(1);
                     }
-                    else if (!GenericHelpers.TryGetAddonByName("TripleTriadCoinExchange", out addonExchange) && tripleTriadVendorGameObject != null)
+                    else if (addonExchange == null && tripleTriadVendorGameObject != null)
                     {
                         Svc.Log.Debug("Interacting with TTT");
                         ObjectHelper.InteractWithObject(tripleTriadVendorGameObject);
@@ -113,7 +124,9 @@ namespace AutoDuty.Helpers
                 }
                 else
                 {
-                    readerExchange ??= new ReaderTripleTriadCoinExchange(addonExchange);
+                    // 不用 ??=:reader 會把 addon 指標存進自己的欄位跨 tick 持有。
+                    // addonExchange 現在每 tick 重新解析,reader 也必須跟著重建。
+                    readerExchange = new ReaderTripleTriadCoinExchange(addonExchange);
 
                     if (readerExchange.Entries.Count <= 0)
                     {

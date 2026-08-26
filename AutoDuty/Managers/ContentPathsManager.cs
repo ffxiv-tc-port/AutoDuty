@@ -4,6 +4,7 @@ using ECommons;
 using ECommons.DalamudServices;
 using ECommons.ExcelServices;
 using ECommons.GameFunctions;
+using ECommons.Schedulers;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -21,6 +22,32 @@ namespace AutoDuty.Managers
     internal static class ContentPathsManager
     {
         internal static Dictionary<uint, ContentPathContainer> DictionaryPaths = [];
+
+        private static bool invalidCleanupQueued;
+
+        /// <summary>
+        /// 排定移除解析失敗的 path。
+        /// 舊寫法是在 PathFile getter 的 catch 裡直接 Paths.Remove(this)，而 PathsTab.Draw 當下
+        /// 正在 foreach 同一個 list ⇒ 只要有任何一個 path json 壞掉，路徑分頁就會丟
+        /// InvalidOperationException（集合已被修改），整份路徑清單當場畫不出來。
+        /// 改成先標記，等下一個 tick（不在繪製迴圈裡）再統一移除。
+        /// </summary>
+        internal static void QueueInvalidPathCleanup()
+        {
+            if (invalidCleanupQueued)
+                return;
+
+            invalidCleanupQueued = true;
+            _ = new TickScheduler(RemoveInvalidPaths);
+        }
+
+        private static void RemoveInvalidPaths()
+        {
+            invalidCleanupQueued = false;
+
+            foreach (ContentPathContainer container in DictionaryPaths.Values.ToArray())
+                container.Paths.RemoveAll(dutyPath => dutyPath.Invalid);
+        }
 
         internal class ContentPathContainer
         {
@@ -176,12 +203,54 @@ namespace AutoDuty.Managers
                         catch (Exception ex)
                         {
                             Svc.Log.Info($"{FilePath} is not a valid duty path: {ex}");
-                            DictionaryPaths[id].Paths.Remove(this);
+                            MarkInvalid();
                         }
                     }
 
                     return pathFile!;
                 }
+            }
+
+            private PathFileMetaData? metaCache;
+
+            /// <summary>
+            /// 只給 UI 顯示用的中繼資料（版本、備註）。由背景執行緒預讀，尚未讀到時為 null。
+            /// 讀這個屬性不會觸發 <see cref="PathFile"/> 的延遲載入（讀檔 + 反序列化）。
+            /// </summary>
+            public PathFileMetaData? Meta => this.pathFile?.Meta ?? this.metaCache;
+
+            /// <summary>path json 解析失敗，等 <see cref="QueueInvalidPathCleanup"/> 在繪製迴圈外把它移除。</summary>
+            public bool Invalid { get; private set; }
+
+            /// <summary>
+            /// 在背景預讀 Meta。只留下中繼資料，Actions 讀完就丟，
+            /// 避免為了顯示版本號而把全部 271 個 path 常駐在記憶體裡。
+            /// </summary>
+            public void PreloadMeta()
+            {
+                if (this.Invalid || this.pathFile != null || this.metaCache != null)
+                    return;
+
+                try
+                {
+                    string json;
+
+                    using (StreamReader streamReader = new(FilePath, Encoding.UTF8))
+                        json = streamReader.ReadToEnd();
+
+                    this.metaCache = JsonSerializer.Deserialize<PathFile>(json, BuildTab.jsonSerializerOptions)?.Meta;
+                }
+                catch (Exception ex)
+                {
+                    Svc.Log.Info($"{FilePath} is not a valid duty path: {ex}");
+                    MarkInvalid();
+                }
+            }
+
+            private void MarkInvalid()
+            {
+                this.Invalid = true;
+                QueueInvalidPathCleanup();
             }
 
             public List<PathAction> Actions      => PathFile.Actions;

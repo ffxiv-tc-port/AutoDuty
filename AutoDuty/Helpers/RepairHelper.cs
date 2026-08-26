@@ -22,7 +22,17 @@ namespace AutoDuty.Helpers
         {
             base.Stop();
             _seenAddon           =  false;
-            AgentModule.Instance()->GetAgentByInternalId(AgentId.Repair)->Hide();
+
+            // AgentModule.Instance()(手寫取得子)與 GetAgentByInternalId()(原生 MemberFunction)
+            // 兩層都可能回 null,原本整條裸解參考。取不到就跳過隱藏修理代理人 ——
+            // base.Stop() 已經先跑完,收尾不受影響。
+            AgentModule* agentModule = AgentModule.Instance();
+            if (agentModule == null)
+                return;
+
+            AgentInterface* agentRepair = agentModule->GetAgentByInternalId(AgentId.Repair);
+            if (agentRepair != null)
+                agentRepair->Hide();
         }
 
         private static Vector3 _repairVendorLocation => _preferredRepairNpc?.Position ?? (PlayerHelper.GetGrandCompany() == 1 ? new Vector3(17.715698f, 40.200005f, 3.9520264f) : (PlayerHelper.GetGrandCompany() == 2 ? new Vector3(24.826416f, -8, 93.18677f) : new Vector3(32.85266f, 6.999999f, -81.31531f)));
@@ -64,7 +74,7 @@ namespace AutoDuty.Helpers
 
             EzThrottler.Throttle("Repair", 250);
 
-            if (Svc.ClientState.LocalPlayer == null)
+            if (Svc.Objects.LocalPlayer == null)
                 return;
 
             if (GotoHelper.State == ActionState.Running)

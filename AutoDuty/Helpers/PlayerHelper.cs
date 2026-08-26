@@ -115,7 +115,19 @@ namespace AutoDuty.Helpers
 
         internal static unsafe bool IsCasting => Player.Character->IsCasting;
 
-        internal static unsafe bool IsMoving => AgentMap.Instance()->IsPlayerMoving;
+        // 🔴 AgentMap.Instance() 合法回 null(產生器本體即 agentModule == null ? null : ...),
+        //    裸解參考 = AccessViolationException,corrupted-state,try/catch 攔不到。
+        // fail-closed:讀不到就回 false。兩個呼叫端(AutoDuty.cs:1477、MovementHelper.cs:61)
+        //    都是拿它當「要不要額外放衝刺/馬車」的觸發條件,false ＝ 不放技能,
+        //    正是讀不到狀態時該有的行為(回 true 反而會在未知狀態下送出動作)。
+        internal static unsafe bool IsMoving
+        {
+            get
+            {
+                AgentMap* agentMap = AgentMap.Instance();
+                return agentMap != null && agentMap->IsPlayerMoving;
+            }
+        }
 
         internal static unsafe bool InCombat => Svc.Condition[ConditionFlag.InCombat];
 
@@ -147,6 +159,6 @@ namespace AutoDuty.Helpers
             };
         }
 
-        internal static bool HasStatus(uint statusID, float minTime = 0) => Svc.ClientState.LocalPlayer != null && Player.Object.StatusList.Any(x => x.StatusId == statusID && (minTime <= 0 || x.RemainingTime > minTime));
+        internal static bool HasStatus(uint statusID, float minTime = 0) => Svc.Objects.LocalPlayer != null && Player.Object.StatusList.Any(x => x.StatusId == statusID && (minTime <= 0 || x.RemainingTime > minTime));
     }
 }

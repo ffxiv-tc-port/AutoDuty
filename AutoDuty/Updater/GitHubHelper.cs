@@ -19,6 +19,20 @@ namespace AutoDuty.Updater
     {
         const string CLIENT_ID = "Iv23liWV5R21nasKaQjP";
 
+        /// <summary>
+        /// 副本路徑檔與其 MD5 清單的來源。
+        /// <para>
+        /// 🔴 路徑檔**不隨外掛出貨** —— <c>Plugin.PathsDirectory</c> 是
+        /// <c>&lt;pluginConfigs&gt;/AutoDuty/paths</c>,啟動時只會被建成空目錄,
+        /// 內容唯一的來源就是「路徑」分頁那顆手動更新按鈕從這個位址下載。
+        /// 也就是說 <b>這個常數決定了使用者實際跑的是誰的路徑資料</b>。
+        /// </para>
+        /// <para>
+        /// 指向本 fork 的 tc-7.20,而不是原上游 ffxivcode/AutoDuty(已於 2026-01 封存)。
+        /// </para>
+        /// </summary>
+        internal const string PathRepoBaseUrl = "https://raw.githubusercontent.com/ffxiv-tc-port/AutoDuty/refs/heads/tc-7.20/";
+
         private static readonly SocketsHttpHandler _handler = new() { AutomaticDecompression = DecompressionMethods.All, ConnectCallback = new HappyEyeballsCallback().ConnectCallback };
 
         private static readonly HttpClient _client = new(_handler) { Timeout = TimeSpan.FromSeconds(20) };
@@ -52,7 +66,10 @@ namespace AutoDuty.Updater
                 using HttpClient client = new(handler);
                 client.Timeout = TimeSpan.FromSeconds(20);
 
-                var md5List = await client.GetFromJsonAsync<Dictionary<string, string>>("https://raw.githubusercontent.com/ffxivcode/AutoDuty/refs/heads/master/AutoDuty/Resources/md5s.json");
+                // 🔴 指向本 fork 而不是 ffxivcode:原上游已於 2026-01 封存(README 自掛
+                // ARCHIVED 公告,開發移至 erdelf/AutoDuty),那份清單不會再更新;而且它列的
+                // 是國際服的路徑檔,會把我方為台服客製過的路徑靜默覆蓋掉(實測 63 個檔)。
+                var md5List = await client.GetFromJsonAsync<Dictionary<string, string>>(PathRepoBaseUrl + "AutoDuty/Resources/md5s.json");
                 return md5List ?? [];
             }
             catch (Exception ex)
@@ -126,7 +143,9 @@ namespace AutoDuty.Updater
 
                 var content = new StringContent(json, Encoding.UTF8, "application/vnd.github+json");
 
-                var url = $"https://api.github.com/repos/ffxivcode/AutoDuty/issues";
+                // 🔴 指向本 fork:原上游 ffxivcode/AutoDuty 已封存,對封存 repo 開 issue
+                // GitHub API 會回 410 Gone,使用者的回報等於丟掉。
+                var url = $"https://api.github.com/repos/ffxiv-tc-port/AutoDuty/issues";
                 var response = await _client.PostAsync(url, content);
 
                 var responseString = await response.Content.ReadAsStringAsync();

@@ -129,7 +129,8 @@ namespace AutoDuty.Windows
                     {
                         _dropdownSelected = item;
                         _buildListSelected = -1;
-                        _argumentHint = item.Item2.Equals("false", StringComparison.InvariantCultureIgnoreCase) ? string.Empty : item.Item2;
+                        // Item2 is localized only for display; "false" is a sentinel and must stay untranslated.
+                        _argumentHint = item.Item2.Equals("false", StringComparison.InvariantCultureIgnoreCase) ? string.Empty : item.Item2.Loc();
                         _actionText = item.Item1;
                         _noArgument = item.Item2.Equals("false", StringComparison.InvariantCultureIgnoreCase);
                         _addActionButton = "Add".Loc();
@@ -160,7 +161,7 @@ namespace AutoDuty.Windows
                             case "Target":
                                 IGameObject? targetObject = Player.Object.TargetObject;
                                 IGameObject? gameObject = (targetObject ?? null) ?? ClosestObject;
-                                _arguments = [gameObject != null ? $"{gameObject.DataId}" : string.Empty];
+                                _arguments = [gameObject != null ? $"{gameObject.BaseId}" : string.Empty];
                                 _note = gameObject != null ? gameObject.Name.ExtractText() : string.Empty;
                                 break;
                             default:
@@ -169,7 +170,7 @@ namespace AutoDuty.Windows
                         _action = new() { Name = _actionText, Position = _position, Arguments = _arguments, Note = _note, Tag = _actionTag };
                         _showAddActionUI = true;
                     }
-                    ImGuiComponents.HelpMarker(item.Item3);
+                    ImGuiComponents.HelpMarker(item.Item3.Loc());
                 }
                 ImGui.EndPopup();
             }

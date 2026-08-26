@@ -1,0 +1,140 @@
+﻿using ECommons.EzIpcManager;
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using System.Threading;
+using System.Threading.Tasks;
+#nullable disable
+
+namespace AutoDuty.IPC
+{
+    // ─────────────────────────────────────────────────────────────────────────
+    // 側車：ECommons.IPC 套件**給不了**的 IPC 成員，仍然由 AutoDuty 自己宣告。
+    // 每個側車類都用與對應門面類**完全相同的 prefix 與 SafeWrapper** 各自 EzIPC.Init，
+    // 與套件實例並存；IPC 端點名稱逐字不變，所以對提供端來說沒有任何差別。
+    //
+    // 收進來的成員分三類，每一個都在宣告處標明屬於哪一類：
+    //
+    // (甲) 套件根本沒有的端點 —— 例如 vnavmesh 的 Nav.PathfindCancelable、Window.*、DTR.*。
+    //      套件只收了上游 AutoDuty 用得到的子集，我們用得比較多。
+    //
+    // 🔴 (乙) 套件有、但本版 ECommons 綁不上的 —— 套件把它們宣告成**自訂 delegate 型別**
+    //      (VnavmeshIPC.Delegates.Pathfind 這種)，而我們釘的 ECommons 其 EzIPC 訂閱端
+    //      (EzIPC.cs 裡 GetGenericTypeDefinition() 那行) 只認非泛型 Action 與泛型
+    //      Action<>／Func<>。對自訂 delegate 會擲例外、被外層 catch 吃掉，**欄位停在 null**。
+    //      照搬會在呼叫時 NullReferenceException，而且 SafeWrapper 攔不到
+    //      (欄位從沒被指派，根本沒有 wrapper 可攔)。
+    //      故沿用原本的 Func<>／Action<> 形狀，逐字同行為。
+    //      📌 ECommons repin 到含 AnalyzeDelegateField／AssignDelegateToField 的版本後，
+    //         (乙) 可刪掉改用套件實例。
+    //
+    // (丙) 套件有、但泛型參數與我方不同的 —— 例如 PandorasBox 的 GetFeatureEnabled 套件宣告成
+    //      Func<string, bool?> 而我方是 Func<string, bool>。兩者跨 IPC 的轉換路徑不同
+    //      (CallGateChannel.ConvertObject 只在型別不符時才走)，而提供端真正的簽名我們
+    //      **離線證明不了**。故維持我方現行宣告，不賭。
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>AutoRetainer 側車。prefix 與門面類相同：<c>AutoRetainer.PluginState</c>。</summary>
+    internal static class AutoRetainerExtraIPC
+    {
+        private static EzIPCDisposalToken[] _disposalTokens =
+            EzIPC.Init(typeof(AutoRetainerExtraIPC), "AutoRetainer.PluginState", SafeWrapper.IPCException);
+
+        /// <summary>(甲) 套件沒有這個端點。目前全 repo 沒有呼叫點，保留以免回退既有介面。</summary>
+        [EzIPC] internal static readonly Func<Dictionary<ulong, HashSet<string>>> GetEnabledRetainers;
+
+        /// <summary>
+        /// (丙) 套件宣告成 <c>Action&lt;bool, bool&gt;</c>，我方是 <c>Action&lt;Action&gt;</c>。
+        /// ⚠️ 我方這個宣告本身就與提供端對不上（見下），但它從來沒有呼叫點，
+        /// 換成套件的形狀等於**改動一個沒被驗證過的端點**，所以原樣保留。
+        /// 原註解（2026-08-03）：提供端是 AutoRetainer 的
+        /// <c>IPC_PluginState.EnqueueHET(Action onFailure)</c> —— 一個參數。參數個數不符時
+        /// Dalamud 會丟例外，而這個 class 帶的是 SafeWrapper.IPCException，例外會被吞掉、
+        /// 變成完全靜默的空操作。目前全 repo 沒有呼叫點，所以還沒被踩到。
+        /// </summary>
+        [EzIPC] internal static readonly Action<Action> EnqueueHET;
+
+        internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
+    }
+
+    /// <summary>BossMod 側車。prefix 與門面類相同：<c>BossMod</c>，wrapper 同為 AnyException。</summary>
+    internal static class BossModExtraIPC
+    {
+        private static EzIPCDisposalToken[] _disposalTokens =
+            EzIPC.Init(typeof(BossModExtraIPC), "BossMod", SafeWrapper.AnyException);
+
+        /// <summary>
+        /// 🔴 (乙) 套件宣告成自訂 delegate <c>BossModIPC.Delegates.AddTransientStrategyDelegate</c>，
+        /// 本版 ECommons 綁不上 ⇒ 欄位會是 null。這是 SetRange／SetMovement／SetPositional
+        /// 三個功能的唯一出口，照搬會讓 BossMod AI 的位移與站位策略整組靜默失效。
+        /// </summary>
+        /// <remarks>string presetName, string moduleTypeName, string trackName, string value</remarks>
+        [EzIPC("Presets.AddTransientStrategy")]
+        internal static readonly Func<string, string, string, string, bool> Presets_AddTransientStrategy;
+
+        internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
+    }
+
+    /// <summary>vnavmesh 側車。prefix 與門面類相同：<c>vnavmesh</c>。</summary>
+    internal static class VNavmeshExtraIPC
+    {
+        private static EzIPCDisposalToken[] _disposalTokens =
+            EzIPC.Init(typeof(VNavmeshExtraIPC), "vnavmesh", SafeWrapper.IPCException);
+
+        /// <summary>🔴 (乙) 套件宣告成自訂 delegate <c>VnavmeshIPC.Delegates.Pathfind</c>。</summary>
+        [EzIPC("Nav.Pathfind", true)] internal static readonly Func<Vector3, Vector3, bool, Task<List<Vector3>>> Nav_Pathfind;
+
+        /// <summary>(甲) 套件沒有這個端點。</summary>
+        [EzIPC("Nav.PathfindCancelable", true)] internal static readonly Func<Vector3, Vector3, bool, CancellationToken, Task<List<Vector3>>> Nav_PathfindCancelable;
+        /// <summary>(甲) 套件沒有這個端點。</summary>
+        [EzIPC("Nav.PathfindCancelAll", true)] internal static readonly Action Nav_PathfindCancelAll;
+        /// <summary>(甲) 套件沒有這個端點（套件只有 SimpleMove.PathfindInProgress，是另一個 IPC 名字）。</summary>
+        [EzIPC("Nav.PathfindInProgress", true)] internal static readonly Func<bool> Nav_PathfindInProgress;
+        /// <summary>(甲) 套件沒有這個端點。</summary>
+        [EzIPC("Nav.PathfindNumQueued", true)] internal static readonly Func<int> Nav_PathfindNumQueued;
+        /// <summary>(甲) 套件沒有這個端點。</summary>
+        [EzIPC("Nav.IsAutoLoad", true)] internal static readonly Func<bool> Nav_IsAutoLoad;
+        /// <summary>(甲) 套件沒有這個端點。</summary>
+        [EzIPC("Nav.SetAutoLoad", true)] internal static readonly Action<bool> Nav_SetAutoLoad;
+
+        /// <summary>(丙) 套件回傳 <c>Vector3?</c>，我方是 <c>Vector3</c>。</summary>
+        [EzIPC("Query.Mesh.NearestPoint", true)] internal static readonly Func<Vector3, float, float, Vector3> Query_Mesh_NearestPoint;
+        /// <summary>(丙) 套件回傳 <c>Vector3?</c>，我方是 <c>Vector3</c>。MapHelper 的旗標落地點查詢在用。</summary>
+        [EzIPC("Query.Mesh.PointOnFloor", true)] internal static readonly Func<Vector3, bool, float, Vector3> Query_Mesh_PointOnFloor;
+
+        /// <summary>🔴 (乙) 套件宣告成自訂 delegate <c>VnavmeshIPC.Delegates.PathMoveTo</c>。</summary>
+        [EzIPC("Path.MoveTo", true)] internal static readonly Action<List<Vector3>, bool> Path_MoveTo;
+        /// <summary>🔴 (乙) 套件宣告成自訂 delegate <c>VnavmeshIPC.Delegates.PathfindAndMoveTo</c>。</summary>
+        [EzIPC("SimpleMove.PathfindAndMoveTo", true)] internal static readonly Func<Vector3, bool, bool> SimpleMove_PathfindAndMoveTo;
+
+        /// <summary>(甲) 套件沒有這個端點。</summary>
+        [EzIPC("Window.IsOpen", true)] internal static readonly Func<bool> Window_IsOpen;
+        /// <summary>(甲) 套件沒有這個端點。</summary>
+        [EzIPC("Window.SetOpen", true)] internal static readonly Action<bool> Window_SetOpen;
+        /// <summary>(甲) 套件沒有這個端點。</summary>
+        [EzIPC("DTR.IsShown", true)] internal static readonly Func<bool> DTR_IsShown;
+        /// <summary>(甲) 套件沒有這個端點。</summary>
+        [EzIPC("DTR.SetShown", true)] internal static readonly Action<bool> DTR_SetShown;
+
+        internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
+    }
+
+    /// <summary>PandorasBox 側車。prefix 與門面類相同：<c>PandorasBox</c>。</summary>
+    internal static class PandorasBoxExtraIPC
+    {
+        private static EzIPCDisposalToken[] _disposalTokens =
+            EzIPC.Init(typeof(PandorasBoxExtraIPC), "PandorasBox", SafeWrapper.IPCException);
+
+        /// <summary>
+        /// (丙) 套件回傳 <c>bool?</c>，我方是 <c>bool</c>。AutoDuty.cs 直接把它當條件判斷用
+        /// （「Auto-interact with Objects in Instances 現在開著沒」），改型別會連帶改掉
+        /// 「拿不到值時算開還是算關」的語意，故維持我方宣告。
+        /// </summary>
+        [EzIPC] internal static readonly Func<string, bool> GetFeatureEnabled;
+
+        /// <summary>(丙) 套件第三個參數是 <c>bool?</c>，我方是 <c>bool</c>。目前沒有呼叫點。</summary>
+        [EzIPC] internal static readonly Action<string, string, bool> SetConfigEnabled;
+
+        internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
+    }
+}

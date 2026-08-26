@@ -104,7 +104,7 @@ namespace AutoDuty.Helpers
 
             Plugin.Action = $"Going to {TerritoryName.GetTerritoryName(_territoryType)}{(_moveLocations.Count > 0 ? $" at {_moveLocations[^1]}" : "")}";
 
-            if (Svc.ClientState.LocalPlayer == null)
+            if (Svc.Objects.LocalPlayer == null)
                 return;
 
             if (!PlayerHelper.IsValid || PlayerHelper.IsCasting || PlayerHelper.IsJumping || !VNavmesh_IPCSubscriber.Nav_IsReady())
@@ -162,7 +162,7 @@ namespace AutoDuty.Helpers
             else if(_useAethernetTravel)
             {
                 Aetheryte? aetheryteLoc = MapHelper.GetClosestAethernet(_territoryType, _moveLocations.Count > 0 ? _moveLocations[0] : Vector3.Zero);
-                Aetheryte? aetheryteMe = MapHelper.GetClosestAethernet(_territoryType, Svc.ClientState.LocalPlayer.Position);
+                Aetheryte? aetheryteMe = MapHelper.GetClosestAethernet(_territoryType, Svc.Objects.LocalPlayer.Position);
 
                 if (aetheryteLoc?.RowId != aetheryteMe?.RowId)
                 {

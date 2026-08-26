@@ -1,20 +1,163 @@
 {
-  "actions": [
-    "MoveTo|4.35, 41.04, -77.92|",
-    "Boss|2.82, 29.55, -17.25|",
-    "Interactable|-8.22, 30.83, -16.46|Cultist Orb",
-    "Boss|-18.43, 23.41, 26.77|",
-    "Interactable|-23.07, 24.71, 20.42|Cultist Orb",
-    "Interactable|-178.90, 13.91, -5.14|Cultist Rosary",
-    "Interactable|-104.14, 13.92, 15.52|Sealed Barrier",
-    "Boss|-93.34, 13.86, 9.51|",
-    "Interactable|-94.66, 14.91, 3.94|Cultist Orb",
-    "Interactable|-89.51, 14.90, 13.71|Cultist Orb",
-    "Boss|-51.88, 14.05, -12.76|"
+  "Actions": [
+    {
+      "Tag": "None",
+      "Name": "MoveTo",
+      "Position": {
+        "X": 4.35,
+        "Y": 41.04,
+        "Z": -77.92
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Boss",
+      "Position": {
+        "X": 2.82,
+        "Y": 29.55,
+        "Z": -17.25
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Interactable",
+      "Position": {
+        "X": -8.22,
+        "Y": 30.83,
+        "Z": -16.46
+      },
+      "Arguments": [
+        "Cultist Orb"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Boss",
+      "Position": {
+        "X": -18.43,
+        "Y": 23.41,
+        "Z": 26.77
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Interactable",
+      "Position": {
+        "X": -23.07,
+        "Y": 24.71,
+        "Z": 20.42
+      },
+      "Arguments": [
+        "Cultist Orb"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Interactable",
+      "Position": {
+        "X": -178.9,
+        "Y": 13.91,
+        "Z": -5.14
+      },
+      "Arguments": [
+        "Cultist Rosary"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Interactable",
+      "Position": {
+        "X": -104.14,
+        "Y": 13.92,
+        "Z": 15.52
+      },
+      "Arguments": [
+        "Sealed Barrier"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Boss",
+      "Position": {
+        "X": -93.34,
+        "Y": 13.86,
+        "Z": 9.51
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Interactable",
+      "Position": {
+        "X": -94.66,
+        "Y": 14.91,
+        "Z": 3.94
+      },
+      "Arguments": [
+        "Cultist Orb"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Interactable",
+      "Position": {
+        "X": -89.51,
+        "Y": 14.9,
+        "Z": 13.71
+      },
+      "Arguments": [
+        "Cultist Orb"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Boss",
+      "Position": {
+        "X": -51.88,
+        "Y": 14.05,
+        "Z": -12.76
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    }
   ],
-  "meta": {
-    "createdAt": 52,
-    "changelog": [],
-    "notes": []
+  "Meta": {
+    "CreatedAt": 52,
+    "Changelog": [],
+    "Notes": []
   }
 }

@@ -46,7 +46,7 @@ namespace AutoDuty.Helpers
 
             EzThrottler.Throttle("GotoBarracks", 50);
 
-            if (Svc.ClientState.LocalPlayer == null)
+            if (Svc.Objects.LocalPlayer == null)
                 return;
 
             if (GotoHelper.State == ActionState.Running)
@@ -60,7 +60,7 @@ namespace AutoDuty.Helpers
                 return;
             }
 
-            if (Svc.ClientState.TerritoryType != PlayerHelper.GetGrandCompanyTerritoryType(PlayerHelper.GetGrandCompany()) || _barracksDoorGameObject == null || Vector3.Distance(Svc.ClientState.LocalPlayer.Position, _barracksDoorGameObject.Position) > 2f)
+            if (Svc.ClientState.TerritoryType != PlayerHelper.GetGrandCompanyTerritoryType(PlayerHelper.GetGrandCompany()) || _barracksDoorGameObject == null || Vector3.Distance(Svc.Objects.LocalPlayer.Position, _barracksDoorGameObject.Position) > 2f)
             {
                 GotoHelper.Invoke(PlayerHelper.GetGrandCompanyTerritoryType(PlayerHelper.GetGrandCompany()), _barracksDoorLocation, 0.25f, 2f, false);
                 return;

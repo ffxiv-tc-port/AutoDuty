@@ -15,9 +15,32 @@ namespace AutoDuty.Helpers
 
     internal static class MapHelper
     {
-        internal static unsafe bool IsFlagMarkerSet => AgentMap.Instance()->FlagMarkerCount > 0;
+        // 🔴 AgentMap.Instance() 是 [Agent] 產生器產出的取得子,本體即
+        //    「agentModule == null ? null : (AgentMap*)agentModule->GetAgentByInternalId(...)」,
+        //    兩層都能合法回 null(換區/登入途中 AgentModule 還沒建好)。
+        //    裸解參考 = AccessViolationException,在 .NET Core 屬 corrupted-state exception,
+        //    try/catch 與 HookSafety.ExecuteSafe 全部攔不到。
+        // fail-closed:讀不到就當「沒有標旗」。呼叫端(88 行、149 行)對 false 的既有反應是
+        //    「不走標旗路線」,那是本來就會走到的分支。
+        internal static unsafe bool IsFlagMarkerSet
+        {
+            get
+            {
+                AgentMap* agentMap = AgentMap.Instance();
+                return agentMap != null && agentMap->FlagMarkerCount > 0;
+            }
+        }
 
-        internal static unsafe FlagMapMarker GetFlagMarker => AgentMap.Instance()->FlagMapMarkers[0];
+        // 只在 IsFlagMarkerSet 為 true 時才會被讀(151 行),但各自判空 ——
+        // 屬性是分開的兩次呼叫,不共用上面那次的結果。
+        internal static unsafe FlagMapMarker GetFlagMarker
+        {
+            get
+            {
+                AgentMap* agentMap = AgentMap.Instance();
+                return agentMap == null ? default : agentMap->FlagMapMarkers[0];
+            }
+        }
 
         internal static Vector2 ConvertWorldXZToMap(Vector2 coords, Map map) => Dalamud.Utility.MapUtil.WorldToMap(coords, map.OffsetX, map.OffsetY, map.SizeFactor);
 

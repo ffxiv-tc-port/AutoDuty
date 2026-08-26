@@ -1,15 +1,93 @@
 {
-  "actions": [
-    "Boss|-515.19, -0.03, 145.02|",
-    "Boss|-174.80, -25.00, 40.30|",
-    "Wait|-73.01, -25.17, -23.04|5000",
-    "Interactable|-73.01, -25.17, -23.04|Dragon",
-    "Wait|0, 0, 0|10000",
-    "Boss|798.45, -57.00, -97.25|"
+  "Actions": [
+    {
+      "Tag": "None",
+      "Name": "Boss",
+      "Position": {
+        "X": -515.19,
+        "Y": -0.03,
+        "Z": 145.02
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Boss",
+      "Position": {
+        "X": -174.8,
+        "Y": -25.0,
+        "Z": 40.3
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Wait",
+      "Position": {
+        "X": -73.01,
+        "Y": -25.17,
+        "Z": -23.04
+      },
+      "Arguments": [
+        "5000"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Interactable",
+      "Position": {
+        "X": -73.01,
+        "Y": -25.17,
+        "Z": -23.04
+      },
+      "Arguments": [
+        "Dragon"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Wait",
+      "Position": {
+        "X": 0.0,
+        "Y": 0.0,
+        "Z": 0.0
+      },
+      "Arguments": [
+        "10000"
+      ],
+      "Conditions": [],
+      "Note": ""
+    },
+    {
+      "Tag": "None",
+      "Name": "Boss",
+      "Position": {
+        "X": 798.45,
+        "Y": -57.0,
+        "Z": -97.25
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": ""
+    }
   ],
-  "meta": {
-    "createdAt": 52,
-    "changelog": [],
-    "notes": []
+  "Meta": {
+    "CreatedAt": 52,
+    "Changelog": [],
+    "Notes": []
   }
 }

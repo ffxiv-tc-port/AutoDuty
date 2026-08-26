@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Threading.Tasks;
 using Dalamud.Networking.Http;
 
 namespace AutoDuty.Helpers
@@ -16,15 +17,31 @@ namespace AutoDuty.Helpers
     {
         private static bool stagingChecked = false;
         private static bool isStaging      = false;
+        private static bool checkStarted   = false;
 
+        // MainWindow.Draw() 每一幀都會問這個值，而實際的判斷要做阻塞式網路 I/O
+        // （抓 raw.githubusercontent.com，逾時 10 秒）加讀設定檔，絕對不能跑在繪製（主）執行緒上。
+        // 改成只在背景啟動一次檢查，結果回來之前一律回報「不是 staging」。
         public static bool IsOnStaging()
         {
             if(Plugin.isDev)
                 return false;
 
-            if (stagingChecked) 
+            if (stagingChecked)
                 return isStaging;
 
+            if (!checkStarted)
+            {
+                checkStarted = true;
+                Task.Run(CheckStaging);
+            }
+
+            return false;
+        }
+
+        // 注意：一律先寫 isStaging 再寫 stagingChecked，避免主執行緒看到「已檢查完」卻讀到舊結果。
+        private static void CheckStaging()
+        {
             if (DalamudReflector.TryGetDalamudStartInfo(out DalamudStartInfo? startinfo, Svc.PluginInterface))
             {
                 try
@@ -42,18 +59,18 @@ namespace AutoDuty.Helpers
                         string version = line.Split(":").Last().Trim().Replace("'", "");
                         if (version != startinfo.GameVersion.ToString())
                         {
-                            stagingChecked = true;
                             isStaging      = false;
-                            return false;
+                            stagingChecked = true;
+                            return;
                         }
                     }
                 }
                 catch
                 {
                     // Something has gone wrong with checking the Dalamud github file, just allow plugin load anyway
+                    isStaging      = false;
                     stagingChecked = true;
-                    isStaging = false;
-                    return false;
+                    return;
                 }
 
                 if (File.Exists(startinfo.ConfigurationPath))
@@ -63,36 +80,23 @@ namespace AutoDuty.Helpers
                         string file = File.ReadAllText(startinfo.ConfigurationPath);
                         var ob = JsonConvert.DeserializeObject<dynamic>(file);
                         string type = ob.DalamudBetaKind;
-                        if (type is not null && !string.IsNullOrEmpty(type) && type != "release")
-                        {
-                            stagingChecked = true;
-                            isStaging = true;
-                            return true;
-                        }
-                        else
-                        {
-                            stagingChecked = true;
-                            isStaging = false;
-                            return false;
-                        }
+                        isStaging      = type is not null && !string.IsNullOrEmpty(type) && type != "release";
+                        stagingChecked = true;
                     }
                     catch (Exception ex)
                     {
                         Svc.Chat.PrintError($"Unable to determine Dalamud staging due to file being config being unreadable.");
                         Svc.Log.Error(ex.ToString());
+                        isStaging      = false;
                         stagingChecked = true;
-                        isStaging = false;
-                        return false;
                     }
                 }
                 else
                 {
+                    isStaging      = false;
                     stagingChecked = true;
-                    isStaging = false;
-                    return false;
                 }
             }
-            return false;
         }
     }
 }

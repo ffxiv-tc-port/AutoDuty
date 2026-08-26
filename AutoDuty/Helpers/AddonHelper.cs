@@ -74,6 +74,33 @@ namespace AutoDuty.Helpers
             return false;
         }
 
+        /// <summary>
+        /// 點掉「JournalResult」(任務完成/新人任務結算)視窗。accept=true 按完成、false 按拒絕。
+        /// 回傳語意與 <see cref="ClickSelectYesno"/> 一致:true＝視窗已經不在了(這一步做完),
+        /// false＝還沒做完,呼叫端(TaskManager 檢查式)要再跑一次。
+        /// </summary>
+        internal static bool SelectJournalResult(bool accept)
+        {
+            if (!EzThrottler.Throttle("JournalResult", 500)) return false;
+
+            var addonChecker = AddonChecker("JournalResult", out AtkUnitBase* addon, out bool seenAddon);
+
+            if (!addonChecker && seenAddon)
+            {
+                var journalResult = new AddonMaster.JournalResult(addon);
+                if (accept)
+                    journalResult.Complete();
+                else
+                    journalResult.Decline();
+                return false;
+            }
+
+            if (addonChecker && seenAddon)
+                return true;
+
+            return false;
+        }
+
         internal static bool ClickRepair()
         {
             var addonChecker = AddonChecker("Repair", out AtkUnitBase* addon, out bool seenAddon);

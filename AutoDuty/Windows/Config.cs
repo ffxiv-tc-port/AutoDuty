@@ -1,5 +1,6 @@
 using AutoDuty.Helpers;
 using AutoDuty.IPC;
+using global::AutoDuty.Multibox;
 using Dalamud.Interface;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Components;
@@ -83,6 +84,12 @@ public class ConfigurationMain : IEzConfig
         set => this.updatePathsOnStartup = value;
     }
 
+    // 多開協調(Multibox)設定。
+    // 🔴 裡面的 MultiBox 開關本身標了 [JsonIgnore],**不會**存進設定檔 ⇒ 每次載入外掛
+    // 都是關的,沒有「上次開著這次自動接上」的路徑。這裡存下來的只有連線參數
+    // (管道名稱/位址/埠號)與是否為主機端。
+    [JsonProperty]
+    public MultiboxUtility.MultiboxConfiguration multibox = new();
 
     public IEnumerable<string> ConfigNames => this.profileByName.Keys;
      
@@ -705,6 +712,7 @@ public static class ConfigTab
     private static bool preLoopHeaderSelected      = false;
     private static bool betweenLoopHeaderSelected  = false;
     private static bool terminationHeaderSelected  = false;
+    private static bool multiboxHeaderSelected     = false;
 
     public static void BuildManuals()
     {
@@ -953,6 +961,141 @@ public static class ConfigTab
         }
     }
 
+    /// <summary>
+    /// 多開協調(Multibox)設定區塊。
+    ///
+    /// 🔴 這裡是**唯一**的啟用入口:整個外掛沒有任何其他地方會把 MultiBox 打開。
+    ///    開關本身不落地(MultiboxConfiguration.MultiBox 標了 [JsonIgnore]),
+    ///    所以每次重載外掛都是關的。
+    /// </summary>
+    private static void DrawMultiboxSection()
+    {
+        MultiboxUtility.MultiboxConfiguration mb = MultiboxUtility.Config;
+
+        ImGui.Separator();
+        ImGui.Spacing();
+        ImGui.PushStyleVar(ImGuiStyleVar.SelectableTextAlign, new Vector2(0.5f, 0.5f));
+        bool multiboxHeader = ImGui.Selectable("Multibox Settings".Loc(), multiboxHeaderSelected, ImGuiSelectableFlags.DontClosePopups);
+        ImGui.PopStyleVar();
+        if (ImGui.IsItemHovered())
+            ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+        if (multiboxHeader)
+            multiboxHeaderSelected = !multiboxHeaderSelected;
+
+        if (!multiboxHeaderSelected)
+            return;
+
+        ImGui.Indent();
+
+        // ── 開關(手動觸發,預設關,不落地) ────────────────────────────────
+        bool enabled = mb.MultiBox;
+        if (ImGui.Checkbox("Enable Multibox".Loc(), ref enabled))
+            mb.MultiBox = enabled;
+        ImGuiComponents.HelpMarker("Coordinates several game clients running AutoDuty together.\n\nWhat currently works: the host invites the clients to its party, the host's queue makes the clients accept their duty pop, and deaths are reported to the host.\n\nNot yet wired up: per-step lockstep along the path and sending the host's path to the clients. Clients still walk their own path on their own timing.\n\nThis switch is never saved - AutoDuty always starts with Multibox off, and nothing turns it on by itself. You must tick it manually on every client each time.".Loc());
+
+        // ── 狀態:一律畫在列上,「不知道」也要看得見(不要畫成 0) ──────────
+        ImGui.SameLine();
+        if (!mb.MultiBox)
+        {
+            ImGui.TextColored(ImGuiColors.DalamudGrey, "(off)".Loc());
+        }
+        else if (mb.Host)
+        {
+            if (MultiboxUtility.Server.Running)
+                ImGui.TextColored(ImGuiColors.HealerGreen, $"{"host".Loc()}: {MultiboxUtility.Server.ConnectedCount}/{MultiboxUtility.Server.MAX_SERVERS}");
+            else
+                ImGui.TextColored(ImGuiColors.DalamudRed, $"{"host".Loc()}: {"not started".Loc()}");
+        }
+        else
+        {
+            if (MultiboxUtility.Client.Connected)
+                ImGui.TextColored(ImGuiColors.HealerGreen, $"{"client".Loc()}: {"connected".Loc()}");
+            else if (MultiboxUtility.Client.Connecting)
+                ImGui.TextColored(ImGuiColors.DalamudYellow, $"{"client".Loc()}: {"connecting...".Loc()}");
+            else
+                ImGui.TextColored(ImGuiColors.DalamudRed, $"{"client".Loc()}: {"not connected".Loc()}");
+        }
+
+        // 連線參數在連線期間不給改:改了也不會套用到已建立的連線,只會讓 UI 說謊。
+        using (ImRaii.Disabled(mb.MultiBox))
+        {
+            bool host = mb.Host;
+            if (ImGui.Checkbox("This client is the host".Loc(), ref host))
+            {
+                mb.Host = host;
+                Configuration.Save();
+            }
+            ImGuiComponents.HelpMarker("Exactly one game client must be the host. The host runs the path and drives everyone else; the others follow.".Loc());
+
+            bool syncPath = mb.SynchronizePath;
+            if (ImGui.Checkbox("Synchronize path from host".Loc(), ref syncPath))
+            {
+                mb.SynchronizePath = syncPath;
+                Configuration.Save();
+            }
+            ImGui.SameLine();
+            ImGui.TextColored(ImGuiColors.DalamudGrey, "(not active yet)".Loc());
+            ImGuiComponents.HelpMarker("Intended to make the host send its loaded path to every client. The transport for this exists but nothing calls it yet, so this setting currently has no effect - each client still uses its own path file.".Loc());
+
+            TransportType transport = mb.TransportType;
+            ImGui.SetNextItemWidth(200 * ImGuiHelpers.GlobalScale);
+            if (ImGuiEx.EnumCombo("Transport".Loc(), ref transport))
+            {
+                mb.TransportType = transport;
+                Configuration.Save();
+            }
+
+            if (mb.TransportType == TransportType.NamedPipe)
+            {
+                string pipeName = mb.PipeName;
+                ImGui.SetNextItemWidth(200 * ImGuiHelpers.GlobalScale);
+                if (ImGui.InputText("Pipe name".Loc(), ref pipeName, 64))
+                {
+                    mb.PipeName = pipeName;
+                    Configuration.Save();
+                }
+
+                if (!mb.Host)
+                {
+                    string serverName = mb.ServerName;
+                    ImGui.SetNextItemWidth(200 * ImGuiHelpers.GlobalScale);
+                    if (ImGui.InputText("Server name".Loc(), ref serverName, 64))
+                    {
+                        mb.ServerName = serverName;
+                        Configuration.Save();
+                    }
+                    ImGuiComponents.HelpMarker("Use . for game clients running on this same computer.".Loc());
+                }
+            }
+            else
+            {
+                if (!mb.Host)
+                {
+                    string serverAddress = mb.ServerAddress;
+                    ImGui.SetNextItemWidth(200 * ImGuiHelpers.GlobalScale);
+                    if (ImGui.InputText("Server address".Loc(), ref serverAddress, 64))
+                    {
+                        mb.ServerAddress = serverAddress;
+                        Configuration.Save();
+                    }
+                }
+
+                int port = mb.ServerPort;
+                ImGui.SetNextItemWidth(200 * ImGuiHelpers.GlobalScale);
+                if (ImGui.InputInt("Server port".Loc(), ref port))
+                {
+                    mb.ServerPort = Math.Clamp(port, 1, 65535);
+                    Configuration.Save();
+                }
+            }
+        }
+
+        if (mb.MultiBox)
+            ImGuiEx.TextWrapped(ImGuiColors.DalamudGrey, "Turn Multibox off to change the connection settings.".Loc());
+
+        ImGui.Unindent();
+    }
+
     public static void Draw()
     {
         if (MainWindow.CurrentTabName != "Config")
@@ -1173,6 +1316,8 @@ public static class ConfigTab
                 Configuration.Save();
             
         }
+
+        DrawMultiboxSection();
 
         if (Plugin.isDev)
         {
@@ -1431,31 +1576,28 @@ public static class ConfigTab
                     using (ImRaii.Disabled(Configuration.MaxDistanceToTargetRoleBased))
                     {
                         ImGui.PushItemWidth(195 * ImGuiHelpers.GlobalScale);
+                        // 滑桿在拖曳期間每一幀都回 true，存檔只能在放開滑鼠（編輯結束）那一刻做一次
                         if (ImGui.SliderFloat("Max Distance To Target".Loc(), ref Configuration.MaxDistanceToTargetFloat, 1, 30))
-                        {
                             Configuration.MaxDistanceToTargetFloat = Math.Clamp(Configuration.MaxDistanceToTargetFloat, 1, 30);
+                        if (ImGui.IsItemDeactivatedAfterEdit())
                             Configuration.Save();
-                        }
                         if (ImGui.SliderFloat("Max Distance To Target AoE".Loc(), ref Configuration.MaxDistanceToTargetAoEFloat, 1, 10))
-                        {
                             Configuration.MaxDistanceToTargetAoEFloat = Math.Clamp(Configuration.MaxDistanceToTargetAoEFloat, 1, 10);
+                        if (ImGui.IsItemDeactivatedAfterEdit())
                             Configuration.Save();
-                        }
                         ImGui.PopItemWidth();
                     }
                     using (ImRaii.Disabled(!Configuration.MaxDistanceToTargetRoleBased))
                     {
                         ImGui.PushItemWidth(195 * ImGuiHelpers.GlobalScale);
                         if (ImGui.SliderFloat("Max Distance To Target | Melee".Loc(), ref Configuration.MaxDistanceToTargetRoleMelee, 1, 30))
-                        {
                             Configuration.MaxDistanceToTargetRoleMelee = Math.Clamp(Configuration.MaxDistanceToTargetRoleMelee, 1, 30);
+                        if (ImGui.IsItemDeactivatedAfterEdit())
                             Configuration.Save();
-                        }
                         if (ImGui.SliderFloat("Max Distance To Target | Ranged".Loc(), ref Configuration.MaxDistanceToTargetRoleRanged, 1, 30))
-                        {
                             Configuration.MaxDistanceToTargetRoleRanged = Math.Clamp(Configuration.MaxDistanceToTargetRoleRanged, 1, 30);
+                        if (ImGui.IsItemDeactivatedAfterEdit())
                             Configuration.Save();
-                        }
                         ImGui.PopItemWidth();
                     }
                     if (ImGui.Checkbox("Set Positional Based on Player Role".Loc(), ref Configuration.positionalRoleBased))
@@ -1812,10 +1954,9 @@ public static class ConfigTab
                     ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X);
                     int autoRepairPct = (int)Configuration.AutoRepairPct;
                     if (ImGui.SliderInt("##Repair@", ref autoRepairPct, 0, 99, "%d%%"))
-                    {
                         Configuration.AutoRepairPct = Math.Clamp((uint)autoRepairPct, 0, 99);
+                    if (ImGui.IsItemDeactivatedAfterEdit())
                         Configuration.Save();
-                    }
 
                     ImGui.PopItemWidth();
                     if (!Configuration.AutoRepairSelf)
@@ -2023,34 +2164,53 @@ public static class ConfigTab
                         ImGui.AlignTextToFramePadding();
                         ImGui.SameLine();
 
+                        // RaptureGearsetModule.Instance() 是 FFXIVClientStructs 裡手寫的取得子
+                        // (`uiModule == null ? null : uiModule->GetRaptureGearsetModule()`),UIModule 尚未建立時會回 null。
+                        // 原本 module 取出後從沒判過空,卻在 IsValidGearset / GetGearset / NumGearsets 四處被解參考,
+                        // 而設定視窗是每幀重畫的。判空後同幀即用;為 null 時整列改顯示「尚未就緒」——
+                        // 不畫成空白,也不畫成看起來合法的「目前配裝」,免得使用者誤以為設定已生效。
                         RaptureGearsetModule* module = RaptureGearsetModule.Instance();
-                        
-                        if (Configuration.AutoOpenCoffersGearset != null && !module->IsValidGearset((int) Configuration.AutoOpenCoffersGearset))
+
+                        if (module == null)
                         {
-                            Configuration.AutoOpenCoffersGearset = null;
-                            Configuration.Save();
+                            ImGui.TextDisabled("Gearset data not ready".Loc());
                         }
-
-
-                        if (ImGui.BeginCombo("##CofferGearsetSelection", Configuration.AutoOpenCoffersGearset != null ? module->GetGearset(Configuration.AutoOpenCoffersGearset.Value)->NameString : "Current Gearset".Loc()))
+                        else
                         {
-                            if (ImGui.Selectable("Current Gearset".Loc()))
+                            if (Configuration.AutoOpenCoffersGearset != null && !module->IsValidGearset((int) Configuration.AutoOpenCoffersGearset))
                             {
                                 Configuration.AutoOpenCoffersGearset = null;
                                 Configuration.Save();
                             }
 
-                            for (int i = 0; i < module->NumGearsets; i++)
+                            // GetGearset() 是原生 MemberFunction,查無此 id 會回 null。
+                            // 預覽字串與清單列都先判空:取不到就退回「目前配裝」(預覽)或跳過該列(清單)。
+                            RaptureGearsetModule.GearsetEntry* selectedGearset =
+                                Configuration.AutoOpenCoffersGearset != null ? module->GetGearset(Configuration.AutoOpenCoffersGearset.Value) : null;
+
+                            if (ImGui.BeginCombo("##CofferGearsetSelection", selectedGearset != null ? selectedGearset->NameString : "Current Gearset".Loc()))
                             {
-                                RaptureGearsetModule.GearsetEntry* gearset = module->GetGearset(i);
-                                if(ImGui.Selectable(gearset->NameString))
+                                if (ImGui.Selectable("Current Gearset".Loc()))
                                 {
-                                    Configuration.AutoOpenCoffersGearset = gearset->Id;
+                                    Configuration.AutoOpenCoffersGearset = null;
                                     Configuration.Save();
                                 }
-                            }
 
-                            ImGui.EndCombo();
+                                for (int i = 0; i < module->NumGearsets; i++)
+                                {
+                                    RaptureGearsetModule.GearsetEntry* gearset = module->GetGearset(i);
+                                    if (gearset == null)
+                                        continue;
+
+                                    if(ImGui.Selectable(gearset->NameString))
+                                    {
+                                        Configuration.AutoOpenCoffersGearset = gearset->Id;
+                                        Configuration.Save();
+                                    }
+                                }
+
+                                ImGui.EndCombo();
+                            }
                         }
 
                         if (ImGui.Checkbox("Use Blacklist".Loc(), ref Configuration.AutoOpenCoffersBlacklistUse))
@@ -2164,10 +2324,9 @@ public static class ConfigTab
                                 ImGui.SameLine();
                                 ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X);
                                 if (ImGui.SliderInt("##AutoDesynthSkillUpLimit", ref Configuration.AutoDesynthSkillUpLimit, 0, 50))
-                                {
                                     Configuration.AutoDesynthSkillUpLimit = Math.Clamp(Configuration.AutoDesynthSkillUpLimit, 0, 50);
+                                if (ImGui.IsItemDeactivatedAfterEdit())
                                     Configuration.Save();
-                                }
                                 ImGui.PopItemWidth();
                                 ImGui.Unindent();
                             }
@@ -2189,10 +2348,9 @@ public static class ConfigTab
                             if (Configuration.UseSliderInputs)
                             {
                                 if (ImGui.SliderInt("##Slots", ref Configuration.AutoGCTurninSlotsLeft, 0, 140))
-                                {
                                     Configuration.AutoGCTurninSlotsLeft = Math.Clamp(Configuration.AutoGCTurninSlotsLeft, 0, 140);
+                                if (ImGui.IsItemDeactivatedAfterEdit())
                                     Configuration.Save();
-                                }
                             }
                             else
                             {
@@ -2306,10 +2464,9 @@ public static class ConfigTab
                     if (Configuration.UseSliderInputs)
                     {
                         if (ImGui.SliderInt("##Level", ref Configuration.StopLevelInt, 1, 100))
-                        {
                             Configuration.StopLevelInt = Math.Clamp(Configuration.StopLevelInt, 1, 100);
+                        if (ImGui.IsItemDeactivatedAfterEdit())
                             Configuration.Save();
-                        }
                     }
                     else
                     {

@@ -20,7 +20,24 @@ namespace AutoDuty.Helpers
 
     internal static class ObjectHelper
     {
-        internal static bool TryGetObjectByDataId(uint dataId, out IGameObject? gameObject) => (gameObject = Svc.Objects.OrderBy(GetDistanceToPlayer).FirstOrDefault(x => x.DataId == dataId)) != null;
+        internal static bool TryGetObjectByDataId(uint dataId, out IGameObject? gameObject) => (gameObject = Svc.Objects.OrderBy(GetDistanceToPlayer).FirstOrDefault(x => x.BaseId == dataId)) != null;
+
+        // ⚠️ 不要把 IGameObject 捕獲進 TaskManager 的閉包跨幀用。
+        // Dalamud 的 GameObject.Address 在建構時就凍結、永不重新解析
+        // (GameObject.cs:137-139),而 IGameObject.IsValid() 只檢查「玩家有沒有登入」、
+        // 完全不驗證位址(GameObject.cs:170-177)。所以存 IGameObject == 存一根原生指標,
+        // 而排隊中的任務是在「後面的幀」才執行、甚至會反覆重跑很多幀。
+        // 正解:閉包只捕獲 GameObjectId,每次執行時用 ResolveObject 重查物件表,
+        // 查不到就中止該行為(fail-closed)。
+        internal static bool TryGetObjectIdByDataId(uint dataId, out ulong? objectId)
+        {
+            objectId = Svc.Objects.OrderBy(GetDistanceToPlayer).FirstOrDefault(x => x.BaseId == dataId)?.GameObjectId;
+            return objectId != null;
+        }
+
+        internal static ulong? GetObjectIdByDataId(uint id) => Svc.Objects.OrderBy(GetDistanceToPlayer).FirstOrDefault(o => o.BaseId == id)?.GameObjectId;
+
+        internal static IGameObject? ResolveObject(ulong? objectId) => objectId is null ? null : Svc.Objects.SearchById(objectId.Value);
 
         internal static List<IGameObject>? GetObjectsByObjectKind(ObjectKind objectKind) => [.. Svc.Objects.OrderBy(GetDistanceToPlayer).Where(o => o.ObjectKind == objectKind)];
 
@@ -34,7 +51,7 @@ namespace AutoDuty.Helpers
 
         internal static IGameObject? GetObjectByName(string name) => Svc.Objects.OrderBy(GetDistanceToPlayer).FirstOrDefault(o => o.Name.TextValue.Equals(name, StringComparison.CurrentCultureIgnoreCase));
 
-        internal static IGameObject? GetObjectByDataId(uint id) => Svc.Objects.OrderBy(GetDistanceToPlayer).FirstOrDefault(o => o.DataId == id);
+        internal static IGameObject? GetObjectByDataId(uint id) => Svc.Objects.OrderBy(GetDistanceToPlayer).FirstOrDefault(o => o.BaseId == id);
 
         internal static List<IGameObject>? GetObjectsByPartialName(string name) => [.. Svc.Objects.OrderBy(GetDistanceToPlayer).Where(o => o.Name.TextValue.Contains(name, StringComparison.CurrentCultureIgnoreCase))];
 
@@ -44,14 +61,17 @@ namespace AutoDuty.Helpers
 
         internal static IGameObject? GetObjectByNameAndRadius(string objectName) => Svc.Objects.OrderBy(GetDistanceToPlayer).FirstOrDefault(g => g.Name.TextValue.Equals(objectName, StringComparison.CurrentCultureIgnoreCase) && Vector3.Distance(Player.Object.Position, g.Position) <= 10);
 
-        internal static IBattleChara? GetBossObject(int radius = 100) => GetObjectsByRadius(radius)?.OfType<IBattleChara>().FirstOrDefault(b => IsBossFromIcon(b) || BossMod_IPCSubscriber.HasModuleByDataId(b.DataId));
+        internal static IBattleChara? GetBossObject(int radius = 100) => GetObjectsByRadius(radius)?.OfType<IBattleChara>().FirstOrDefault(b => IsBossFromIcon(b) || BossMod_IPCSubscriber.HasModuleByDataId(b.BaseId));
 
         internal static unsafe float GetDistanceToPlayer(IGameObject gameObject) => GetDistanceToPlayer(gameObject.Position);
 
         internal static unsafe float GetDistanceToPlayer(Vector3 v3) => Vector3.Distance(v3, Player.GameObject->Position);
 
-        internal static unsafe bool BelowDistanceToPlayer(Vector3 v3, float maxDistance, float maxHeightDistance) => GetDistanceToPlayer(v3) < maxDistance &&
-                                                                                                                     MathF.Abs(v3.Y - Player.GameObject->Position.Y) < maxHeightDistance;
+        internal static unsafe bool BelowDistanceToPlayer(Vector3 v3, float maxDistance, float maxHeightDistance) => BelowDistanceToPoint(v3, Player.GameObject->Position, maxDistance, maxHeightDistance);
+
+        /// <summary>與 <see cref="BelowDistanceToPlayer"/> 同樣的圓柱體判定,但原點可以是任意座標(例如路徑步驟自己的位置)。</summary>
+        internal static bool BelowDistanceToPoint(Vector3 target, Vector3 origin, float maxDistance, float maxHeightDistance) => Vector3.Distance(target, origin) < maxDistance &&
+                                                                                                                                 MathF.Abs(target.Y - origin.Y) < maxHeightDistance;
 
         internal static unsafe IGameObject? GetPartyMemberFromRole(string role)
         {
@@ -100,7 +120,7 @@ namespace AutoDuty.Helpers
             return distance;
         }
 
-        internal static BNpcBase? GetObjectNPC(IGameObject gameObject) => Svc.Data.GetExcelSheet<BNpcBase>()?.GetRow(gameObject.DataId) ?? null;
+        internal static BNpcBase? GetObjectNPC(IGameObject gameObject) => Svc.Data.GetExcelSheet<BNpcBase>()?.GetRow(gameObject.BaseId) ?? null;
 
         //From RotationSolver
         internal static bool IsBossFromIcon(IGameObject gameObject) => GetObjectNPC(gameObject)?.Rank is 1 or 2 or 6;
