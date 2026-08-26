@@ -1,6 +1,6 @@
 ﻿using ECommons.ImGuiMethods;
 using ECommons.LanguageHelpers;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using System.Diagnostics;
 
 namespace AutoDuty.Windows

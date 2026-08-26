@@ -37,7 +37,7 @@ namespace AutoDuty.Managers
             }
 
             //Defining the GUI for the squadron duty finder
-            _taskManager.Enqueue(() => addon = (AtkUnitBase*)Svc.GameGui.GetAddonByName("GcArmyCapture"), "RegisterSquadron");
+            _taskManager.Enqueue(() => GenericHelpers.TryGetAddonByName("GcArmyCapture", out addon), "RegisterSquadron");
             
             // Run logic to open the squadron duty finder
             _taskManager.Enqueue(() => OpenSquadron(addon), "RegisterSquadron");
@@ -126,11 +126,10 @@ namespace AutoDuty.Managers
             }
 
             // Check if the SelectString addon is open (List Menu for "Command Missions", "Squadron Missions", etc.)
-            if (GenericHelpers.TryGetAddonByName("SelectString", out AtkUnitBase* _))
+            if (GenericHelpers.TryGetAddonByName("SelectString", out sergeantListMenu))
             {
                 // Successfully interacted with the Sergeant
                 InteractedWithSergeant = true;
-                sergeantListMenu = (AtkUnitBase*)Svc.GameGui.GetAddonByName("SelectString");
                 AddonHelper.FireCallBack(sergeantListMenu, true, 0);
                 AddonHelper.ClickSelectString(0);
                 OpeningMissions = true; // Set the opened missions state to true
