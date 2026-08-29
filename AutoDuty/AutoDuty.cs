@@ -775,7 +775,7 @@ public sealed class AutoDuty : IDalamudPlugin
             Actions.Clear();
             if (!ContentPathsManager.DictionaryPaths.TryGetValue(Svc.ClientState.TerritoryType, out ContentPathsManager.ContentPathContainer? container))
             {
-                PathFile = $"{PathsDirectory.FullName}{Path.DirectorySeparatorChar}({Svc.ClientState.TerritoryType}) {CurrentTerritoryContent?.EnglishName?.Replace(":", "")}.json";
+                PathFile = ContentPathsManager.BuildDefaultPathFilePath(Svc.ClientState.TerritoryType, CurrentTerritoryContent?.EnglishName);
                 return;
             }
 
@@ -1613,7 +1613,7 @@ public sealed class AutoDuty : IDalamudPlugin
         if (ContentHelper.DictionaryContent.TryGetValue(Svc.ClientState.TerritoryType, out var content))
         {
             CurrentTerritoryContent = content;
-            PathFile = $"{Plugin.PathsDirectory.FullName}/({Svc.ClientState.TerritoryType}) {content.EnglishName?.Replace(":", "")}.json";
+            PathFile = ContentPathsManager.BuildDefaultPathFilePath(Svc.ClientState.TerritoryType, content.EnglishName);
             LoadPath();
         }
         else

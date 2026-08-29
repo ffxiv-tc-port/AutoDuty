@@ -49,6 +49,59 @@ namespace AutoDuty.Managers
                 container.Paths.RemoveAll(dutyPath => dutyPath.Invalid);
         }
 
+        private static readonly char[] InvalidFileNameChars = Path.GetInvalidFileNameChars();
+
+        /// <summary>
+        /// 組出「新路徑檔」的預設完整路徑,沿用既有路徑檔的命名慣例:「(領土ID) 副本名稱.json」。
+        /// 對照 <c>RegexHelper.PathFileRegex()</c> —— 載入時真正被解析的只有括號裡的領土 ID,
+        /// 後面那段名稱純粹給人看,所以命名慣例的重點是前綴而不是名稱用哪種語言。
+        /// </summary>
+        /// <remarks>
+        /// 🔴 台服注意:呼叫端傳進來的 <c>Content.EnglishName</c> 在台服**不是英文**。
+        /// 它在 <c>ContentHelper.PopulateDuties()</c> 裡是用
+        /// <c>GetExcelSheet&lt;ContentFinderCondition&gt;(Language.English)</c> 取的,但本艦隊的
+        /// Lumina fork 在 <c>ExcelModule.GetRawSheetCore</c> 開頭就把參數覆寫掉
+        /// (<c>language = Language;</c>),語言參數是死參數 ⇒ 台服拿到的仍是繁中表,
+        /// <c>EnglishName</c> 的值等同 <c>Name</c>。台服客戶端本身也沒有英文 sqpack 可讀,
+        /// 「英文檔名」在台服無法達成,因此這裡刻意保留當地語言的副本名稱,
+        /// 只把命名慣例(前綴)與檔名合法性做穩。
+        /// 已離線核對台服 ContentFinderCondition 中 353 筆可建路徑的副本名稱:
+        /// 沒有任何 Windows 保留字元、也沒有結尾的句點或空白。
+        /// </remarks>
+        internal static string BuildDefaultPathFilePath(uint territoryType, string? dutyName)
+        {
+            string name = SanitizeFileNamePart(dutyName);
+
+            if (name.Length == 0)
+                name = $"Territory {territoryType}";
+
+            return Path.Combine(Plugin.PathsDirectory.FullName, $"({territoryType}) {name}.json");
+        }
+
+        /// <summary>
+        /// 把副本名稱清成合法檔名。原本只做 <c>.Replace(":", "")</c>,其餘 Windows 保留字元
+        /// (? * " &lt; &gt; | / \)會讓存檔時的 <c>File.WriteAllText</c> 直接擲例外,
+        /// 而 BuildTab 的存檔按鈕把例外吞掉只寫 log ⇒ 對使用者表現成「按了存檔沒反應」。
+        /// </summary>
+        private static string SanitizeFileNamePart(string? dutyName)
+        {
+            if (string.IsNullOrWhiteSpace(dutyName))
+                return string.Empty;
+
+            StringBuilder builder = new(dutyName.Length);
+
+            foreach (char c in dutyName)
+            {
+                if (c == ':' || char.IsControl(c) || InvalidFileNameChars.Contains(c))
+                    continue;
+
+                builder.Append(c);
+            }
+
+            // Windows 不接受結尾的句點與空白。
+            return builder.ToString().TrimEnd('.', ' ');
+        }
+
         internal class ContentPathContainer
         {
             public ContentPathContainer(Content content)
