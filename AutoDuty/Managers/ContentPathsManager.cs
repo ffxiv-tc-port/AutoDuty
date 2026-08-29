@@ -6,6 +6,7 @@ using ECommons.ExcelServices;
 using ECommons.GameFunctions;
 using ECommons.Schedulers;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -192,15 +193,38 @@ namespace AutoDuty.Managers
                 UpdateColoredNames();
             }
 
+            /// <summary>檔名不合慣例時每個檔名只記一行,避免 FileSystemWatcher 連續觸發時洗 log。</summary>
+            private static readonly ConcurrentDictionary<string, byte> UnconventionalFileNamesLogged = new(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>
+            /// 舊寫法是先 <c>uint.Parse(pathMatch.Groups[2].Value)</c>、之後才看 <c>pathMatch.Success</c>,
+            /// 而比對失敗時 <c>Groups[2].Value</c> 是空字串 ⇒ FormatException 直接從 DutyPath 的建構式擲出來,
+            /// 把整輪 <c>FileHelper.Update()</c> 打斷 —— 壞掉的不是那一個檔,是整份路徑清單。
+            /// 這條路徑真的走得到:載入端 <c>FileHelper.TryGetTerritoryType</c> 只要求「(數字)」開頭、位數不限,
+            /// 使用者自己改出來的檔名可以通過載入端的閘門,卻在這裡比對失敗。
+            /// 現在改成先判 Success:不合慣例的檔名退回顯示原始檔名,領土 ID 用容器的
+            /// (那就是載入端從同一個檔名解出來、用來分桶的值,不會是錯的),並寫一行 Information。
+            /// </summary>
             public void UpdateColoredNames()
             {
                 Match pathMatch = RegexHelper.PathFileRegex().Match(FileName);
 
                 string pathFileColor = Plugin.Configuration.DoNotUpdatePathFiles.Contains(FileName) ? ImGuiHelper.pathFileColorNoUpdate : ImGuiHelper.pathFileColor;
-                id = uint.Parse(pathMatch.Groups[2].Value);
-                ColoredNameString = pathMatch.Success ?
-                                             $"<0.8,0.8,1>{pathMatch.Groups[4]}</>{pathFileColor}{pathMatch.Groups[5]}</>" :
-                                             FileName;
+
+                if (pathMatch.Success && uint.TryParse(pathMatch.Groups[2].Value, out uint parsedId))
+                {
+                    id                = parsedId;
+                    ColoredNameString = $"<0.8,0.8,1>{pathMatch.Groups[4]}</>{pathFileColor}{pathMatch.Groups[5]}</>";
+                }
+                else
+                {
+                    id                = this.container.id;
+                    ColoredNameString = FileName;
+
+                    if (UnconventionalFileNamesLogged.TryAdd(FileName, 0))
+                        Svc.Log.Information($"AutoDuty: path file '{FileName}' does not match the '(territoryId) name.json' naming convention; using territory {this.container.id} and showing the raw file name.");
+                }
+
                 ColoredNameRegex = RegexHelper.ColoredTextRegex().Match(ColoredNameString);
             }
 
