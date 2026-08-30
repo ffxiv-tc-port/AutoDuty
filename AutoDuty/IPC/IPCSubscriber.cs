@@ -209,14 +209,45 @@ namespace AutoDuty.IPC
             }
         }
 
+        /// <summary>
+        /// 上一次已經輸出過的 Range 診斷指紋（值 ＋ 兩個 preset 的接受結果）。
+        /// </summary>
+        /// <remarks>
+        /// SetRange 在戰鬥中是每幀等級的呼叫（AutoDuty.cs 依周圍敵數在兩個距離之間切換），
+        /// 所以 Information 只在「值或結果變了」時輸出。<b>送出本身不受影響</b>，照舊每次都送。
+        /// </remarks>
+        private static string _lastRangeReport = "";
+
         public static void SetRange(float range)
         {
             if (Plugin.Configuration.AutoManageBossModAISettings)
             {
                 Svc.Log.Debug($"BossMod Setting Range to: {range}");
 
-                Presets_AddTransientStrategy("AutoDuty",         "BossMod.Autorotation.MiscAI.StayCloseToTarget", "range", MathF.Round(range, 1).ToString(CultureInfo.InvariantCulture));
-                Presets_AddTransientStrategy("AutoDuty Passive", "BossMod.Autorotation.MiscAI.StayCloseToTarget", "range", MathF.Round(range, 1).ToString(CultureInfo.InvariantCulture));
+                string value = MathF.Round(range, 1).ToString(CultureInfo.InvariantCulture);
+
+                // 🔴 軌道的 InternalName 是 "Range"（大寫 R），不是 "range"。
+                //    BMR 的 StayCloseToTarget 用 def.DefineFloat(Tracks.Range, ...)，而 DefineFloat
+                //    直接拿列舉成員名當 InternalName（RotationModule.cs）；提供端的
+                //    IPCProvider.addTransientStrategy 再用 ordinal == 去 FindIndex 找那條軌道。
+                //    大小寫不符 ⇒ 找不到軌道 ⇒ 回 false 而且**完全靜默**，整筆設定被丟掉，
+                //    StayCloseToTarget 就一直停在預設值 0（＝哨兵值「貼著受擊框 ±1」），
+                //    使用者在設定裡調的「與目標最大距離」從來沒有生效過。
+                bool active  = Presets_AddTransientStrategy("AutoDuty",         "BossMod.Autorotation.MiscAI.StayCloseToTarget", "Range", value);
+                bool passive = Presets_AddTransientStrategy("AutoDuty Passive", "BossMod.Autorotation.MiscAI.StayCloseToTarget", "Range", value);
+
+                string report = $"{value}|{active}|{passive}";
+                if (report != _lastRangeReport)
+                {
+                    _lastRangeReport = report;
+
+                    if (!IsEnabled)
+                        Svc.Log.Information($"BMR StayCloseToTarget Range={value}：BossMod／BossModReborn 沒有啟用，這次沒有送出。");
+                    else if (active || passive)
+                        Svc.Log.Information($"BMR StayCloseToTarget Range={value} 已送出（AutoDuty={active}、AutoDuty Passive={passive}）。");
+                    else
+                        Svc.Log.Information($"BMR StayCloseToTarget Range={value} 沒有生效：兩個 preset 都不接受這條軌道（軌道名或模組不存在）。");
+                }
             }
         }
 
