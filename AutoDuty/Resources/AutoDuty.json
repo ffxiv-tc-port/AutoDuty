@@ -329,11 +329,11 @@
     "BossMod.Autorotation.xan.HealerAI": [
       {
         "Track": "Raise",
-        "Option": "Raise using Swiftcast only"
+        "Option": "Swiftcast"
       },
       {
         "Track": "RaiseTargets",
-        "Option": "Alliance raid members"
+        "Option": "Alliance"
       },
       {
         "Track": "Heal",
