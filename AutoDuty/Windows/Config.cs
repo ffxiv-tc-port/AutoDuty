@@ -495,6 +495,19 @@ public class Configuration
     public bool        TreatUnsyncAsW2W = true;
     public JobWithRole W2WJobs          = JobWithRole.Tanks;
 
+    /// <summary>
+    /// 解限模式下,交戰中不要停下來,繼續走到下一個定點(技能沿路交給輪替外掛放)。
+    /// 預設關 —— 開了等於放棄「停下來把這一團清乾淨」的保證。
+    /// </summary>
+    public bool UnsyncedKeepMovingInCombat = false;
+
+    /// <summary>
+    /// 「解除限制」這個開關現在是不是真的生效中。
+    /// 判斷式與 <see cref="IsW2W"/> 和 AutoDuty.StageReadingPath 裡那份完全一致:
+    /// 解限只有在隨機任務/討伐戰/大型任務這三種模式下才有意義。
+    /// </summary>
+    public bool IsUnsyncActive() => this.Unsynced && this.DutyModeEnum.EqualsAny(DutyMode.Raid, DutyMode.Regular, DutyMode.Trial);
+
     public bool IsW2W(Job? job = null, bool? unsync = null)
     {
         job ??= PlayerHelper.GetJob();
@@ -502,7 +515,7 @@ public class Configuration
         if (this.W2WJobs.HasJob(job.Value))
             return true;
 
-        unsync ??= this.Unsynced && this.DutyModeEnum.EqualsAny(DutyMode.Raid, DutyMode.Regular, DutyMode.Trial);
+        unsync ??= this.IsUnsyncActive();
 
         return unsync.Value && this.TreatUnsyncAsW2W;
     }
@@ -1727,6 +1740,13 @@ public static class ConfigTab
                 if(ImGui.Checkbox("Treat Unsync as W2W".Loc(), ref Configuration.TreatUnsyncAsW2W))
                     Configuration.Save();
                 ImGuiComponents.HelpMarker("Only works in paths with W2W tags on steps".Loc());
+
+                if (ImGui.Checkbox("解限模式:交戰中繼續走到定點", ref Configuration.UnsyncedKeepMovingInCombat))
+                    Configuration.Save();
+                ImGuiComponents.HelpMarker("只在「解除限制」生效時(隨機任務/討伐戰/大型任務)才有作用。\n" +
+                                           "開啟後交戰不會停在原地等打完,而是繼續走到下一個定點,技能沿路交給輪替外掛(BossMod / Wrath)自己放。\n" +
+                                           "走位權會交給 vnavmesh 獨佔,BossMod 的自動移動在交戰期間會被關掉,離開戰鬥再還原。\n\n" +
+                                           "頭目戰、以及需要確實清怪才能推進的關卡不建議開。");
 
 
                 ImGui.BeginListBox("##W2WConfig", new System.Numerics.Vector2(ImGui.GetContentRegionAvail().X, 300));

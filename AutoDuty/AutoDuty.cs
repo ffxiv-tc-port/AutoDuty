@@ -243,6 +243,12 @@ public sealed class AutoDuty : IDalamudPlugin
     private const string CommandName = "/autoduty";
     private readonly DirectoryInfo _configDirectory;
     private readonly ActionsManager _actions;
+
+    /// <summary>
+    /// 解限模式「交戰中繼續走到定點」目前有沒有把 BossMod 的自動移動關掉。
+    /// 只在進出戰鬥的那一次送 IPC,不要每幀送。
+    /// </summary>
+    private bool _unsyncedKeepMovingArmed;
     private readonly SquadronManager _squadronManager;
     private readonly VariantManager _variantManager;
     private readonly OverrideAFK _overrideAFK;
@@ -1482,9 +1488,41 @@ public sealed class AutoDuty : IDalamudPlugin
         {
             if (Configuration.AutoManageRotationPluginState && !Configuration.UsingAlternativeRotationPlugin)
                 SetRotationPluginSettings(true);
-            VNavmesh_IPCSubscriber.Path_Stop();
-            Stage = Stage.Waiting_For_Combat;
-            return;
+
+            if (Configuration.UnsyncedKeepMovingInCombat && Configuration.IsUnsyncActive())
+            {
+                // 解限模式「交戰中繼續走到定點」:不切進 Waiting_For_Combat,讓 vnavmesh 繼續跑路徑,
+                // 技能交給輪替外掛(BossMod / Wrath)的自動循環 —— 移動中本來就可以放即時技。
+                // 🔴 走位權必須只有一個主人:BossMod 的 NormalMovement 是另一套獨立的 pathfinder,
+                //    兩邊同時要走會互相抵銷、角色原地不動(這個形狀在 IPCSubscriber.SetPreset 的註解
+                //    裡已經記錄過)。所以這裡明確把 BossMod 的移動關掉,由 vnavmesh 獨佔走位。
+                //    ⚠️ SetMovement 只有在 AutoManageBossModAISettings 開著時才會真的送出去;
+                //    沒開的話 AutoDuty 本來就沒有幫忙套 BossMod 的 preset,也就沒有走位權之爭。
+                if (!_unsyncedKeepMovingArmed)
+                {
+                    _unsyncedKeepMovingArmed = true;
+                    BossMod_IPCSubscriber.SetMovement(false);
+                    Svc.Log.Information("[解限] 交戰中繼續走到定點:已關閉 BossMod 的自動移動,改由 vnavmesh 獨佔走位。");
+                }
+
+                KeepMovingTargetAssist();
+            }
+            else
+            {
+                VNavmesh_IPCSubscriber.Path_Stop();
+                Stage = Stage.Waiting_For_Combat;
+                return;
+            }
+        }
+        else if (_unsyncedKeepMovingArmed && !PlayerHelper.InCombat)
+        {
+            // 離開戰鬥就把移動權還給 BossMod,免得這個設定的影響漏到後面的一般導航。
+            // 🔴 這裡一定要再判一次 !InCombat:上面那個 if 為假也可能是「還在戰鬥中,但
+            //    StopForCombat 被路徑步驟關掉了」,那種情況的 SetMovement(false) 是那個步驟
+            //    自己要的,不可以被我們還原掉。
+            _unsyncedKeepMovingArmed = false;
+            BossMod_IPCSubscriber.SetMovement(true);
+            Svc.Log.Information("[解限] 交戰結束:已還原 BossMod 的自動移動。");
         }
 
         if (StuckHelper.IsStuck(out byte stuckCount))
@@ -1539,6 +1577,47 @@ public sealed class AutoDuty : IDalamudPlugin
             Indexer++;
             return;
         }
+    }
+
+    /// <summary>
+    /// 解限模式「交戰中繼續走」用的目標補位:沒有目標時鎖定最近的、已經在戰鬥中的敵對 NPC,
+    /// 讓輪替外掛有東西可以打。(這條路徑不會進 Waiting_For_Combat,所以那邊的鎖定邏輯不會跑。)
+    /// </summary>
+    /// <remarks>
+    /// 🔴 只在同一幀內掃描並設定目標,不把任何 IGameObject 留到下一幀。
+    /// 判敵意刻意只用 Dalamud 的 <c>StatusFlags</c>/<c>BattleNpcKind</c>(直接讀 CS 結構欄位),
+    /// 不走 ECommons 那個吃寫死特徵碼的 IsHostile()/GetNameplateKind(),
+    /// 免得特徵碼在台服失效時靜默失準。
+    /// </remarks>
+    private static void KeepMovingTargetAssist()
+    {
+        if (Svc.Targets.Target != null)
+            return;
+
+        IGameObject? nearest         = null;
+        float        nearestDistance = float.MaxValue;
+
+        foreach (IGameObject obj in Svc.Objects)
+        {
+            if (obj is not IBattleNpc battleNpc
+                || battleNpc.BattleNpcKind != Dalamud.Game.ClientState.Objects.Enums.BattleNpcSubKind.Enemy
+                || !obj.IsTargetable
+                || obj.IsDead
+                || !battleNpc.StatusFlags.HasFlag(Dalamud.Game.ClientState.Objects.Enums.StatusFlags.Hostile)
+                || !battleNpc.StatusFlags.HasFlag(Dalamud.Game.ClientState.Objects.Enums.StatusFlags.InCombat))
+                continue;
+
+            float distance = ObjectHelper.GetDistanceToPlayer(obj);
+
+            if (distance > 75f || distance >= nearestDistance)
+                continue;
+
+            nearest         = obj;
+            nearestDistance = distance;
+        }
+
+        if (nearest != null)
+            Svc.Targets.Target = nearest;
     }
 
     private void StageWaitingForCombat()
@@ -2017,6 +2096,16 @@ public sealed class AutoDuty : IDalamudPlugin
         States = PluginState.None;
         TaskManager?.SetStepMode(false);
         TaskManager?.Abort();
+
+        // ForceAttack 有可能正暫停著 BossMod 的「自動攻擊管理」,而負責還原的那個任務
+        // 剛剛被 TaskManager.Abort() 一起清掉了,所以這裡補一次(沒有暫停中就是 no-op)。
+        _actions.RestoreBossModAutoAutos();
+
+        if (_unsyncedKeepMovingArmed)
+        {
+            _unsyncedKeepMovingArmed = false;
+            BossMod_IPCSubscriber.SetMovement(true);
+        }
         MainListClicked              = false;
         this.Framework_Update_InDuty = _ => {};
         if (!InDungeon)
