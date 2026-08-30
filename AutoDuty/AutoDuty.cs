@@ -2099,7 +2099,10 @@ public sealed class AutoDuty : IDalamudPlugin
 
         // ForceAttack 有可能正暫停著 BossMod 的「自動攻擊管理」,而負責還原的那個任務
         // 剛剛被 TaskManager.Abort() 一起清掉了,所以這裡補一次(沒有暫停中就是 no-op)。
-        _actions.RestoreBossModAutoAutos();
+        // ⚠️ 用 ?. 的理由和上面 TaskManager?. 一樣:建構式整段包在 try 裡,_actions 是到
+        //    中後段才指派的,建構式提早擲例外時 Dispose 仍會走到這裡。裸呼叫會在這裡再擲一個
+        //    NullReferenceException,把真正的載入失敗原因蓋掉。
+        _actions?.RestoreBossModAutoAutos();
 
         if (_unsyncedKeepMovingArmed)
         {
