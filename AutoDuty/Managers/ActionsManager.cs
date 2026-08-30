@@ -279,15 +279,196 @@ namespace AutoDuty.Managers
                 this.Wait(new PathAction {Arguments = ["500"]});
         }
 
+        /// <summary>
+        /// ForceAttack 期間被暫時關掉的 BossMod「自動攻擊管理」原值;null = 目前沒有暫停中。
+        /// </summary>
+        private bool? _bossModAutoAutosSuspendedFrom;
+
+        /// <summary>ForceAttack 後備目標的搜尋半徑(公尺),只在遊戲的切換敵人指令沒鎖到目標時才會用到。</summary>
+        private const float ForceAttackFallbackRadius = 30f;
+
+        /// <summary>
+        /// ForceAttack:停在定點主動打掉擋路的敵人,進入戰鬥後才往下走。
+        /// </summary>
+        /// <remarks>
+        /// 🔴 2026-08-30 由使用者實機 log 確認的根因(與台服在地化無關,國際服同樣會中):
+        /// 這一步靠「一般動作 1(自動攻擊)」起手,但 BossModReborn 的「自動攻擊管理」
+        /// (<c>ActionTweaksConfig.AutoAutos</c>)hook 了 <c>SetAutoAttackState</c>,
+        /// 而 <c>AutoAutosTweak.GetDesiredState</c> 的最後一行是
+        /// <code>return player.InCombat || ws.Client.CountdownRemaining &lt;= PrePullThreshold;</code>
+        /// <c>CountdownRemaining</c> 的型別是 <c>float?</c>,沒有倒數計時的時候是 null,
+        /// 而 C# 的提升比較讓 <c>null &lt;= 0.5f</c> 恆為 false ⇒
+        /// 只要「不在戰鬥中而且沒有倒數」,啟動自動攻擊就一律被否決
+        /// (BossModReborn 會 log <c>[AMEx] Prevented starting autoattacks</c>)。
+        /// ForceAttack 的前提正好就是「不在戰鬥中」,所以自動攻擊永遠送不出去、
+        /// <c>InCombat</c> 永遠不會變 true,整步就退化成純粹等 tot 毫秒 ——
+        /// 這就是使用者回報的「沒有自動攻擊擋路的障礙物,只有等時間」。
+        /// (實機 log 的六次 ForceAttack 全部剛好逾時 10.01 秒,其中五次伴隨上述 AMEx 訊息;
+        ///  另外兩次是連目標都沒鎖到 —— 500 毫秒的等目標那一段直接逾時。)
+        ///
+        /// 對應的修法有兩件:
+        /// (1) 這一步期間暫時把 BossMod 的 AutoAutos 關掉,做完立刻還原;
+        /// (2) 遊戲的切換敵人指令沒鎖到目標時,自己掃物件表補一個最近的可攻擊敵人。
+        /// 另外把目標與逾時狀況寫成 Information 級 log,下次看 log 就能直接判是哪一段沒過。
+        /// </remarks>
         public unsafe void ForceAttack(PathAction action)
         {
             var tot = action.Arguments[0].IsNullOrEmpty() ? 10000 : int.TryParse(action.Arguments[0], out int time) ? time : 0;
             if (action.Arguments[0].IsNullOrEmpty())
                 action.Arguments[0] = "10000";
+
+            _taskManager.Enqueue(() => SuspendBossModAutoAutos(), "ForceAttack-SuspendAutoAutos");
             _taskManager.Enqueue(() => ActionManager.Instance()->UseAction(ActionType.GeneralAction, 16), "ForceAttack-GA16");
-            _taskManager.Enqueue(() => Svc.Targets.Target != null, 500, "ForceAttack-GA1");
+            _taskManager.Enqueue(() => Svc.Targets.Target != null, 500, "ForceAttack-WaitForTarget");
+            _taskManager.Enqueue(() => ForceAttackAcquireTarget(), "ForceAttack-AcquireTarget");
             _taskManager.Enqueue(() => ActionManager.Instance()->UseAction(ActionType.GeneralAction, 1), "ForceAttack-GA1");
             _taskManager.Enqueue(() => InCombat, tot, "ForceAttack-WaitForCombat");
+            _taskManager.Enqueue(() => ForceAttackFinish(tot), "ForceAttack-Finish");
+        }
+
+        /// <summary>
+        /// 讀 BossMod 的「自動攻擊管理」開關。讀不到(BossMod 沒載入、欄位改名、IPC 失敗)一律回 null,
+        /// 呼叫端就當作「不要動它」。
+        /// 🔑 這裡刻意拿「只有真的解析得出 bool 才算數」當校準閘門 —— BossMod 的 ConsoleCommand 在
+        /// 找不到設定型別或欄位時回傳的是多行說明文字,Count != 1 就會被這個條件擋掉,
+        /// 不會把「查不到」誤讀成「值是 false」。
+        /// </summary>
+        private static bool? GetBossModAutoAutos()
+        {
+            if (!BossMod_IPCSubscriber.IsEnabled)
+                return null;
+
+            List<string>? result = BossMod_IPCSubscriber.Configuration(["ActionTweaks", "AutoAutos"], false);
+
+            return result is { Count: 1 } && bool.TryParse(result[0], out bool value) ? value : null;
+        }
+
+        /// <summary>設定 BossMod 的「自動攻擊管理」,並回報有沒有真的改成功。</summary>
+        private static bool SetBossModAutoAutos(bool value)
+        {
+            if (!BossMod_IPCSubscriber.IsEnabled)
+                return false;
+
+            // 第二個參數 save 傳 false:只改 BossMod 記憶體裡的欄位、不觸發它把設定寫回磁碟。
+            // 這樣即使 AutoDuty 中途被強制關掉來不及還原,使用者設定檔裡的值仍然是原本的,
+            // BossMod 下次重載就會自己回到原狀。
+            BossMod_IPCSubscriber.Configuration(["ActionTweaks", "AutoAutos", value ? "true" : "false"], false);
+
+            return GetBossModAutoAutos() == value;
+        }
+
+        /// <summary>ForceAttack 起手前暫時關掉 BossMod 的「自動攻擊管理」(理由見 ForceAttack 的註解)。</summary>
+        private bool SuspendBossModAutoAutos()
+        {
+            // 上一輪如果因為中止而沒還原,這裡不要拿現值去覆蓋掉記下來的原值。
+            if (_bossModAutoAutosSuspendedFrom != null)
+                return true;
+
+            bool? current = GetBossModAutoAutos();
+
+            if (current == null)
+            {
+                Svc.Log.Information("[ForceAttack] 讀不到 BossMod 的「自動攻擊管理」設定(BossMod 未載入或 IPC 失敗),不動它。");
+                return true;
+            }
+
+            if (current == false)
+                return true;
+
+            if (SetBossModAutoAutos(false))
+            {
+                _bossModAutoAutosSuspendedFrom = true;
+                Svc.Log.Information("[ForceAttack] 已暫時關閉 BossMod 的「自動攻擊管理」(它會否決非戰鬥中啟動自動攻擊),這一步做完立刻還原。");
+            }
+            else
+                Svc.Log.Information("[ForceAttack] 想暫時關閉 BossMod 的「自動攻擊管理」但沒有成功,ForceAttack 很可能仍然只會等時間。");
+
+            return true;
+        }
+
+        /// <summary>
+        /// 還原先前被 ForceAttack 暫時關掉的 BossMod「自動攻擊管理」。
+        /// 沒有暫停中就什麼都不做,所以可以安全地重複呼叫(收工路徑上也會叫一次當保險)。
+        /// </summary>
+        internal void RestoreBossModAutoAutos()
+        {
+            if (_bossModAutoAutosSuspendedFrom is not bool original)
+                return;
+
+            _bossModAutoAutosSuspendedFrom = null;
+
+            if (SetBossModAutoAutos(original))
+                Svc.Log.Information("[ForceAttack] 已還原 BossMod 的「自動攻擊管理」= " + original + "。");
+            else
+                Svc.Log.Information("[ForceAttack] 還原 BossMod 的「自動攻擊管理」失敗(想還原成 " + original + ");BossMod 重載後會回到設定檔裡的值。");
+        }
+
+        /// <summary>
+        /// 確保 ForceAttack 有目標:遊戲的「從左至右切換敵人」沒鎖到人時,自己掃物件表挑最近的可攻擊敵人。
+        /// </summary>
+        /// <remarks>
+        /// 🔴 全程在同一幀內做完 —— 掃描、挑選、設定目標之後就不再持有任何 IGameObject,
+        /// 不會把原生指標留到下一幀(排隊中的任務是在後面的幀才執行的)。
+        /// 判敵意刻意只用 Dalamud 自己的 <c>BattleNpcKind</c>/<c>IsTargetable</c>/<c>IsDead</c>,
+        /// 不走 ECommons 那個吃寫死特徵碼的 IsHostile(),免得特徵碼在台服失效時靜默失準。
+        /// </remarks>
+        private bool ForceAttackAcquireTarget()
+        {
+            if (Svc.Targets.Target is { } existing)
+            {
+                Svc.Log.Information("[ForceAttack] 目標:" + existing.Name.TextValue + " (BaseId=" + existing.BaseId + ", 距離 " + GetDistanceToPlayer(existing).ToString("F1") + "m)");
+                return true;
+            }
+
+            int         scanned  = 0;
+            int         hostiles = 0;
+            IGameObject? nearest = null;
+            float       nearestDistance = float.MaxValue;
+
+            foreach (IGameObject obj in Svc.Objects)
+            {
+                scanned++;
+
+                if (obj is not IBattleNpc battleNpc
+                    || battleNpc.BattleNpcKind != Dalamud.Game.ClientState.Objects.Enums.BattleNpcSubKind.Enemy
+                    || !obj.IsTargetable
+                    || obj.IsDead)
+                    continue;
+
+                hostiles++;
+
+                float distance = GetDistanceToPlayer(obj);
+
+                if (distance > ForceAttackFallbackRadius || distance >= nearestDistance)
+                    continue;
+
+                nearest         = obj;
+                nearestDistance = distance;
+            }
+
+            if (nearest == null)
+            {
+                Svc.Log.Information("[ForceAttack] 沒有鎖定到目標:掃了 " + scanned + " 個物件,其中 " + hostiles + " 個是可攻擊的敵人,但都不在 " + ForceAttackFallbackRadius.ToString("F0") + "m 內。");
+                return true;
+            }
+
+            Svc.Log.Information("[ForceAttack] 遊戲的切換敵人指令沒鎖到目標,改鎖最近的可攻擊敵人:" + nearest.Name.TextValue + " (BaseId=" + nearest.BaseId + ", 距離 " + nearestDistance.ToString("F1") + "m)");
+            Svc.Targets.Target = nearest;
+
+            return true;
+        }
+
+        /// <summary>ForceAttack 收尾:回報這一步到底有沒有把人打起來,並還原 BossMod 的設定。</summary>
+        private bool ForceAttackFinish(int timeoutMs)
+        {
+            if (InCombat)
+                Svc.Log.Information("[ForceAttack] 已進入戰鬥。");
+            else
+                Svc.Log.Information("[ForceAttack] 等了 " + timeoutMs + " 毫秒仍未進入戰鬥,放棄這一步繼續往下走。");
+
+            RestoreBossModAutoAutos();
+
+            return true;
         }
 
         /// <summary>
