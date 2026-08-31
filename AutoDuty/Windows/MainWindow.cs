@@ -136,6 +136,47 @@ public class MainWindow : Window, IDisposable
                 }
             }
         }
+
+        ImGui.SameLine(0, 5);
+        DrawSkipStepButton();
+    }
+
+    /// <summary>
+    /// 「跳過目前步驟」按鈕:中止正在執行的那一步、直接進下一步。
+    /// 正在跑的是 Wait 步驟時,順便把已經等掉的時間寫回路徑檔,下次不用再等那麼久。
+    /// </summary>
+    /// <remarks>
+    /// 主視窗與疊加層共用 <see cref="StopResumePause"/>,所以兩邊都會有這個按鈕。
+    /// 可按條件見 <c>AutoDuty.CanSkipCurrentStep</c>(暫停中刻意不給按)。
+    /// </remarks>
+    private static void DrawSkipStepButton()
+    {
+        bool canSkip = Plugin.CanSkipCurrentStep;
+
+        using (ImRaii.Disabled(!canSkip))
+        {
+            if (ImGui.Button("Skip Step".Loc()))
+                Plugin.SkipCurrentStep();
+        }
+
+        // 停用中的項目預設不算 hover,要明講 AllowWhenDisabled 才看得到「為什麼不能按」。
+        if (!ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            return;
+
+        if (!canSkip)
+        {
+            ImGui.SetTooltip("There is no path step running right now".Loc());
+            return;
+        }
+
+        string tooltip = "Skips the step that is running right now and continues with the next one".Loc();
+
+        // 「這一步在等多久、已經等了多久」是起疑才會查的資訊 ⇒ 放 tooltip,不占列上版面。
+        if (Plugin.TryGetCurrentWaitProgress(out int configuredMs, out int elapsedMs))
+            tooltip += "\n" + "This step is waiting; skipping now will change its wait to the ?? seconds already elapsed (was ?? seconds)".Loc(
+                           (elapsedMs / 1000f).ToString("0.0"), (configuredMs / 1000f).ToString("0.0"));
+
+        ImGui.SetTooltip(tooltip);
     }
 
     internal static void GotoAndActions()

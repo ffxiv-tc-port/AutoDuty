@@ -679,16 +679,44 @@ namespace AutoDuty.Managers
             _taskManager.Enqueue(() => Chat.ExecuteCommand("/automove off"), "AutoMove-Off");
         }
 
+        /// <summary>
+        /// 等待 N 毫秒。
+        /// </summary>
+        /// <remarks>
+        /// 「跳過目前步驟」要把已經等掉的時間寫回路徑檔,所以這裡順便記下自己的一組計時
+        /// (<c>Plugin.WaitStepEndTick</c> / <c>Plugin.WaitStepDurationMs</c>)。
+        /// 🔴 不可以只靠 <c>EzThrottler.GetRemainingTime("Wait")</c> 反推:EzThrottler 的 key 是
+        /// 全域且永久的,上一次的等待被中止時(按停止、換區、按跳過)那個尚未到期的殘值會留下來,
+        /// 下一次 Wait 一開始就會量到「已經等了一段時間」的假象,而且完全不報錯。
+        /// 我們自己的計時只在 throttle 真的重新起算的那一刻寫入,所以不會有殘留。
+        /// ⚠️ StopForCombat 開著時前後各有一個「等脫戰」任務,那段時間不算等待時間 ——
+        /// 計時只涵蓋中間那段 throttle,那正是要寫回的值。
+        /// </remarks>
         public unsafe void Wait(PathAction action)
         {
             Plugin.Action = $"Wait: {action.Arguments[0]}";
+            int waitMs = Convert.ToInt32(action.Arguments[0]);
             if (Plugin.StopForCombat)
                 _taskManager.Enqueue(() => !Player.Character->InCombat, int.MaxValue, "Wait");
-            _taskManager.Enqueue(() => EzThrottler.Throttle("Wait", Convert.ToInt32(action.Arguments[0])), "Wait");
-            _taskManager.Enqueue(() => EzThrottler.Check("Wait"), Convert.ToInt32(action.Arguments[0]), "Wait");
+            _taskManager.Enqueue(() => StartWaitThrottle(waitMs), "Wait");
+            _taskManager.Enqueue(() => EzThrottler.Check("Wait"), waitMs, "Wait");
             if (Plugin.StopForCombat)
                 _taskManager.Enqueue(() => !Player.Character->InCombat, int.MaxValue, "Wait");
-            _taskManager.Enqueue(() => Plugin.Action = "");
+            _taskManager.Enqueue(() => { Plugin.ClearWaitStepTiming(); Plugin.Action = ""; });
+        }
+
+        /// <summary>
+        /// 起算 Wait 的 throttle。只有在 throttle 真的重新起算(回 true)時才記下計時,
+        /// 這樣「已等時間」永遠對應目前這一次等待,不會沿用上一次的殘值。
+        /// </summary>
+        private static bool StartWaitThrottle(int waitMs)
+        {
+            if (!EzThrottler.Throttle("Wait", waitMs))
+                return false;
+
+            Plugin.WaitStepDurationMs = waitMs;
+            Plugin.WaitStepEndTick    = Environment.TickCount64 + waitMs;
+            return true;
         }
 
         public unsafe void WaitFor(PathAction action)

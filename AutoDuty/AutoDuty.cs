@@ -233,6 +233,22 @@ public sealed class AutoDuty : IDalamudPlugin
 
     internal string Action = "";
     internal string PathFile = "";
+
+    /// <summary>
+    /// 目前這次 Wait 等待的結束時刻(<see cref="Environment.TickCount64"/> 基準)。0 = 沒有在等。
+    /// 由 <c>ActionsManager.Wait</c> 寫入 —— 為什麼不直接用 EzThrottler 反推,見那裡的說明。
+    /// </summary>
+    internal long WaitStepEndTick;
+
+    /// <summary>目前這次 Wait 等待原本設定的毫秒數。0 = 沒有在等。</summary>
+    internal int WaitStepDurationMs;
+
+    internal void ClearWaitStepTiming()
+    {
+        WaitStepEndTick    = 0;
+        WaitStepDurationMs = 0;
+    }
+
     internal TaskManager TaskManager;
     internal Job JobLastKnown;
     internal DutyState DutyState = DutyState.None;
@@ -2084,8 +2100,151 @@ public sealed class AutoDuty : IDalamudPlugin
 
     public event IFramework.OnUpdateDelegate Framework_Update_InDuty = _ => {};
 
+    /// <summary>
+    /// 目前這一步能不能按「跳過」。
+    /// </summary>
+    /// <remarks>
+    /// 只在「真的有一個路徑步驟正在跑」時成立。刻意排除:
+    /// <c>Stage.Paused</c>(暫停會把 TaskManager 切成單步模式並記下 PreviousStage,
+    /// 跳過要中止佇列並換 Stage,兩者疊起來會讓「繼續」回到一個已經不存在的狀態 —— 請先按繼續)、
+    /// <c>Stage.Condition</c>(換區中,有一個排程動作稍後會把 Stage 拉回 Reading_Path,
+    /// 這時跳過會被那個排程覆蓋掉)、<c>Stage.Dead</c>/<c>Stage.Revived</c>/<c>Stage.Looping</c>/
+    /// <c>Stage.Stopped</c>(當下根本沒有正在執行的路徑步驟)。
+    /// </remarks>
+    internal bool CanSkipCurrentStep =>
+        States.HasFlag(PluginState.Navigating) &&
+        Indexer >= 0 && Indexer < Actions.Count &&
+        Stage.EqualsAny(Stage.Reading_Path, Stage.Moving, Stage.Action, Stage.Waiting_For_Combat);
+
+    /// <summary>
+    /// 目前正在跑的那一步是不是「Wait」而且真的在計時中。是的話回傳原本設定的毫秒數與已經等掉的毫秒數。
+    /// </summary>
+    /// <remarks>
+    /// 判「正在等」看的是 <c>ActionsManager.Wait</c> 自己記的計時,不是 <c>Plugin.Action</c> 的前綴 ——
+    /// StopForCombat 開著時,佇列前面那個「等脫戰」任務執行期間 Action 已經是 "Wait: N" 了,
+    /// 但 throttle 還沒起算,那段時間不算等待時間。
+    /// 另外要求記下的時長與步驟參數相同,免得把動作內部自己排的短等待(例如 BossLoot 的 250ms)
+    /// 誤認成這一步的等待。
+    /// </remarks>
+    internal bool TryGetCurrentWaitProgress(out int configuredMs, out int elapsedMs)
+    {
+        configuredMs = 0;
+        elapsedMs    = 0;
+
+        if (Indexer < 0 || Indexer >= Actions.Count)
+            return false;
+
+        PathAction step = Actions[Indexer];
+
+        if (!step.Name.Equals("Wait", StringComparison.OrdinalIgnoreCase) || step.Arguments.Count == 0)
+            return false;
+
+        if (!int.TryParse(step.Arguments[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out configuredMs) || configuredMs <= 0)
+        {
+            configuredMs = 0;
+            return false;
+        }
+
+        int duration = WaitStepDurationMs;
+
+        if (duration <= 0 || duration != configuredMs)
+            return false;
+
+        long remaining = WaitStepEndTick - Environment.TickCount64;
+
+        if (remaining <= 0 || remaining > duration)
+            return false;
+
+        elapsedMs = (int)(duration - remaining);
+        return true;
+    }
+
+    /// <summary>
+    /// 跳過正在執行的那一步,直接進入下一步。
+    /// 跳過的是計時中的 Wait 步驟時,順便把已經等掉的時間寫回路徑檔。
+    /// </summary>
+    /// <remarks>
+    /// 只動「這一步」的執行狀態:中止排隊中的任務、停掉導航、<see cref="Indexer"/> 加一、
+    /// 回到 <c>Stage.Reading_Path</c>。迴圈計數(<c>CurrentLoop</c>)、<see cref="States"/>、
+    /// 設定、已載入的路徑一律不動。
+    /// </remarks>
+    internal void SkipCurrentStep()
+    {
+        if (!CanSkipCurrentStep)
+        {
+            Svc.Log.Information($"[跳過步驟] 目前不在可跳過的狀態(Stage={Stage.ToCustomString()}, Indexer={Indexer}, Actions={Actions.Count}),不做任何事。");
+            return;
+        }
+
+        int        skippedIndex = Indexer;
+        PathAction step         = Actions[skippedIndex];
+        var        stageBefore  = Stage;
+
+        // 🔴 已等時間必須在做任何清理之前量 —— 清掉計時之後就量不到了。
+        bool waitInProgress = TryGetCurrentWaitProgress(out int configuredMs, out int elapsedMs);
+
+        switch (stageBefore)
+        {
+            case Stage.Action:
+                // 對照 StageAction() 正常走完一步的收尾,再補兩件 Abort() 會弄丟的事:
+                // (1) ForceAttack 可能正暫停著 BossMod 的「自動攻擊管理」,負責還原的任務排在佇列尾端;
+                // (2) 動作自己發起的導航(MoveToObject / Interactable / JumpTo …)還在跑,不停掉的話
+                //     StageReadingPath 會因為 Path_IsRunning() 而不肯開始下一步 —— 表現成「按了跳過卻卡住」。
+                TaskManager.Abort();
+                _actions?.RestoreBossModAutoAutos();
+                BossMod_IPCSubscriber.DisableRealAIPreset();
+                StopNavigationIfRunning();
+                break;
+            case Stage.Moving:
+                // 對照 StageMoving() 卡住重走的分支:停導航後回 Reading_Path。
+                StopNavigationIfRunning();
+                break;
+            case Stage.Waiting_For_Combat:
+                // 對照 StageWaitingForCombat() 脫戰後的收尾。
+                BossMod_IPCSubscriber.SetRange(Configuration.MaxDistanceToTargetFloat);
+                BossMod_IPCSubscriber.DisableRealAIPreset();
+                StopNavigationIfRunning();
+                break;
+            case Stage.Reading_Path:
+                // 這一步還沒開始跑,沒有東西要清。
+                break;
+        }
+
+        // EzThrottler 的 "Wait" 是全域且永久的 key。被我們 Abort() 中斷之後,尚未到期的殘值會留到
+        // 下一個 Wait 步驟 —— 那一步的 Throttle 會先回 false、被反覆重試,等於多等掉殘餘的時間。
+        // 這是我們自己造成的,所以自己清掉。
+        if (step.Name.Equals("Wait", StringComparison.OrdinalIgnoreCase))
+            EzThrottler.Reset("Wait");
+
+        ClearWaitStepTiming();
+
+        PathAction = new();
+        Action     = "";
+
+        Indexer = skippedIndex + 1;
+        Stage   = Stage.Reading_Path;
+
+        Svc.Log.Information($"[跳過步驟] 已跳過第 {skippedIndex} 步「{step.Name}」(Stage={stageBefore.ToCustomString()}),Indexer -> {Indexer}。");
+
+        if (waitInProgress)
+            StepSkipHelper.WriteBackWaitTime(skippedIndex, step, configuredMs, elapsedMs);
+        else
+            Svc.Chat.Print($"已跳過目前步驟：{step.Name}", "AutoDuty");
+    }
+
+    /// <summary>導航真的在跑時才叫 Path_Stop(),vnavmesh 沒載入就什麼都不做。</summary>
+    private static void StopNavigationIfRunning()
+    {
+        if (!VNavmesh_IPCSubscriber.IsEnabled)
+            return;
+
+        if (VNavmesh_IPCSubscriber.Path_IsRunning() || VNavmesh_IPCSubscriber.SimpleMove_PathfindInProgress())
+            VNavmesh_IPCSubscriber.Path_Stop();
+    }
+
     private void StopAndResetALL()
     {
+        ClearWaitStepTiming();
         if (_bareModeSettingsActive != SettingsActive.None)
         {
             Configuration.EnablePreLoopActions = _bareModeSettingsActive.HasFlag(SettingsActive.PreLoop_Enabled);
