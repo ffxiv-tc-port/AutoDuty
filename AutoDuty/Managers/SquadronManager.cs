@@ -55,7 +55,15 @@ namespace AutoDuty.Managers
             _taskManager.Enqueue(() => GenericHelpers.TryGetAddonByName("ContentsFinderConfirm", out addon) && GenericHelpers.IsAddonReady(addon), "RegisterSquadron");
 
             // Confirm Duty
-            _taskManager.Enqueue(() => AddonHelper.FireCallBack(addon, true, 8), "RegisterSquadron");
+            // 🔴 發射的那一幀重新取窗,不沿用上一步(上一幀)抓到的指標:TaskManager 每一步各在不同的幀
+            //    執行,而確認框「關閉中」的那幾幀 TryGetAddonByName 與 IsAddonReady 三關全過 ——
+            //    對它送 callback 就是攔不到的 AccessViolation。
+            _taskManager.Enqueue(() =>
+                                 {
+                                     if (GenericHelpers.TryGetAddonByName("ContentsFinderConfirm", out AtkUnitBase* addonConfirm)
+                                         && GenericHelpers.IsAddonReady(addonConfirm))
+                                         AddonHelper.FireCallBack(addonConfirm, true, 8);
+                                 }, "RegisterSquadron");
 
             // Check if we're in a valid map for the dungeon / paths
             _taskManager.Enqueue(() => Svc.ClientState.TerritoryType == content.TerritoryType, int.MaxValue, "RegisterSquadron");

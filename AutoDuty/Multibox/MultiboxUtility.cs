@@ -264,11 +264,17 @@ public static class MultiboxUtility
                                                                                                  if (GenericHelpers.TryGetAddonByName("SelectYesno", out AtkUnitBase* addonSelectYesno) &&
                                                                                                      GenericHelpers.IsAddonReady(addonSelectYesno))
                                                                                                  {
-                                                                                                     AddonMaster.SelectYesno yesno = new(addonSelectYesno);
-                                                                                                     if (yesno.Text.Contains(inviterName.ToString()))
-                                                                                                         yesno.Yes();
-                                                                                                     else
-                                                                                                         yesno.No();
+                                                                                                     // 🔴 這是 500 毫秒重複排程,窗還在就會一直按。確認框「關閉中」的那幾幀
+                                                                                                     //    TryGetAddonByName 與 IsAddonReady 三關全過,再按一次就是攔不到的存取違規
+                                                                                                     //    (AddonMaster.Yes() 還會強制翻 NodeFlags 繞過遊戲自己的防重按)。
+                                                                                                     if (AddonPressGuard.TryBeginPress("SelectYesno", addonSelectYesno))
+                                                                                                     {
+                                                                                                         AddonMaster.SelectYesno yesno = new(addonSelectYesno);
+                                                                                                         if (yesno.Text.Contains(inviterName.ToString()))
+                                                                                                             yesno.Yes();
+                                                                                                         else
+                                                                                                             yesno.No();
+                                                                                                     }
                                                                                                  }
 
                                                                                                  if (GenericHelpers.TryGetAddonByName("Social", out AtkUnitBase* addonSocial) &&
@@ -697,6 +703,11 @@ public static class MultiboxUtility
                                                                                                                 GenericHelpers.TryGetAddonByName("SelectYesno", out AtkUnitBase* addonSelectYesno) &&
                                                                                                                 GenericHelpers.IsAddonReady(addonSelectYesno))
                                                                                                             {
+                                                                                                                // 同上:500 毫秒重複排程 + AddonMaster 會繞過遊戲的防重按,
+                                                                                                                // 「關閉中」那幾幀的重按只有 AddonPressGuard 擋得住。
+                                                                                                                if (!AddonPressGuard.TryBeginPress("SelectYesno", addonSelectYesno))
+                                                                                                                    return;
+
                                                                                                                 AddonMaster.SelectYesno yesno = new(addonSelectYesno);
                                                                                                                 if (yesno.Text.Contains(inviterName.ToString()))
                                                                                                                 {

@@ -65,8 +65,15 @@ namespace AutoDuty.Helpers
 
             if (GenericHelpers.TryGetAddonByName("MaterializeDialog", out AtkUnitBase* addonMaterializeDialog) && GenericHelpers.IsAddonReady(addonMaterializeDialog))
             {
-                Svc.Log.Debug("AutoExtract - Confirming MaterializeDialog");
-                new AddonMaster.MaterializeDialog(addonMaterializeDialog).Materialize();
+                // 🔴 這條路徑不經 AddonHelper,所以要自己過守衛。上面那道 250 毫秒節流不是防護:
+                //    它記的是時刻不是「這扇窗按過了」,而確認框「關閉中」的那幾幀
+                //    TryGetAddonByName 與 IsAddonReady 三關全過 —— 再按一次就是攔不到的存取違規。
+                if (AddonPressGuard.TryBeginPress("MaterializeDialog", addonMaterializeDialog, "Materialize"))
+                {
+                    Svc.Log.Debug("AutoExtract - Confirming MaterializeDialog");
+                    new AddonMaster.MaterializeDialog(addonMaterializeDialog).Materialize();
+                }
+
                 return;
             }
 

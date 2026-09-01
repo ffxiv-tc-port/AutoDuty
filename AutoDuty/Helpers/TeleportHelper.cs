@@ -119,11 +119,20 @@ namespace AutoDuty.Helpers
                 if ((addon = ObjectHelper.InteractWithObjectUntilAddon(gameObject, "SelectString")) == null)
                     return false;
 
-                Callback.Fire(addon, true, 0);
+                // 改走 AddonHelper 才吃得到 AddonPressGuard(原本是裸 Callback.Fire)。
+                AddonHelper.FireCallBack(addon, true, 0);
+
+                // 🔴 這裡一定要收手:上面那一發是對 **SelectString** 送的,它會關掉選單並開出
+                //    TelepotTown;下面那一發 (true, 11, …) 是要給 TelepotTown 的,原本卻會在
+                //    同一次呼叫裡對著<b>正在關閉的 SelectString</b> 送出去(EzThrottler 第一次必定放行,
+                //    擋不住),而且 GetAethernetCallback 此時取不到 TelepotTown、只會回 0。
+                //    下一次進來時上面的 TelepotTown 分支就會接手。
+                //    ⚠️ 兩個呼叫端(GotoHelper)本來就忽略回傳值、每個 tick 重跑,語意不變。
+                return false;
             }
 
             if (EzThrottler.Throttle("TeleportAethernet", 250))
-                Callback.Fire(addon, true, 11, GetAethernetCallback(aethernetName));
+                AddonHelper.FireCallBack(addon, true, 11, GetAethernetCallback(aethernetName));
 
             return false;
         }

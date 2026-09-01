@@ -2314,6 +2314,10 @@ public sealed class AutoDuty : IDalamudPlugin
         FileHelper.FileSystemWatcher.Dispose();
         FileHelper.FileWatcher.Dispose();
         WindowSystem.RemoveAllWindows();
+        // 🔴 要在 ECommonsMain.Dispose() 之前拆:AddonPressGuard 的解除封鎖監聽器掛在
+        //    Svc.AddonLifecycle 上,ECommons 收掉服務之後就沒有東西可以 Unregister 了,
+        //    留著的委派會指向已卸載的組件。
+        AddonPressGuard.ForceTeardown();
         EzIpcFailureLog.Disable();
         ECommonsMain.Dispose();
         MainWindow.Dispose();
