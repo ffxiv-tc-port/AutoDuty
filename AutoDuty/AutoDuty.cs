@@ -439,7 +439,7 @@ public sealed class AutoDuty : IDalamudPlugin
             {
                 BuildTab.DrawHelper(drawList);
 
-                if (Plugin.Configuration.PathDrawEnabled && CurrentTerritoryContent?.TerritoryType == Svc.ClientState.TerritoryType && this.Actions.Any() && (this.Indexer < 0 || !this.Actions[this.Indexer].Name.Equals("Boss") || Stage != Stage.Action))
+                if (Plugin.Configuration.PathDrawEnabled && CurrentTerritoryContent?.TerritoryType == Svc.ClientState.TerritoryType && this.Actions.Any() && (this.Indexer < 0 || this.Indexer >= this.Actions.Count || !this.Actions[this.Indexer].Name.Equals("Boss") || Stage != Stage.Action))
                 {
                     Vector3 lastPos         = Player.Position;
                     float   stepCountFactor = (1f / this.Configuration.PathDrawStepCount);
