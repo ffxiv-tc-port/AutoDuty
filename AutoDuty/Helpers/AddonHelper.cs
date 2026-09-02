@@ -20,6 +20,17 @@ namespace AutoDuty.Helpers
         /// 改成回 <c>bool</c> 會讓那些 lambda 從 <c>Action</c> 重載改綁到
         /// <c>Func&lt;bool&gt;</c> 重載,任務語意會從「做一次」靜默變成「做到回 true 為止」。
         /// 需要知道有沒有真的送出去的呼叫端請改用 <see cref="TryFireCallBack"/>。
+        /// <para>
+        /// 📌 2026-09-03 更新:上面說的那些 <c>Enqueue</c> 呼叫點<b>已經一個都不剩</b> ——
+        /// SquadronManager 三處與 VariantManager 四處都改成 statement lambda 回傳
+        /// <see cref="TryFireCallBack"/> 的結果(那種寫法綁的必然是
+        /// <c>Enqueue(Func&lt;bool?&gt;, string)</c>,編譯期就定死)。
+        /// ⚠️ <b>但這不代表現在可以放心改簽章</b>:實測(2026-09-03,net9 編譯器,
+        /// 對照 ECommons 兩個 <c>(lambda, string)</c> 多載)<c>() =&gt; 回 void 的方法()</c> 綁
+        /// <c>Action</c>、<c>() =&gt; 回 bool 的方法()</c> 綁 <c>Func&lt;bool?&gt;</c> ——
+        /// 只要日後再寫出一個 <c>Enqueue(() =&gt; FireCallBack(...))</c>,同一個陷阱就回來了。
+        /// 要動這支的簽章之前<b>自己重新枚舉一次呼叫點</b>,不要採信這段話裡的數量。
+        /// </para>
         /// </remarks>
         internal static unsafe void FireCallBack(AtkUnitBase* addon, bool boolValue, params object[] args)
             => TryFireCallBack(addon, boolValue, args);
