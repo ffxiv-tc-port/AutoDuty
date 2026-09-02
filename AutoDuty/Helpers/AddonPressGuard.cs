@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Threading;
 
 namespace AutoDuty.Helpers
 {
@@ -137,7 +138,7 @@ namespace AutoDuty.Helpers
         };
 
         /// <param name="Address">被按的那個實例的位址,<b>只做等值比較</b>。</param>
-        /// <param name="Frame">按下時的繪製幀號。</param>
+        /// <param name="Frame">按下時的 framework tick 序號(<see cref="CurrentFrame"/>,<b>刻意不是繪製幀</b>)。</param>
         /// <param name="EscapeFrames">登記當時呼叫端給的逃生口;<see cref="TryBeginClose"/> 判「這筆還熱著」用它。</param>
         private readonly record struct PressRecord(nint Address, long Frame, int EscapeFrames);
 
@@ -147,6 +148,68 @@ namespace AutoDuty.Helpers
 
         private static readonly Dictionary<string, IAddonLifecycle.AddonEventDelegate> Watchers =
             new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// 守衛自己的幀時鐘:由 <see cref="IFramework.Update"/> 每個 tick 推進一次。
+        /// </summary>
+        /// <remarks>
+        /// 🔴🔴 <b>刻意不用 <c>Svc.PluginInterface.UiBuilder.FrameCount</c></b>:那個計數器是加在
+        /// <c>UiBuilder.OnDraw()</c> 的<b>最後面</b>,而 <c>OnDraw</c> 在「外掛 UI 被隱藏」時會<b>提早 return</b>,
+        /// 根本走不到遞增那一行。三種隱藏條件裡有一條是<b>過場動畫</b>
+        /// (<c>ToggleUiHideDuringCutscenes</c>,Dalamud 端<b>預設開啟</b>,而本外掛沒有設 <c>DisableCutsceneUiHide</c>)
+        /// —— 也就是說<b>整段過場期間那個計數器完全不動</b>。
+        /// <para>
+        /// 🔴 對 AutoDuty 特別致命:副本流程<b>大量伴隨過場</b>(進本、Boss 前、劇情本)。
+        /// 用繪製幀當時鐘的話,所有逃生口(<see cref="RoutineRePressEscapeFrames"/> 15 幀、
+        /// <see cref="DefaultEscapeFrames"/> 90 幀,以及 <c>ExitDutyHelper</c> 隔 30 幀回頭補關窗的觀察期)
+        /// 在過場期間<b>永遠不會到期</b> —— 防死鎖用的逃生口自己死鎖,
+        /// 而 <c>ExitDutyHelper</c> 那個「隔幾幀之後才補送 <c>(false, -2)</c>」的關窗動作會<b>永遠不發生</b>。
+        /// </para>
+        /// <para>
+        /// <see cref="IFramework.Update"/> 是掛在遊戲自己的 update hook 上的,與繪製、與 UI 隱藏都無關,
+        /// 過場中照樣每個 tick 進來一次。速率與繪製幀實質相同(遊戲每一幀跑一次 update),
+        /// 所以 15／30／90 這些既有幀數<b>不需要跟著調整</b>,只是換了一個不會停的來源。
+        /// </para>
+        /// <para>📌 做法沿用 <c>TCToolbox</c> 的守衛(艦隊裡唯一沒踩到這顆雷的那一份)。</para>
+        /// </remarks>
+        private static ulong frameTicks;
+
+        /// <summary>0 ＝時鐘還沒掛上,1 ＝已掛上;用 CAS 交換,保證<b>只會訂閱一次</b>。</summary>
+        /// <remarks>
+        /// ⚠️ 重複訂閱不是「沒效果」,而是計數器<b>一個 tick 前進 2</b> ＝ 所有逃生口<b>對半砍</b>,
+        /// 那會把補按往危險窗口推 —— 所以這裡用 <see cref="Interlocked"/> 而不是單純的 bool。
+        /// </remarks>
+        private static int frameClockState;
+
+        /// <summary>現在是第幾個 framework tick。<b>讀它就會順便把時鐘掛起來</b>(冪等)。</summary>
+        /// <remarks>
+        /// 🔴 掛時鐘刻意<b>不</b>放在 <see cref="EnsureWatching"/> 裡:那支只有在「真的要按某個 addon」時才被呼叫,
+        /// 而 <see cref="IsHeld"/> 與 <c>ExitDutyHelper</c> 在還沒有任何按下紀錄時就會先讀時鐘。
+        /// 把掛載放在<b>讀取點</b>上,就不會留下「某條路徑忘了啟動時鐘」的縫。
+        /// </remarks>
+        internal static long CurrentFrame
+        {
+            get
+            {
+                EnsureFrameClock();
+                return (long)frameTicks;
+            }
+        }
+
+        /// <summary>掛上幀時鐘(冪等)。</summary>
+        private static void EnsureFrameClock()
+        {
+            if (Volatile.Read(ref frameClockState) != 0) return;
+            if (Interlocked.CompareExchange(ref frameClockState, 1, 0) != 0) return;
+
+            Svc.Framework.Update += OnFrameworkUpdate;
+        }
+
+        /// <summary>
+        /// 🔴 <b>這支裡面不准有任何提早 return</b>:一旦讓遞增變成有條件的,時鐘就會在某些狀態下停住,
+        /// 那正是本次要修掉的缺陷本身(繪製幀計數器就是被 <c>OnDraw</c> 的提早 return 擋在遞增之前)。
+        /// </summary>
+        private static void OnFrameworkUpdate(IFramework framework) => frameTicks++;
 
         /// <summary>
         /// 登記「即將對這扇視窗送出這一個 callback」。<b>回 <see langword="false"/> ＝這一幀絕對不能送。</b>
@@ -177,7 +240,7 @@ namespace AutoDuty.Helpers
             EnsureWatching(addonName);
 
             nint address = (nint)addon;
-            long frame   = (long)Svc.PluginInterface.UiBuilder.FrameCount;
+            long frame   = CurrentFrame;
 
             PressedByAddon.TryGetValue(addonName, out Dictionary<string, PressRecord>? presses);
 
@@ -251,7 +314,7 @@ namespace AutoDuty.Helpers
                 return false;
 
             nint address = (nint)addon;
-            long frame   = (long)Svc.PluginInterface.UiBuilder.FrameCount;
+            long frame   = CurrentFrame;
 
             bool held = (presses.TryGetValue(pressKey, out PressRecord pressed)
                          && pressed.Address == address
@@ -287,7 +350,7 @@ namespace AutoDuty.Helpers
             EnsureWatching(addonName);
 
             nint address = (nint)addon;
-            long frame   = (long)Svc.PluginInterface.UiBuilder.FrameCount;
+            long frame   = CurrentFrame;
 
             PressedByAddon.TryGetValue(addonName, out Dictionary<string, PressRecord>? presses);
 
@@ -410,6 +473,10 @@ namespace AutoDuty.Helpers
                 Svc.AddonLifecycle.UnregisterListener(AddonEvent.PostSetup,   addonName, handler);
                 Svc.AddonLifecycle.UnregisterListener(AddonEvent.PreFinalize, addonName, handler);
             }
+
+            // 幀時鐘的委派同樣指向本組件,不拆掉就是留在 Svc.Framework 上的懸空委派。
+            if (Interlocked.Exchange(ref frameClockState, 0) != 0)
+                Svc.Framework.Update -= OnFrameworkUpdate;
 
             Watchers.Clear();
             PressedByAddon.Clear();

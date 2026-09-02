@@ -41,10 +41,15 @@ namespace AutoDuty.Helpers
         /// 30 幀(60fps 約 0.5 秒)遠大於「關閉中的那幾幀」,又小於守衛對同一個按法的
         /// 逃生口(<see cref="AddonPressGuard.DefaultEscapeFrames"/> 90 幀),
         /// 所以補關窗一定會發生在「下一次重按退出」之前 —— 原本 <c>(false, -2)</c> 的用途完整保留。
+        /// <para>
+        /// 🔴 數的是 <b>framework tick</b>(<see cref="AddonPressGuard.CurrentFrame"/>)而不是繪製幀:
+        /// 繪製幀計數器在過場動畫期間<b>完全停住</b>,而副本流程大量伴隨過場 ——
+        /// 那會讓這個觀察期永遠不到期,補關窗那一發永遠不發生。
+        /// </para>
         /// </remarks>
         private const int ExitPressSettleFrames = 30;
 
-        /// <summary>上一次對哪一扇 ContentsFinderMenu 送出過「退出」,以及那是第幾個繪製幀。</summary>
+        /// <summary>上一次對哪一扇 ContentsFinderMenu 送出過「退出」,以及那是第幾個 framework tick(<see cref="AddonPressGuard.CurrentFrame"/>)。</summary>
         /// <remarks>🔴 位址<b>只做等值比較,永遠不解參</b> —— 記下來的那個實例隨時可能已經失效。</remarks>
         private static nint _exitPressedMenu;
 
@@ -118,7 +123,11 @@ namespace AutoDuty.Helpers
         /// </remarks>
         private static unsafe void Exit()
         {
-            long frame = (long)Svc.PluginInterface.UiBuilder.FrameCount;
+            // 🔴 時鐘用守衛的 framework tick,不是 UiBuilder.FrameCount:後者加在 UiBuilder.OnDraw() 最後面,
+            //    而 OnDraw 在過場動畫期間會提早 return(ToggleUiHideDuringCutscenes 預設開啟)——
+            //    副本流程大量伴隨過場,用繪製幀的話下面那個「隔 ExitPressSettleFrames 幀回頭判」
+            //    在整段過場裡永遠不會到期,補送關窗的 (false, -2) 就永遠不會發生。
+            long frame = AddonPressGuard.CurrentFrame;
 
             // ① 確認框在的話最優先,而且做完這一幀就結束。
             if (GenericHelpers.TryGetAddonByName("SelectYesno", out AtkUnitBase* addonSelectYesno)
