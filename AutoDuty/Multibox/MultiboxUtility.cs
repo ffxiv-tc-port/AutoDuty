@@ -267,13 +267,20 @@ public static class MultiboxUtility
                                                                                                      // 🔴 這是 500 毫秒重複排程,窗還在就會一直按。確認框「關閉中」的那幾幀
                                                                                                      //    TryGetAddonByName 與 IsAddonReady 三關全過,再按一次就是攔不到的存取違規
                                                                                                      //    (AddonMaster.Yes() 還會強制翻 NodeFlags 繞過遊戲自己的防重按)。
-                                                                                                     if (AddonPressGuard.TryBeginPress("SelectYesno", addonSelectYesno))
+                                                                                                     //    順序:先看守衛擋不擋(擋著的那幾幀連文字都不讀)→ 讀提示文字 →
+                                                                                                     //    讀到 U+FFFD 這一幀不碰 → 登記 → 按。
+                                                                                                     if (!AddonPressGuard.IsHeld("SelectYesno", addonSelectYesno))
                                                                                                      {
-                                                                                                         AddonMaster.SelectYesno yesno = new(addonSelectYesno);
-                                                                                                         if (yesno.Text.Contains(inviterName.ToString()))
-                                                                                                             yesno.Yes();
-                                                                                                         else
-                                                                                                             yesno.No();
+                                                                                                         AddonMaster.SelectYesno yesno  = new(addonSelectYesno);
+                                                                                                         string                 prompt = yesno.Text;
+                                                                                                         if (!AddonPressGuard.IsTextCorrupt("SelectYesno", prompt)
+                                                                                                             && AddonPressGuard.TryBeginPress("SelectYesno", addonSelectYesno))
+                                                                                                         {
+                                                                                                             if (prompt.Contains(inviterName.ToString()))
+                                                                                                                 yesno.Yes();
+                                                                                                             else
+                                                                                                                 yesno.No();
+                                                                                                         }
                                                                                                      }
                                                                                                  }
 
@@ -705,11 +712,17 @@ public static class MultiboxUtility
                                                                                                             {
                                                                                                                 // 同上:500 毫秒重複排程 + AddonMaster 會繞過遊戲的防重按,
                                                                                                                 // 「關閉中」那幾幀的重按只有 AddonPressGuard 擋得住。
-                                                                                                                if (!AddonPressGuard.TryBeginPress("SelectYesno", addonSelectYesno))
+                                                                                                                // 順序:守衛擋著就連文字都不讀 → 讀提示 → U+FFFD 這一幀不碰 → 登記 → 按。
+                                                                                                                if (AddonPressGuard.IsHeld("SelectYesno", addonSelectYesno))
                                                                                                                     return;
 
-                                                                                                                AddonMaster.SelectYesno yesno = new(addonSelectYesno);
-                                                                                                                if (yesno.Text.Contains(inviterName.ToString()))
+                                                                                                                AddonMaster.SelectYesno yesno  = new(addonSelectYesno);
+                                                                                                                string                 prompt = yesno.Text;
+                                                                                                                if (AddonPressGuard.IsTextCorrupt("SelectYesno", prompt)
+                                                                                                                    || !AddonPressGuard.TryBeginPress("SelectYesno", addonSelectYesno))
+                                                                                                                    return;
+
+                                                                                                                if (prompt.Contains(inviterName.ToString()))
                                                                                                                 {
                                                                                                                     yesno.Yes();
                                                                                                                     SchedulerHelper.DescheduleAction("MultiboxClient PartyInvite Accept");

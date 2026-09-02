@@ -70,8 +70,13 @@ namespace AutoDuty.Helpers
 
             if (GenericHelpers.TryGetAddonByName("SalvageResult", out AtkUnitBase* addonSalvageResult) && GenericHelpers.IsAddonReady(addonSalvageResult))
             {
-                DebugLog("Closing SalvageResult");
-                addonSalvageResult->Close(true);
+                // 每 250 毫秒重跑到它消失為止;Close(true) 會送 callback,關閉中的那幾幀 IsAddonReady 三關全過,
+                // 再關一次就是攔不到的存取違規 —— 過守衛,被擋就這一輪不動(照原本的路徑 return)。
+                if (AddonPressGuard.TryBeginClose("SalvageResult", addonSalvageResult))
+                {
+                    DebugLog("Closing SalvageResult");
+                    addonSalvageResult->Close(true);
+                }
                 return;
             }
             else if (GenericHelpers.TryGetAddonByName("SalvageDialog", out AtkUnitBase* addonSalvageDialog) && GenericHelpers.IsAddonReady(addonSalvageDialog))
@@ -147,14 +152,18 @@ namespace AutoDuty.Helpers
 
                     if (!foundOne)
                     {
-                        addonSalvageItemSelector->Close(true);
+                        // 上面那幾發 (true, 12, i) 才剛對同一扇窗送過;Close(true) 也會送 callback。
+                        // 守衛擋下就不關 —— Stop() 之後 HelperStopUpdate 會用 AddonsToClose 補關(那邊也過守衛)。
+                        if (AddonPressGuard.TryBeginClose("SalvageItemSelector", (AtkUnitBase*)addonSalvageItemSelector))
+                            addonSalvageItemSelector->Close(true);
                         DebugLog("Desynth Finished");
                         Stop();
                     }
                 }
                 else
                 {
-                    addonSalvageItemSelector->Close(true);
+                    if (AddonPressGuard.TryBeginClose("SalvageItemSelector", (AtkUnitBase*)addonSalvageItemSelector))
+                        addonSalvageItemSelector->Close(true);
                     DebugLog("Desynth Finished");
                     Stop();
                 }

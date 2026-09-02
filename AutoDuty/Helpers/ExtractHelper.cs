@@ -136,7 +136,12 @@ namespace AutoDuty.Helpers
                         return;
                     }
 
-                    if (spiritbondTextNode->NodeText.ToString().Replace(" ", string.Empty) == "100%")
+                    // 讀到 U+FFFD ＝ 視窗記憶體正在變動,這一幀不碰:既不按也不切分類(切分類是不可逆的狀態推進)。
+                    string spiritbondValue = spiritbondTextNode->NodeText.ToString();
+                    if (AddonPressGuard.IsTextCorrupt("Materialize", spiritbondValue))
+                        return;
+
+                    if (spiritbondValue.Replace(" ", string.Empty) == "100%")
                     {
                         Svc.Log.Debug($"AutoExtract - Extracting Materia");
                         AddonHelper.FireCallBack(addonMaterialize, true, 2, 0);
@@ -150,7 +155,9 @@ namespace AutoDuty.Helpers
                 }
                 else
                 {
-                    addonMaterialize->Close(true);
+                    // Close(true) 也會送 callback;守衛擋下就不關,Stop() 之後 HelperStopUpdate 會用 AddonsToClose 補關。
+                    if (AddonPressGuard.TryBeginClose("Materialize", addonMaterialize))
+                        addonMaterialize->Close(true);
                     Svc.Log.Info("Extract Materia Finished");
                     Stop();
                 }

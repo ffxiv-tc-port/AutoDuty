@@ -1366,7 +1366,13 @@ public static class ConfigTab
                                 ImGuiEx.Text($"{x.Name} / {x.ReaderEntry.Callback} / {x.Index}");
                                 if (ImGuiEx.HoveredAndClicked() && x.Status != 2)
                                 {
-                                    x.Select();
+                                    // 全 repo 唯一不經 AddonHelper 的按法(Entry.Select() 逐字是 Callback.Fire(Base, true, 12, cb)),
+                                    // 手動點擊也走同一道守衛:同一扇窗同一個項目在窗走完前重按一律擋。
+                                    unsafe
+                                    {
+                                        if (AddonPressGuard.TryBeginPress("DawnStory", m.Base, AddonPressGuard.BuildPressKey(true, [12, x.ReaderEntry.Callback])))
+                                            x.Select();
+                                    }
                                 }
                             }
                         }

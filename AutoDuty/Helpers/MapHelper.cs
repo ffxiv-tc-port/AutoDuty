@@ -166,7 +166,9 @@ namespace AutoDuty.Helpers
             if (VNavmesh_IPCSubscriber.Path_IsRunning())
                 return;
 
-            if (GenericHelpers.TryGetAddonByName("AreaMap", out AtkUnitBase* addonAreaMap) && GenericHelpers.IsAddonReady(addonAreaMap))
+            // 每個 tick 重跑到地圖窗消失為止;Close(true) 會送 callback,關閉中那幾幀 IsAddonReady 三關全過 —— 過守衛。
+            if (GenericHelpers.TryGetAddonByName("AreaMap", out AtkUnitBase* addonAreaMap) && GenericHelpers.IsAddonReady(addonAreaMap)
+                && AddonPressGuard.TryBeginClose("AreaMap", addonAreaMap))
                 addonAreaMap->Close(true);
 
             if (IsFlagMarkerSet)

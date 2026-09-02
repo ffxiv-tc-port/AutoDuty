@@ -132,7 +132,12 @@ namespace AutoDuty.Helpers
             }
 
             if (EzThrottler.Throttle("TeleportAethernet", 250))
-                AddonHelper.FireCallBack(addon, true, 11, GetAethernetCallback(aethernetName));
+            {
+                // 目的地是靠讀 TelepotTown 的文字比對出來的;讀到 U+FFFD 就是窗記憶體變動中,這一輪不送。
+                uint callback = GetAethernetCallback(aethernetName, out bool textUnreadable);
+                if (!textUnreadable)
+                    AddonHelper.FireCallBack(addon, true, 11, callback);
+            }
 
             return false;
         }
@@ -144,14 +149,27 @@ namespace AutoDuty.Helpers
             return Telepo.Instance()->Teleport(aetheryteId, subindex);
         }
 
-        internal static uint GetAethernetCallback(string aethernetName)
+        /// <param name="textUnreadable">
+        /// 任何一筆目的地名稱含 U+FFFD ⇒ <see langword="true"/>:窗記憶體正在變動,呼叫端這一輪不要送 callback。
+        /// 找不到時照舊回 0(這一點沒改)。
+        /// </param>
+        internal static uint GetAethernetCallback(string aethernetName, out bool textUnreadable)
         {
+            textUnreadable = false;
+
             if (GenericHelpers.TryGetAddonByName("TelepotTown", out AtkUnitBase* addon) && GenericHelpers.IsAddonReady(addon))
             {
                 var readerTelepotTown = new ReaderTelepotTown(addon);
                 for (int i = 0; i < readerTelepotTown.DestinationData.Count; i++)
                 {
-                    if (aethernetName == readerTelepotTown.DestinationName[i].Name)
+                    string name = readerTelepotTown.DestinationName[i].Name;
+                    if (AddonPressGuard.IsTextCorrupt("TelepotTown", name))
+                    {
+                        textUnreadable = true;
+                        return 0;
+                    }
+
+                    if (aethernetName == name)
                         return readerTelepotTown.DestinationData[i].CallbackData;
                 }
             }

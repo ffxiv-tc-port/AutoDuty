@@ -74,7 +74,10 @@ namespace AutoDuty.Helpers
             _useMesh = true;
             Plugin.Action = "";
 
-            if (GenericHelpers.TryGetAddonByName("SelectYesno", out AtkUnitBase* addonSelectYesno))
+            // Close(true) 也會對確認框送 callback:它若剛被別條路徑按過、正在關閉中,再關一次就是攔不到的存取違規。
+            // 守衛擋下時就不關(窗本來就在收了);Stop() 其餘的收尾照做。
+            if (GenericHelpers.TryGetAddonByName("SelectYesno", out AtkUnitBase* addonSelectYesno)
+                && AddonPressGuard.TryBeginClose("SelectYesno", addonSelectYesno))
                 addonSelectYesno->Close(true);
             if (VNavmesh_IPCSubscriber.IsEnabled && VNavmesh_IPCSubscriber.Path_IsRunning())
                 VNavmesh_IPCSubscriber.Path_Stop();
