@@ -85,13 +85,22 @@ namespace AutoDuty.Helpers
         internal const int DefaultEscapeFrames = 90;
 
         /// <summary>
-        /// 給「窗本來就會一直開著、呼叫端本來就以固定節奏連按」的按法用的短逃生口(30 幀 ≒ 500 毫秒)。
+        /// 給「按一次翻一頁、窗不會因為被按而消失」的多次互動窗(<c>Talk</c> 是代表)用的短逃生口(15 幀)。
         /// </summary>
         /// <remarks>
-        /// 用在 <c>Talk</c>(對話一頁一頁推,窗整段都不關,呼叫端原本就是 500 毫秒節流)——
-        /// 用預設的 90 幀會把推對話拖成三倍慢。30 幀仍然遠大於關閉中的那幾幀,危險窗口照樣擋得住。
+        /// 對話是一頁一頁推的,那扇窗整段都不關也不重建,輪詢與生命週期兩條解除點都不會觸發,
+        /// 走逃生口是<b>常態</b>而不是異常 —— 所以放行 log 寫 Debug 不洗版。
+        /// 關閉中的危險窗口 &lt; 10 幀,15 幀不落在裡面;每頁多等 0.25 秒幾乎無感。
+        /// ⚠️ 刻意<b>不</b>用「文字變了」當翻頁證據:關閉中的窗文字會讀壞(U+FFFD)。
+        /// (2026-09-02 艦隊政策:Talk 類一律 15 幀。)
         /// </remarks>
-        internal const int ShortEscapeFrames = 30;
+        internal const int RoutineRePressEscapeFrames = 15;
+
+        /// <summary>
+        /// <see cref="TryBeginClose"/> 登記用的按法名。<b>它是萬用鍵</b>:對某扇窗送過 <c>Close(true)</c> 之後、
+        /// 還沒觀察到它收掉之前,<see cref="TryBeginPress"/> 對同一位址的<b>任何</b>按法都會被擋。
+        /// </summary>
+        internal const string ClosePressKey = "Close";
 
         /// <summary>輪詢解除時最多掃到第幾個同名實例。</summary>
         /// <remarks>同名視窗同時開著超過這個數量在實務上不存在;掃到第一個空的就提早停。</remarks>
@@ -127,7 +136,10 @@ namespace AutoDuty.Helpers
             "JournalResult",
         };
 
-        private readonly record struct PressRecord(nint Address, long Frame);
+        /// <param name="Address">被按的那個實例的位址,<b>只做等值比較</b>。</param>
+        /// <param name="Frame">按下時的繪製幀號。</param>
+        /// <param name="EscapeFrames">登記當時呼叫端給的逃生口;<see cref="TryBeginClose"/> 判「這筆還熱著」用它。</param>
+        private readonly record struct PressRecord(nint Address, long Frame, int EscapeFrames);
 
         /// <summary>addon 名稱 → (按法 → 上一次按的是哪個實例、在第幾幀)。</summary>
         private static readonly Dictionary<string, Dictionary<string, PressRecord>> PressedByAddon =
@@ -167,36 +179,180 @@ namespace AutoDuty.Helpers
             nint address = (nint)addon;
             long frame   = (long)Svc.PluginInterface.UiBuilder.FrameCount;
 
-            if (PressedByAddon.TryGetValue(addonName, out Dictionary<string, PressRecord>? presses)
-                && presses.TryGetValue(pressKey, out PressRecord pressed)
-                && pressed.Address == address)
-            {
-                long waited = frame - pressed.Frame;
-                if (waited < escapeFrames)
-                {
-                    // 🔴 這就是崩潰的那一幀。診斷寫 Information(使用者跑 LogLevel 2),並節流免得洗版。
-                    if (EzThrottler.Throttle($"AddonPressGuard-Hold-{addonName}", 1000))
-                        Svc.Log.Information($"[AddonPressGuard] 「{addonName}」(實例 0x{address:X},按法「{pressKey}」)" +
-                                            "按過之後還沒觀察到它收掉,這一幀不再送 callback —— " +
-                                            "對關閉中的視窗送 callback 是攔不到的存取違規。");
+            PressedByAddon.TryGetValue(addonName, out Dictionary<string, PressRecord>? presses);
 
-                    return false;
+            if (presses != null)
+            {
+                if (presses.TryGetValue(pressKey, out PressRecord pressed) && pressed.Address == address)
+                {
+                    long waited = frame - pressed.Frame;
+                    if (waited < escapeFrames)
+                    {
+                        // 🔴 這就是崩潰的那一幀。
+                        LogHold(addonName, address, pressKey);
+                        return false;
+                    }
+
+                    // Talk 類的多次互動窗走逃生口是常態(每一頁都會走到),寫 Debug 不洗版;
+                    // 單答終結窗走到這裡才是異常,寫 Information(使用者跑 LogLevel 2)。
+                    if (escapeFrames <= RoutineRePressEscapeFrames)
+                    {
+                        if (EzThrottler.Throttle($"AddonPressGuard-RoutineRelease-{addonName}", 10000))
+                            Svc.Log.Debug($"[AddonPressGuard] 「{addonName}」(實例 0x{address:X},按法「{pressKey}」)" +
+                                          $"按下後 {waited} 幀窗還在(多次互動窗的常態),放行下一次。");
+                    }
+                    else if (EzThrottler.Throttle($"AddonPressGuard-Release-{addonName}", 10000))
+                    {
+                        Svc.Log.Information($"[AddonPressGuard] 「{addonName}」(實例 0x{address:X},按法「{pressKey}」)" +
+                                            $"按下後 {waited} 幀既沒有被銷毀也沒有重新建立,判定為「上一次按下沒生效」" +
+                                            "而不是「正在關閉」,解除封鎖讓呼叫端重試。");
+                    }
                 }
 
-                if (EzThrottler.Throttle($"AddonPressGuard-Release-{addonName}", 10000))
-                    Svc.Log.Information($"[AddonPressGuard] 「{addonName}」(實例 0x{address:X},按法「{pressKey}」)" +
-                                        $"按下後 {waited} 幀既沒有被銷毀也沒有重新建立,判定為「上一次按下沒生效」" +
-                                        "而不是「正在關閉」,解除封鎖讓呼叫端重試。");
+                // 🔴 Close 是萬用鍵:對這扇窗送過 Close(true) 之後、還沒觀察到它收掉之前,任何按法都不准 ——
+                //    Close(true) 會走 callback,那扇窗這時候多半已經在關閉流程裡。
+                if (IsCloseHot(presses, address, frame))
+                {
+                    LogHold(addonName, address, pressKey);
+                    return false;
+                }
             }
-
-            if (presses == null)
+            else
             {
-                presses                  = new Dictionary<string, PressRecord>(StringComparer.Ordinal);
+                presses                   = new Dictionary<string, PressRecord>(StringComparer.Ordinal);
                 PressedByAddon[addonName] = presses;
             }
 
-            presses[pressKey] = new PressRecord(address, frame);
+            presses[pressKey] = new PressRecord(address, frame, escapeFrames);
             return true;
+        }
+
+        /// <summary>
+        /// 只<b>看</b>不登記:這扇視窗的這一個按法現在是不是被擋著。
+        /// </summary>
+        /// <remarks>
+        /// 給「按之前要先讀窗上的文字來決定按哪個鈕」的呼叫端用(<c>MultiboxUtility</c> 讀 SelectYesno 的提示),
+        /// 順序是 <see cref="IsHeld"/> → 讀文字 → <see cref="TryBeginPress"/> → 按:
+        /// 被擋的那幾幀連文字都不去讀(那正是視窗記憶體變動中的幾幀),
+        /// 而讀完決定不按時也不會留下一筆「登記了卻沒按」的紀錄白白封鎖到逃生口。
+        /// 判準與 <see cref="TryBeginPress"/> 完全相同,逃生口用登記當時存下來的那個值。
+        /// <para>⚠️ 回 <see langword="true"/> ＝ 這一幀不要碰。<paramref name="addon"/> 為 null 也算不要碰。</para>
+        /// </remarks>
+        internal static bool IsHeld(string addonName, AtkUnitBase* addon, string pressKey = "")
+        {
+            if (addon == null || string.IsNullOrEmpty(addonName)) return true;
+
+            if (SingleAnswerAddons.Contains(addonName))
+                pressKey = string.Empty;
+
+            ReleaseVanished();
+
+            if (!PressedByAddon.TryGetValue(addonName, out Dictionary<string, PressRecord>? presses))
+                return false;
+
+            nint address = (nint)addon;
+            long frame   = (long)Svc.PluginInterface.UiBuilder.FrameCount;
+
+            bool held = (presses.TryGetValue(pressKey, out PressRecord pressed)
+                         && pressed.Address == address
+                         && frame - pressed.Frame < pressed.EscapeFrames)
+                        || IsCloseHot(presses, address, frame);
+
+            if (held)
+                LogHold(addonName, address, pressKey);
+
+            return held;
+        }
+
+        /// <summary>
+        /// 登記「即將對這扇視窗呼叫 <c>AtkUnitBase.Close(true)</c>」。<b>回 <see langword="false"/> ＝這一幀不要關它。</b>
+        /// </summary>
+        /// <remarks>
+        /// <c>Close(true)</c> 的 <c>true</c> 就是 fireCallback:它<b>也會對那扇窗送 callback</b>,
+        /// 所以跟 <see cref="TryBeginPress"/> 擋的是同一種存取違規。差別在判準:
+        /// <list type="bullet">
+        /// <item>這扇窗(同位址)<b>任何</b>按法只要還在它自己的逃生口內,就不准關 ——
+        /// 按下去的那一發本來就可能正在把窗關掉,這時候補一發 Close 正好落在危險窗口裡
+        /// (<c>ActiveHelperBase.HelperStopUpdate</c> 每幀對 <c>AddonsToClose</c> 清單 <c>Close(true)</c>,
+        /// 而它前一幀才剛透過 <c>ClickSelectYesno</c>/<c>ClickTalk</c> 按過同一扇窗)。</item>
+        /// <item>登記在 <see cref="ClosePressKey"/> 底下,之後對同位址的任何按法都會被 <see cref="TryBeginPress"/> 擋到它收掉為止。</item>
+        /// </list>
+        /// 被擋的呼叫端一律照原本的「還沒關完,下一幀再來」路徑走(<c>CloseAddons</c> 回 false),控制流不變。
+        /// </remarks>
+        internal static bool TryBeginClose(string addonName, AtkUnitBase* addon, int escapeFrames = DefaultEscapeFrames)
+        {
+            if (addon == null || string.IsNullOrEmpty(addonName)) return false;
+
+            ReleaseVanished();
+            EnsureWatching(addonName);
+
+            nint address = (nint)addon;
+            long frame   = (long)Svc.PluginInterface.UiBuilder.FrameCount;
+
+            PressedByAddon.TryGetValue(addonName, out Dictionary<string, PressRecord>? presses);
+
+            if (presses != null)
+            {
+                foreach ((string pressKey, PressRecord pressed) in presses)
+                {
+                    if (pressed.Address != address) continue;
+
+                    long waited = frame - pressed.Frame;
+                    if (waited < pressed.EscapeFrames)
+                    {
+                        LogHold(addonName, address, ClosePressKey + "←" + pressKey);
+                        return false;
+                    }
+                }
+
+                if (presses.TryGetValue(ClosePressKey, out PressRecord closed) && closed.Address == address
+                    && EzThrottler.Throttle($"AddonPressGuard-Release-{addonName}", 10000))
+                {
+                    Svc.Log.Information($"[AddonPressGuard] 「{addonName}」(實例 0x{address:X})Close(true) 之後 {frame - closed.Frame} 幀" +
+                                        "既沒有被銷毀也沒有重新建立,判定為「上一次沒關成」,解除封鎖讓呼叫端再關一次。");
+                }
+            }
+            else
+            {
+                presses                   = new Dictionary<string, PressRecord>(StringComparer.Ordinal);
+                PressedByAddon[addonName] = presses;
+            }
+
+            presses[ClosePressKey] = new PressRecord(address, frame, escapeFrames);
+            return true;
+        }
+
+        /// <summary>
+        /// 讀窗上的文字來做判定的站,讀到 U+FFFD 就代表視窗記憶體正在變動(多半是關閉中),<b>這一幀不碰</b>。
+        /// </summary>
+        /// <returns><see langword="true"/> ＝ 文字讀壞了,呼叫端這一幀什麼都不要做。</returns>
+        /// <remarks>
+        /// 這是崩潰的旁證而不是防護本體(防護是 <see cref="TryBeginPress"/>):實機崩潰前 log 裡的 prompt 就是這種亂碼。
+        /// 寫 Information 讓使用者回報時看得到。
+        /// </remarks>
+        internal static bool IsTextCorrupt(string addonName, string? text)
+        {
+            if (string.IsNullOrEmpty(text) || !text.Contains('\uFFFD')) return false;
+
+            if (EzThrottler.Throttle($"AddonPressGuard-Corrupt-{addonName}", 1000))
+                Svc.Log.Information($"[AddonPressGuard] 「{addonName}」的文字讀到 U+FFFD 亂碼(視窗記憶體正在變動,多半是關閉中),這一幀不碰它。");
+
+            return true;
+        }
+
+        /// <summary>同位址的 <see cref="ClosePressKey"/> 紀錄還在它的逃生口內。</summary>
+        private static bool IsCloseHot(Dictionary<string, PressRecord> presses, nint address, long frame)
+            => presses.TryGetValue(ClosePressKey, out PressRecord closed)
+               && closed.Address == address
+               && frame - closed.Frame < closed.EscapeFrames;
+
+        /// <summary>被擋那一幀的診斷:寫 Information(使用者跑 LogLevel 2),每扇窗 1 秒節流免得洗版。</summary>
+        private static void LogHold(string addonName, nint address, string pressKey)
+        {
+            if (EzThrottler.Throttle($"AddonPressGuard-Hold-{addonName}", 1000))
+                Svc.Log.Information($"[AddonPressGuard] 「{addonName}」(實例 0x{address:X},按法「{pressKey}」)" +
+                                    "按過之後還沒觀察到它收掉,這一幀不再碰它 —— " +
+                                    "對關閉中的視窗送 callback 是攔不到的存取違規。");
         }
 
         /// <summary>

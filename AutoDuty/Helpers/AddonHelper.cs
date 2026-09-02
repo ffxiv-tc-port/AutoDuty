@@ -184,10 +184,10 @@ namespace AutoDuty.Helpers
         }
 
         /// <remarks>
-        /// 📌 <c>Talk</c> 用<b>短逃生口</b>(<see cref="AddonPressGuard.ShortEscapeFrames"/>,30 幀 ≒ 500 毫秒):
+        /// 📌 <c>Talk</c> 用<b>多次互動窗的短逃生口</b>(<see cref="AddonPressGuard.RoutineRePressEscapeFrames"/>,15 幀):
         /// 對話是一頁一頁推的,那扇窗整段都不會關也不會重建,所以輪詢與生命週期兩條解除點都不會觸發,
-        /// 只能靠逃生口放行下一頁。30 幀剛好對齊上面那道原有的 500 毫秒節流(推對話的速度不變),
-        /// 又遠大於「關閉中的那幾幀」—— 推到最後一頁把窗關掉的那個危險窗口照樣擋得住。
+        /// 只能靠逃生口放行下一頁(走逃生口是常態,守衛那邊寫 Debug)。推對話的節奏仍由上面那道 500 毫秒節流決定,
+        /// 15 幀仍大於「關閉中的那幾幀」—— 推到最後一頁把窗關掉的那個危險窗口照樣擋得住。
         /// </remarks>
         internal static bool ClickTalk()
         {
@@ -196,7 +196,7 @@ namespace AutoDuty.Helpers
             var addonChecker = AddonChecker("Talk", out AtkUnitBase* addon, out bool seenAddon);
 
             if (!addonChecker && seenAddon
-                              && AddonPressGuard.TryBeginPress("Talk", addon, "Click", AddonPressGuard.ShortEscapeFrames))
+                              && AddonPressGuard.TryBeginPress("Talk", addon, "Click", AddonPressGuard.RoutineRePressEscapeFrames))
                 new AddonMaster.Talk(addon).Click();
             
             if (addonChecker && seenAddon)
