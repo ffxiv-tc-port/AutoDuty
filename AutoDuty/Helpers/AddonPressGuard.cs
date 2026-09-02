@@ -524,17 +524,51 @@ namespace AutoDuty.Helpers
         }
 
         /// <summary>
+        /// 生命週期事件的解除點:只清掉<b>事件帶來的那一個位址</b>底下的紀錄。
+        /// </summary>
+        /// <remarks>
+        /// 🔴🔴 <b>粒度必須是位址,不能是名字。</b>原本寫的是「把整個 <paramref name="addonName"/> 條目移除」,
+        /// 那等於<b>同名視窗的任何一個實例走完生命週期,就把所有實例的紀錄一起清光</b>。
+        /// 失效路徑逐幀是這樣的:幀 F 對同名窗 #A 按下並登記 (A, F);幀 F+1 #A 進入<b>關閉中</b>
+        /// (此時 <c>IsAddonReady</c> 三關仍然全過、擋不住),同一幀第二扇同名窗 #B 被建立而觸發
+        /// <see cref="AddonEvent.PostSetup"/> ⇒ #A 的紀錄被連坐清掉;幀 F+2 任何一個按下點只要
+        /// 仍然解到 #A 就查無紀錄而放行 ⇒ 對<b>關閉中</b>的 #A 送出第二發 ＝ 原生 AccessViolation。
+        /// SelectYesno／Talk 這類窗同時開著兩扇在副本流程裡並不罕見(一扇還在關、下一扇已經彈出來)。
+        /// <para>
+        /// 只清該位址則兩者都對:#A finalize ⇒ 清 #A;#B setup ⇒ #B 本來就沒有紀錄,清了等於 no-op,
+        /// #A 的封鎖原封不動留到它自己 finalize 或走完逃生口為止。
+        /// </para>
+        /// <para>🔴 位址<b>只做等值比較,永遠不解參</b> —— 事件帶來的那個位址此刻可能正在被銷毀。</para>
+        /// </remarks>
+        private static void ReleaseAddress(string addonName, nint address)
+        {
+            if (address == 0) return;
+            if (!PressedByAddon.TryGetValue(addonName, out Dictionary<string, PressRecord>? presses)) return;
+
+            // 先抄一份鍵:字典在迭代途中不能移除。同名窗上同時存在的按法實務上是 1~3 個。
+            foreach (string pressKey in presses.Keys.ToArray())
+            {
+                if (presses[pressKey].Address == address)
+                    presses.Remove(pressKey);
+            }
+
+            if (presses.Count == 0)
+                PressedByAddon.Remove(addonName);
+        }
+
+        /// <summary>
         /// 第一次守護某個 addon 名稱時掛上解除封鎖用的監聽器。
         /// </summary>
         /// <remarks>
         /// 掛上去之後就不再拆(只在 <see cref="ForceTeardown"/> 拆):這兩條監聽器只做
         /// 一次字典移除,成本可忽略,而動態掛／拆比較容易留下懸空的監聽器。
+        /// 實際的移除交給 <see cref="ReleaseAddress"/> ——<b>只清事件那一個位址</b>,不是整個名字。
         /// </remarks>
         private static void EnsureWatching(string addonName)
         {
             if (Watchers.ContainsKey(addonName)) return;
 
-            IAddonLifecycle.AddonEventDelegate handler = (_, _) => PressedByAddon.Remove(addonName);
+            IAddonLifecycle.AddonEventDelegate handler = (_, args) => ReleaseAddress(addonName, args.Addon.Address);
 
             Watchers[addonName] = handler;
             Svc.AddonLifecycle.RegisterListener(AddonEvent.PostSetup,   addonName, handler);
