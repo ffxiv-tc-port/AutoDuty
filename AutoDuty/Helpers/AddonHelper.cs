@@ -47,24 +47,31 @@ namespace AutoDuty.Helpers
             => FireCallBackCore(addon, AddonPressGuard.DefaultEscapeFrames, boolValue, args);
 
         /// <summary>
-        /// 與 <see cref="TryFireCallBack"/> 完全一樣,只是改用<b>多次互動窗的短逃生口</b>
-        /// (<see cref="AddonPressGuard.RoutineRePressEscapeFrames"/>,15 幀)。
+        /// 與 <see cref="TryFireCallBack"/> 完全一樣(逃生口照樣是
+        /// <see cref="AddonPressGuard.DefaultEscapeFrames"/> 90 幀),只是<b>額外告訴守衛</b>:
+        /// 這一發成功的話會開出一扇名為 <paramref name="opensDialog"/> 的子視窗。
         /// </summary>
         /// <remarks>
-        /// 📌 給「按一次開一個子視窗／翻一頁,<b>那扇窗自己不會因此關掉、也不會重建</b>」的窗用
-        /// (<c>Talk</c> 是代表,<c>TripleTriadCoinExchange</c> 這種常駐清單窗同形狀)。
-        /// 這種窗<b>兩條解除點都不會觸發</b>(位址一直在清單裡 ⇒ 輪詢不放行;不 finalize 也不 setup
-        /// ⇒ 生命週期事件不放行),而「對同一個項目再送一次同樣的 callback」本來就是正常流程的下一步 ——
-        /// 用預設的 90 幀會把每一次操作拖到約 1.5 秒,而且全程每秒寫一行 Information。
+        /// 📌 給「按一次開出一扇子視窗,<b>自己卻不會因此關掉也不會重建</b>」的常駐清單窗用。
+        /// <c>TripleTriadCoinExchange</c>(賣卡)是代表:那扇窗全程開著 ⇒ 守衛的兩條解除點
+        /// (位址從清單消失 / PreFinalize+PostSetup)一條都不會觸發,而賣掉一張之後下一張又遞補
+        /// 成 entry 0、參數組完全一樣 ⇒ 守衛會把<b>每一張卡</b>都看成「對同一位址重按同一個 key」,
+        /// 每張卡都得等滿逃生口(0.5 秒變約 1.5 秒)而且整段過程每秒寫一行 Information。
         /// <para>
-        /// 🔴 <b>防護沒有被拆掉</b>:同一扇窗的同一個按法在 15 幀內仍然只准送一次,
-        /// 而「按下之後正在關閉」的危險窗口 &lt; 10 幀,15 幀不落在裡面
-        /// (2026-09-02 艦隊政策:此類多次互動窗一律 15 幀)。
+        /// 🔑 <b>解法不是把逃生口縮短</b> —— 那要押注「按它不會把它關掉」這個<b>沒有離線證據</b>的假設,
+        /// 假設不成立就是對關閉中的窗重按 ＝ 攔不到的原生 AccessViolation(遊戲當場關閉)。
+        /// 這一支改成給守衛一個<b>正面證據</b>:子視窗出現過又收掉,就代表上一發確實被一扇活著的窗
+        /// 處理掉了,那一刻才解除封鎖(<c>AddonPressGuard.ReleaseParentOfClosedDialog</c>)。
+        /// 子視窗沒出現時什麼都不會解除,防護完整留到 90 幀逃生口為止。
         /// </para>
-        /// <para>⚠️ 「按下去那扇窗就會關掉」的窗(確認框族)<b>絕對不能</b>用這一支。</para>
+        /// <para>
+        /// ⚠️ <paramref name="opensDialog"/> 寫錯的後果是<b>提早解除永遠不發生 ＝ 靜默退回 90 幀</b>
+        /// (慢,不會崩) —— 這一支<b>不會</b>比 <see cref="TryFireCallBack"/> 更危險。
+        /// </para>
         /// </remarks>
-        internal static unsafe bool TryFireCallBackRoutine(AtkUnitBase* addon, bool boolValue, params object[] args)
-            => FireCallBackCore(addon, AddonPressGuard.RoutineRePressEscapeFrames, boolValue, args);
+        /// <param name="opensDialog">這一發成功的話會開出來的那扇子視窗名稱。</param>
+        internal static unsafe bool TryFireCallBackOpeningDialog(AtkUnitBase* addon, string opensDialog, bool boolValue, params object[] args)
+            => FireCallBackCore(addon, AddonPressGuard.DefaultEscapeFrames, boolValue, args, opensDialog);
 
         /// <inheritdoc cref="TryFireCallBack"/>
         /// <remarks>
@@ -72,7 +79,8 @@ namespace AutoDuty.Helpers
         /// <c>TryFireCallBack(addon, true, 0, 0u)</c> 這種呼叫會靜默改綁到新多載
         /// (第一個 <c>0</c> 被當成逃生口幀數)。要換逃生口就用<b>另一個名字</b>的進入點。
         /// </remarks>
-        private static unsafe bool FireCallBackCore(AtkUnitBase* addon, int escapeFrames, bool boolValue, object[] args)
+        private static unsafe bool FireCallBackCore(AtkUnitBase* addon, int escapeFrames, bool boolValue, object[] args,
+                                                    string? opensDialog = null)
         {
             if (addon == null) return false;
 
@@ -85,7 +93,8 @@ namespace AutoDuty.Helpers
                 if (EzThrottler.Throttle("AddonPressGuard-Unnamed", 10000))
                     Svc.Log.Information($"[AddonPressGuard] 有一扇視窗(實例 0x{(nint)addon:X})讀不出名稱,這一次的 callback 未受重按防護。");
             }
-            else if (!AddonPressGuard.TryBeginPress(addonName, addon, AddonPressGuard.BuildPressKey(boolValue, args), escapeFrames))
+            else if (!AddonPressGuard.TryBeginPress(addonName, addon, AddonPressGuard.BuildPressKey(boolValue, args), escapeFrames,
+                                                    opensDialog))
             {
                 return false;
             }

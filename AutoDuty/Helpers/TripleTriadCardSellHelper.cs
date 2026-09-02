@@ -139,15 +139,19 @@ namespace AutoDuty.Helpers
                         AddonHelper.FireCallBack(shopCardDialog, true, 0, readerExchange.Entries.First().Count);
                         return;
                     }
-                    // 📌 這一發是「點清單上的第一張卡」,按下去之後開的是 ShopCardDialog ——
-                    //    TripleTriadCoinExchange 這扇窗「全程不關也不重建」,所以守衛的兩條解除點
+                    // 📌 這一發是「點清單上的第一張卡」,按下去之後開的是 ShopCardDialog(上面那一段)。
+                    //    TripleTriadCoinExchange 是「持久窗」:賣卡全程不關也不重建,所以守衛的兩條解除點
                     //    (位址從清單消失 / PreFinalize+PostSetup)一條都不會觸發;而賣掉一張之後
-                    //    下一張卡又會遞補成 entry 0,參數組完全一樣 ⇒ 對守衛來說每一張卡都長得像「重按」。
-                    //    用預設的 90 幀逃生口會讓每張卡從約 0.5 秒變成約 1.5 秒,而且整段賣卡過程
-                    //    每秒寫一行 Information。改用多次互動窗的短逃生口(15 幀,與 Talk 同一條艦隊政策):
-                    //    同一扇窗的同一個按法在 15 幀內仍然只准送一次(呼叫端本身還有 250 毫秒節流),
-                    //    而「按下之後正在關閉」的危險窗口不到 10 幀 —— 防護沒有被拆掉,只是不再誤判。
-                    AddonHelper.TryFireCallBackRoutine(addonExchange, true, 0, 0u);
+                    //    下一張卡又會遞補成 entry 0,參數組完全一樣 ⇒ 對守衛來說每一張卡都長得像「重按」,
+                    //    每張卡都要等滿 90 幀逃生口(0.5 秒變約 1.5 秒)而且整段過程每秒寫一行 Information。
+                    //
+                    // 🔴 解法刻意「不」是把逃生口縮短。縮短要押注「送 (true,0,0u) 不會把這扇窗關掉」,
+                    //    而那件事只有實機才證明得了;假設不成立就是對關閉中的窗重按 = 攔不到的原生
+                    //    AccessViolation(遊戲當場關閉)。改成給守衛一個「正面證據」:宣告這一發會開出
+                    //    ShopCardDialog —— 那扇子視窗「出現過又收掉」就代表這一發確實被一扇活著的窗處理掉了
+                    //    (上一張卡真的賣成了),那一刻守衛才解除這一筆。逃生口維持 90 幀:子視窗沒出現時
+                    //    (那一發沒生效、或落在危險窗口)防護一秒都沒有被拆掉,而正常賣卡恢復每張約 0.5 秒。
+                    AddonHelper.TryFireCallBackOpeningDialog(addonExchange, "ShopCardDialog", true, 0, 0u);
                 }
             }
         }

@@ -146,6 +146,36 @@ namespace AutoDuty.Helpers
         private static readonly Dictionary<string, Dictionary<string, PressRecord>> PressedByAddon =
             new(StringComparer.Ordinal);
 
+        /// <summary>
+        /// 「子視窗收掉時要提早解除的那一筆父視窗按下紀錄」。
+        /// </summary>
+        /// <param name="ParentAddonName">父視窗名稱。</param>
+        /// <param name="ParentAddress">父視窗那個實例的位址,<b>只做等值比較,永遠不解參</b>。</param>
+        /// <param name="ParentPressKey">
+        /// 父視窗上的<b>那一個</b>按法。只解除這一個 —— 尤其<b>不會</b>碰到同位址的
+        /// <see cref="ClosePressKey"/>(那是「已經對這扇窗送過 <c>Close(true)</c>」的鎖)。
+        /// </param>
+        private readonly record struct ChildDialogRelease(string ParentAddonName, nint ParentAddress, string ParentPressKey);
+
+        /// <summary>子視窗名 → 「等它收掉就提早解除」的那一筆父視窗按下紀錄。</summary>
+        /// <remarks>
+        /// 🔑 <b>這是正面證據,不是計時器</b>:子視窗能被建立起來又走完生命週期,就代表父視窗
+        /// 在收下那一發 callback 的當下是活著的、而且那一發<b>確實生效了</b> ——
+        /// 這正好否定「上一發把父視窗按關了、現在正在關閉中」這個守衛要防的情境。
+        /// <para>
+        /// 🔴 所以逃生口<b>不需要為了持久窗縮短</b>:維持 <see cref="DefaultEscapeFrames"/>(90 幀)。
+        /// 子視窗沒出現(那一發沒生效,或落在關閉中的危險窗口)時這裡不會被呼叫,
+        /// 封鎖原封不動留到逃生口為止 ——<b>防護一秒都沒有被拆掉</b>。
+        /// </para>
+        /// <para>
+        /// ⚠️ 這是守衛裡<b>唯一一條跨視窗耦合</b>。父子關係由呼叫端在按下時逐次宣告
+        /// (<c>AddonHelper.TryFireCallBackOpeningDialog</c>),守衛本身<b>不寫死任何視窗名稱</b>;
+        /// 宣告錯的後果是提早解除永遠不發生 ＝<b>靜默退回 90 幀</b>(慢,不會崩)。
+        /// </para>
+        /// </remarks>
+        private static readonly Dictionary<string, ChildDialogRelease> PendingChildReleases =
+            new(StringComparer.Ordinal);
+
         private static readonly Dictionary<string, IAddonLifecycle.AddonEventDelegate> Watchers =
             new(StringComparer.Ordinal);
 
@@ -221,12 +251,18 @@ namespace AutoDuty.Helpers
         /// 傳空字串代表「整扇窗只有一種按法」。
         /// </param>
         /// <param name="escapeFrames">逃生口幀數,見 <see cref="DefaultEscapeFrames"/>。</param>
+        /// <param name="opensDialog">
+        /// 選填:這一發<b>成功的話</b>會開出來的那扇子視窗名稱。給了它,那扇子視窗
+        /// <see cref="AddonEvent.PreFinalize"/> 的時候本筆紀錄會被<b>提早解除</b>
+        /// (見 <see cref="ReleaseParentOfClosedDialog"/>) —— 這是給「按一次開一扇子視窗、
+        /// 自己卻不關也不重建」的常駐清單窗用的,讓它不必為了跑得動而縮短逃生口。
+        /// </param>
         /// <remarks>
         /// 呼叫點要放在<b>緊接著送出動作之前</b> —— 這支一回 <see langword="true"/> 就已經把
         /// 「按過了」記下去,登記完卻不按的話會白白封鎖到逃生口為止。
         /// </remarks>
         internal static bool TryBeginPress(string addonName, AtkUnitBase* addon, string pressKey = "",
-                                           int escapeFrames = DefaultEscapeFrames)
+                                           int escapeFrames = DefaultEscapeFrames, string? opensDialog = null)
         {
             if (addon == null || string.IsNullOrEmpty(addonName)) return false;
 
@@ -287,6 +323,17 @@ namespace AutoDuty.Helpers
             }
 
             presses[pressKey] = new PressRecord(address, frame, escapeFrames);
+
+            // 呼叫端宣告「這一發成功的話會開出一扇子視窗」⇒ 登記「那扇子視窗收掉時提早解除本筆」。
+            // 🔴 監聽器在「按下的這一刻」就掛上(而不是等到真的去按子視窗時):Dalamud 的
+            //    RegisterListener 走 framework.RunOnTick,要下一個 tick 才真的進監聽清單 ——
+            //    晚掛就可能整個錯過子視窗的 PreFinalize,提早解除永遠不會發生(退回 90 幀,不會崩)。
+            if (!string.IsNullOrEmpty(opensDialog))
+            {
+                EnsureWatching(opensDialog);
+                PendingChildReleases[opensDialog] = new ChildDialogRelease(addonName, address, pressKey);
+            }
+
             return true;
         }
 
@@ -480,6 +527,7 @@ namespace AutoDuty.Helpers
 
             Watchers.Clear();
             PressedByAddon.Clear();
+            PendingChildReleases.Clear();
         }
 
         /// <summary>
@@ -557,18 +605,64 @@ namespace AutoDuty.Helpers
         }
 
         /// <summary>
+        /// 子視窗收掉(<see cref="AddonEvent.PreFinalize"/>)時,把「等它收掉才解除」的那一筆
+        /// 父視窗按下紀錄放掉。
+        /// </summary>
+        /// <remarks>
+        /// 🔑 <b>為什麼這是安全的提早解除點</b>:守衛擋的是「上一發可能把這扇窗按進關閉流程了,
+        /// 這幾幀不能再碰」。子視窗<b>出現過又收掉</b>,就是父視窗當時活著、那一發確實被收下的
+        /// 正面證據 —— 直接否定了那個情境。所以不必去押注「按它不會把它關掉」這個
+        /// <b>沒有離線證據</b>的假設,也就不必為了跑得動而縮短逃生口。
+        /// <para>
+        /// 🔴 <b>三重比對才解除</b>:父視窗名、<b>位址</b>、按法三者都要對得上。
+        /// 位址對不上(父視窗已經換成另一個實例)就什麼都不做,封鎖留給
+        /// <see cref="ReleaseVanished"/> 或逃生口處理。
+        /// </para>
+        /// <para>
+        /// 🔴 <b>只解除登記時的那一個按法</b>,不動同位址的其他按法 —— 尤其不動
+        /// <see cref="ClosePressKey"/>:那是「已經對這扇窗送過 <c>Close(true)</c>」的鎖,
+        /// 提早解除它等於允許去按一扇正在關的窗。
+        /// </para>
+        /// <para>🔴 位址<b>只做等值比較,永遠不解參</b>。</para>
+        /// </remarks>
+        private static void ReleaseParentOfClosedDialog(string childAddonName)
+        {
+            if (!PendingChildReleases.Remove(childAddonName, out ChildDialogRelease pending)) return;
+            if (!PressedByAddon.TryGetValue(pending.ParentAddonName, out Dictionary<string, PressRecord>? presses)) return;
+            if (!presses.TryGetValue(pending.ParentPressKey, out PressRecord pressed)) return;
+            if (pressed.Address != pending.ParentAddress) return;
+
+            presses.Remove(pending.ParentPressKey);
+
+            if (presses.Count == 0)
+                PressedByAddon.Remove(pending.ParentAddonName);
+        }
+
+        /// <summary>
         /// 第一次守護某個 addon 名稱時掛上解除封鎖用的監聽器。
         /// </summary>
         /// <remarks>
         /// 掛上去之後就不再拆(只在 <see cref="ForceTeardown"/> 拆):這兩條監聽器只做
         /// 一次字典移除,成本可忽略,而動態掛／拆比較容易留下懸空的監聽器。
         /// 實際的移除交給 <see cref="ReleaseAddress"/> ——<b>只清事件那一個位址</b>,不是整個名字。
+        /// <para>
+        /// 📌 <see cref="AddonEvent.PreFinalize"/> 還多做一件事:把「等這扇窗收掉才解除」的
+        /// 父視窗紀錄放掉(<see cref="ReleaseParentOfClosedDialog"/>)。
+        /// </para>
         /// </remarks>
         private static void EnsureWatching(string addonName)
         {
             if (Watchers.ContainsKey(addonName)) return;
 
-            IAddonLifecycle.AddonEventDelegate handler = (_, args) => ReleaseAddress(addonName, args.Addon.Address);
+            IAddonLifecycle.AddonEventDelegate handler = (eventType, args) =>
+            {
+                ReleaseAddress(addonName, args.Addon.Address);
+
+                // 🔴 只認 PreFinalize:PostSetup 只代表子視窗剛開出來,那時候呼叫端要按的是
+                //    子視窗而不是父視窗,提早解除父視窗沒有意義(而且會把證據用掉)。
+                if (eventType == AddonEvent.PreFinalize)
+                    ReleaseParentOfClosedDialog(addonName);
+            };
 
             Watchers[addonName] = handler;
             Svc.AddonLifecycle.RegisterListener(AddonEvent.PostSetup,   addonName, handler);
