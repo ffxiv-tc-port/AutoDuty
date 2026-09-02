@@ -46,10 +46,35 @@ namespace AutoDuty.Managers
             _taskManager.Enqueue(() => GenericHelpers.TryGetAddonByName("GcArmyCapture", out addon) && GenericHelpers.IsAddonReady(addon), "RegisterSquadron");
             
             // Select Mission
-            _taskManager.Enqueue(() => AddonHelper.FireCallBack(addon, true, 11, content.GCArmyIndex), "RegisterSquadron");
+            // 🔴 這一組(選任務 / 按 OK / 確認框)原本都是 Enqueue(Action)。ECommons LegacyTaskManager
+            //    的 Action 多載一律包成「{ task(); return true; }」(TaskManager@Enqueue.cs:63)——
+            //    AddonPressGuard 擋下時 FireCallBack 回的 false 被吞掉,這一步照樣算「做完」。
+            //    而下面那一步是 int.MaxValue 的無限等待,等的又正好是「這一發有沒有真的送出去」的
+            //    下游結果(TerritoryType 有沒有變成該副本)⇒ 守衛擋一次就是佇列永遠卡在那裡、
+            //    TaskManager.IsBusy 恆真、自動化整條停住而且不會自己恢復。
+            //    改成回傳 TryFireCallBack 的結果(綁 Func<bool?> 多載):擋下就回 false、下一幀再來;
+            //    守衛最多擋 AddonPressGuard.DefaultEscapeFrames(90 幀),遠早於這一步的 10 秒逾時
+            //    (TaskManager.TimeLimitMS 預設 10000,AutoDuty 的實例 AbortOnTimeout=false)。
+            //    🔴 回 false 不可能變成回 null —— null 才會讓 TaskManager.Abort() 清掉整條佇列。
+            //    🔴 一併把跨幀指標拿掉:原本沿用上一步(上一幀)抓到的 addon,一旦會重試,
+            //    那個指標就從「1 幀前」變成「數百幀前」,而 FireCallBackCore 第一件事就是
+            //    ResolveAddonName(addon) 解參 —— 所以每一幀自己重新取窗。
+            _taskManager.Enqueue(() =>
+                                 {
+                                     if (!GenericHelpers.TryGetAddonByName("GcArmyCapture", out AtkUnitBase* addonCapture)
+                                         || !GenericHelpers.IsAddonReady(addonCapture))
+                                         return true; // 窗根本不在:維持原本「做一次就過」的語意,不要製造新的卡點
+                                     return AddonHelper.TryFireCallBack(addonCapture, true, 11, content.GCArmyIndex);
+                                 }, "RegisterSquadron-SelectMission");
 
-            // click ok
-            _taskManager.Enqueue(() => AddonHelper.FireCallBack(addon, true, 13), "RegisterSquadron");
+            // click ok(同上:回傳守衛結果 + 每一幀自己重新取窗)
+            _taskManager.Enqueue(() =>
+                                 {
+                                     if (!GenericHelpers.TryGetAddonByName("GcArmyCapture", out AtkUnitBase* addonCapture)
+                                         || !GenericHelpers.IsAddonReady(addonCapture))
+                                         return true;
+                                     return AddonHelper.TryFireCallBack(addonCapture, true, 13);
+                                 }, "RegisterSquadron-ClickOk");
             
             // retrieve the ContentsFinderConfirm addon
             _taskManager.Enqueue(() => GenericHelpers.TryGetAddonByName("ContentsFinderConfirm", out addon) && GenericHelpers.IsAddonReady(addon), "RegisterSquadron");
@@ -58,14 +83,19 @@ namespace AutoDuty.Managers
             // 🔴 發射的那一幀重新取窗,不沿用上一步(上一幀)抓到的指標:TaskManager 每一步各在不同的幀
             //    執行,而確認框「關閉中」的那幾幀 TryGetAddonByName 與 IsAddonReady 三關全過 ——
             //    對它送 callback 就是攔不到的 AccessViolation。
+            // 🔴 這一步同樣要把守衛結果回傳出去(理由見上面「Select Mission」那段):
+            //    它後面緊接著就是 int.MaxValue 的無限等待。
             _taskManager.Enqueue(() =>
                                  {
-                                     if (GenericHelpers.TryGetAddonByName("ContentsFinderConfirm", out AtkUnitBase* addonConfirm)
-                                         && GenericHelpers.IsAddonReady(addonConfirm))
-                                         AddonHelper.FireCallBack(addonConfirm, true, 8);
-                                 }, "RegisterSquadron");
+                                     if (!GenericHelpers.TryGetAddonByName("ContentsFinderConfirm", out AtkUnitBase* addonConfirm)
+                                         || !GenericHelpers.IsAddonReady(addonConfirm))
+                                         return true;
+                                     return AddonHelper.TryFireCallBack(addonConfirm, true, 8);
+                                 }, "RegisterSquadron-ConfirmDuty");
 
             // Check if we're in a valid map for the dungeon / paths
+            // ⚠️ int.MaxValue ＝無限等待,而且等的正是上面那三發 callback 的下游結果 ——
+            //    上面任何一發被守衛擋下又被吞掉,佇列就永遠停在這一行,而且不會自己恢復。
             _taskManager.Enqueue(() => Svc.ClientState.TerritoryType == content.TerritoryType, int.MaxValue, "RegisterSquadron");
 
             _taskManager.Enqueue(() => {
