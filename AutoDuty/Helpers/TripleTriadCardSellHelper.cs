@@ -139,7 +139,15 @@ namespace AutoDuty.Helpers
                         AddonHelper.FireCallBack(shopCardDialog, true, 0, readerExchange.Entries.First().Count);
                         return;
                     }
-                    AddonHelper.FireCallBack(addonExchange, true, 0, 0u);
+                    // 📌 這一發是「點清單上的第一張卡」,按下去之後開的是 ShopCardDialog ——
+                    //    TripleTriadCoinExchange 這扇窗「全程不關也不重建」,所以守衛的兩條解除點
+                    //    (位址從清單消失 / PreFinalize+PostSetup)一條都不會觸發;而賣掉一張之後
+                    //    下一張卡又會遞補成 entry 0,參數組完全一樣 ⇒ 對守衛來說每一張卡都長得像「重按」。
+                    //    用預設的 90 幀逃生口會讓每張卡從約 0.5 秒變成約 1.5 秒,而且整段賣卡過程
+                    //    每秒寫一行 Information。改用多次互動窗的短逃生口(15 幀,與 Talk 同一條艦隊政策):
+                    //    同一扇窗的同一個按法在 15 幀內仍然只准送一次(呼叫端本身還有 250 毫秒節流),
+                    //    而「按下之後正在關閉」的危險窗口不到 10 幀 —— 防護沒有被拆掉,只是不再誤判。
+                    AddonHelper.TryFireCallBackRoutine(addonExchange, true, 0, 0u);
                 }
             }
         }

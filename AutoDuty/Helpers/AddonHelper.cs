@@ -44,6 +44,35 @@ namespace AutoDuty.Helpers
         /// </para>
         /// </remarks>
         internal static unsafe bool TryFireCallBack(AtkUnitBase* addon, bool boolValue, params object[] args)
+            => FireCallBackCore(addon, AddonPressGuard.DefaultEscapeFrames, boolValue, args);
+
+        /// <summary>
+        /// 與 <see cref="TryFireCallBack"/> 完全一樣,只是改用<b>多次互動窗的短逃生口</b>
+        /// (<see cref="AddonPressGuard.RoutineRePressEscapeFrames"/>,15 幀)。
+        /// </summary>
+        /// <remarks>
+        /// 📌 給「按一次開一個子視窗／翻一頁,<b>那扇窗自己不會因此關掉、也不會重建</b>」的窗用
+        /// (<c>Talk</c> 是代表,<c>TripleTriadCoinExchange</c> 這種常駐清單窗同形狀)。
+        /// 這種窗<b>兩條解除點都不會觸發</b>(位址一直在清單裡 ⇒ 輪詢不放行;不 finalize 也不 setup
+        /// ⇒ 生命週期事件不放行),而「對同一個項目再送一次同樣的 callback」本來就是正常流程的下一步 ——
+        /// 用預設的 90 幀會把每一次操作拖到約 1.5 秒,而且全程每秒寫一行 Information。
+        /// <para>
+        /// 🔴 <b>防護沒有被拆掉</b>:同一扇窗的同一個按法在 15 幀內仍然只准送一次,
+        /// 而「按下之後正在關閉」的危險窗口 &lt; 10 幀,15 幀不落在裡面
+        /// (2026-09-02 艦隊政策:此類多次互動窗一律 15 幀)。
+        /// </para>
+        /// <para>⚠️ 「按下去那扇窗就會關掉」的窗(確認框族)<b>絕對不能</b>用這一支。</para>
+        /// </remarks>
+        internal static unsafe bool TryFireCallBackRoutine(AtkUnitBase* addon, bool boolValue, params object[] args)
+            => FireCallBackCore(addon, AddonPressGuard.RoutineRePressEscapeFrames, boolValue, args);
+
+        /// <inheritdoc cref="TryFireCallBack"/>
+        /// <remarks>
+        /// ⚠️ 逃生口幀數刻意<b>不</b>做成公開多載的參數:多載簽章裡多一個 <c>int</c>,
+        /// <c>TryFireCallBack(addon, true, 0, 0u)</c> 這種呼叫會靜默改綁到新多載
+        /// (第一個 <c>0</c> 被當成逃生口幀數)。要換逃生口就用<b>另一個名字</b>的進入點。
+        /// </remarks>
+        private static unsafe bool FireCallBackCore(AtkUnitBase* addon, int escapeFrames, bool boolValue, object[] args)
         {
             if (addon == null) return false;
 
@@ -56,7 +85,7 @@ namespace AutoDuty.Helpers
                 if (EzThrottler.Throttle("AddonPressGuard-Unnamed", 10000))
                     Svc.Log.Information($"[AddonPressGuard] 有一扇視窗(實例 0x{(nint)addon:X})讀不出名稱,這一次的 callback 未受重按防護。");
             }
-            else if (!AddonPressGuard.TryBeginPress(addonName, addon, AddonPressGuard.BuildPressKey(boolValue, args)))
+            else if (!AddonPressGuard.TryBeginPress(addonName, addon, AddonPressGuard.BuildPressKey(boolValue, args), escapeFrames))
             {
                 return false;
             }

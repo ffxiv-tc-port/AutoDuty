@@ -3,6 +3,7 @@ using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using ECommons;
 using Dalamud.Plugin.Services;
 using ECommons.DalamudServices;
+using ECommons.Throttlers;
 
 namespace AutoDuty.Helpers
 {
@@ -17,6 +18,8 @@ namespace AutoDuty.Helpers
 
         internal override void Start()
         {
+            _exitPressedMenu = 0;
+
             base.Start();
 
             if (Svc.ClientState.TerritoryType != 0)
@@ -28,10 +31,30 @@ namespace AutoDuty.Helpers
 
         private uint _currentTerritoryType = 0;
 
+        /// <summary>
+        /// 送出「退出」之後要隔多少幀,才准判定「上一發根本沒生效」而補送關窗 callback。
+        /// </summary>
+        /// <remarks>
+        /// 🔴 存在的理由:<c>(true, 0)</c> 如果<b>真的</b>觸發了退本,那扇選單就進入關閉流程,
+        /// 而關閉中的窗 <c>TryGetAddonByName</c> 仍拿得到、<c>IsAddonReady</c> 三關也全過,
+        /// 這時候補送 <c>(false, -2)</c> 就是攔不到的原生 AccessViolation(遊戲當場關閉)。
+        /// 30 幀(60fps 約 0.5 秒)遠大於「關閉中的那幾幀」,又小於守衛對同一個按法的
+        /// 逃生口(<see cref="AddonPressGuard.DefaultEscapeFrames"/> 90 幀),
+        /// 所以補關窗一定會發生在「下一次重按退出」之前 —— 原本 <c>(false, -2)</c> 的用途完整保留。
+        /// </remarks>
+        private const int ExitPressSettleFrames = 30;
+
+        /// <summary>上一次對哪一扇 ContentsFinderMenu 送出過「退出」,以及那是第幾個繪製幀。</summary>
+        /// <remarks>🔴 位址<b>只做等值比較,永遠不解參</b> —— 記下來的那個實例隨時可能已經失效。</remarks>
+        private static nint _exitPressedMenu;
+
+        private static long _exitPressedFrame;
+
         protected override void HelperStopUpdate(IFramework framework)
         {
             base.HelperStopUpdate(framework);
             this._currentTerritoryType = 0;
+            _exitPressedMenu           = 0;
         }
 
         protected override void HelperUpdate(IFramework framework)
@@ -75,12 +98,19 @@ namespace AutoDuty.Helpers
         /// <b><c>Show()</c> 只在窗還沒開的時候呼叫。</b>原本每一幀都無條件推同一扇已經開著的窗。
         /// </item>
         /// <item>
-        /// <b><c>(false, -2)</c> 關窗那一發改成有條件。</b>
+        /// <b><c>(false, -2)</c> 關窗那一發改成「隔幾幀之後、確定上一發沒生效」才送。</b>
         /// 原本 <c>(true, 0)</c>(選「退出」)與 <c>(false, -2)</c>(關窗)是同一幀無條件連送 ——
-        /// 而 <c>Callback.Fire</c> 是<b>同步</b>的,第一發回來時那扇選單已經在關了,
-        /// 第二發就落在危險窗口正中央。現在只有在第一發<b>真的送出去了</b>
-        /// (守衛沒擋)<b>而且送完之後確認框沒出現</b>(＝什麼都沒發生)時才補送關窗 ——
-        /// 這正是原本 <c>(false, -2)</c> 唯一有意義的情境。
+        /// 而 <c>Callback.Fire</c> 是<b>同步</b>的,第一發回來時那扇選單可能已經在關了,
+        /// 第二發就落在危險窗口正中央。
+        /// <para>
+        /// 🔴 中間版本改成「同一幀看確認框有沒有出現」來判斷第一發有沒有生效,那等於押注
+        /// 「SelectYesno 一定在同一幀就已經進了 addon 清單」—— <b>這件事沒有任何離線證據</b>,
+        /// 假設不成立(下一次 UI update 才進清單)就變成<b>每一次</b>都在危險窗口正中央補一發。
+        /// 現在不再依賴那個假設:改成隔 <see cref="ExitPressSettleFrames"/> 幀之後回頭看,
+        /// 那扇選單<b>還是同一個實例、而且還開著</b>(這期間任何一幀出現確認框都會先被 ① 接走)
+        /// 才算「上一發什麼都沒發生」。關閉中的危險窗口只有幾幀,這個判斷點遠在它之外,
+        /// <b>不管確認框是哪一幀才出現,都不會落在危險窗口裡</b>。
+        /// </para>
         /// </item>
         /// </list>
         /// 📌 選單真的關不掉也不會留著:<see cref="AddonsToClose"/> 已經列了 ContentsFinderMenu,
@@ -88,10 +118,14 @@ namespace AutoDuty.Helpers
         /// </remarks>
         private static unsafe void Exit()
         {
+            long frame = (long)Svc.PluginInterface.UiBuilder.FrameCount;
+
             // ① 確認框在的話最優先,而且做完這一幀就結束。
             if (GenericHelpers.TryGetAddonByName("SelectYesno", out AtkUnitBase* addonSelectYesno)
                 && GenericHelpers.IsAddonReady(addonSelectYesno))
             {
+                // 確認框出現了 ⇒ 上一發「退出」有生效,那扇選單已經在關閉流程裡,關窗那一發永遠不要補。
+                _exitPressedMenu = 0;
                 AddonHelper.FireCallBack(addonSelectYesno, true, 0);
                 return;
             }
@@ -112,21 +146,57 @@ namespace AutoDuty.Helpers
             if (!GenericHelpers.TryGetAddonByName("ContentsFinderMenu", out AtkUnitBase* addonContentsFinderMenu)
                 || !GenericHelpers.IsAddonReady(addonContentsFinderMenu))
             {
+                // 選單已經不在了(多半就是上一發「退出」把它收掉了)⇒ 沒有東西要補關。
+                _exitPressedMenu = 0;
                 agentContentsFinderMenu->Show();
                 return;
             }
 
-            // ③ 選「退出」。守衛擋下(回 false)＝這扇選單的這一發已經按過 ⇒ 這一幀什麼都不再送。
+            // 🔴 只當作識別用的位址,底下全程只做等值比較,永遠不解參。
+            nint menu = (nint)addonContentsFinderMenu;
+
+            // ③ 上一發「退出」的後續:隔開 ExitPressSettleFrames 幀之後,才判斷它到底有沒有生效。
+            if (_exitPressedMenu != 0)
+            {
+                if (_exitPressedMenu != menu)
+                {
+                    // 按過的那扇選單已經換成別的實例 ⇒ 那一發生效了,不補關。
+                    _exitPressedMenu = 0;
+                }
+                else if (frame - _exitPressedFrame < ExitPressSettleFrames)
+                {
+                    // 觀察期內:那扇選單這時候有可能正在關閉中,而關閉中的窗 TryGetAddonByName 仍拿得到、
+                    // IsAddonReady 三關也全過(擋不住)—— 所以這幾幀對它什麼都不要送。
+                    return;
+                }
+                else
+                {
+                    // 隔了這麼多幀,同一扇選單還在、確認框也一直沒出現(① 每一幀都先判過)
+                    // ⇒ 上一發「什麼都沒發生」,而且它顯然沒有在關閉流程裡,這時候才照原本的用途補送關窗。
+                    _exitPressedMenu = 0;
+
+                    // 確認框只要「存在」就代表上一發生效了(① 要求 IsAddonReady,這裡刻意只問存不存在,
+                    // 涵蓋「已經建好但還沒就緒」的那幾幀)。這正是原本那一行的判斷,只是搬到隔幾幀之後才問 ——
+                    // 答案不再依賴「它是不是在送出 callback 的同一幀就進得了 addon 清單」。
+                    if (GenericHelpers.TryGetAddonByName("SelectYesno", out AtkUnitBase* _))
+                        return;
+
+                    if (EzThrottler.Throttle("ExitDutyHelper-CloseMenu", 10000))
+                        Svc.Log.Information($"[ExitDutyHelper] 對副本選單送出「退出」之後 {frame - _exitPressedFrame} 幀" +
+                                            "既沒有出現確認框、選單也還開著,判定為「上一發沒生效」,補送關窗 callback。");
+
+                    AddonHelper.FireCallBack(addonContentsFinderMenu, false, -2);
+                    return;
+                }
+            }
+
+            // ④ 選「退出」。守衛擋下(回 false)＝這扇選單的這一發已經按過 ⇒ 這一幀什麼都不再送。
             if (!AddonHelper.TryFireCallBack(addonContentsFinderMenu, true, 0))
                 return;
 
-            // Callback.Fire 是同步的:上面那一發如果真的觸發了退本,確認框在這一幀就已經建好、
-            // 選單也已經進入關閉流程 —— 這時候再送關窗 callback 正好落在危險窗口裡。
-            // 只有在「什麼都沒發生」時才照原本的行為補送關窗(保留原本 :69 的用途)。
-            if (GenericHelpers.TryGetAddonByName("SelectYesno", out AtkUnitBase* _))
-                return;
-
-            AddonHelper.FireCallBack(addonContentsFinderMenu, false, -2);
+            // 記下「按了哪一扇、在第幾幀」—— 關窗那一發交給 ③ 隔幾幀之後再決定要不要補。
+            _exitPressedMenu  = menu;
+            _exitPressedFrame = frame;
         }
     }
 }
