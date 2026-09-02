@@ -315,6 +315,12 @@ namespace AutoDuty.Helpers
             var selectedDutyName = string.Empty;
             if (_addonContentsFinder->AtkValues != null && _addonContentsFinder->AtkValuesCount > 18)
                 selectedDutyName = _addonContentsFinder->AtkValues[18].GetValueAsString().Replace("\u0002\u001a\u0002\u0002\u0003", string.Empty).Replace("\u0002\u001a\u0002\u0001\u0003", string.Empty).Replace("\u0002\u001f\u0001\u0003", "\u2013");
+            // 讀到 U+FFFD ＝ ContentsFinder 的記憶體正在變動(關閉中或重繪中),這一幀不碰:
+            // 亂碼必定不等於 _content.Name 又不是空字串,原本會直接對它送 (true, 12, 1) 把選取清掉。
+            // 正常(文字完整)路徑一行都沒動;250 毫秒節流放行後下一輪再讀一次。
+            if (AddonPressGuard.IsTextCorrupt("ContentsFinder.SelectedDuty", selectedDutyName))
+                return;
+
             if (selectedDutyName != _content!.Name && !string.IsNullOrEmpty(selectedDutyName))
             {
                 Svc.Log.Debug($"Queue Helper - We have {selectedDutyName} selected, not {_content.Name}, Clearing.");
