@@ -1545,7 +1545,15 @@ public sealed class AutoDuty : IDalamudPlugin
         {
             VNavmesh_IPCSubscriber.Path_Stop();
             if (Configuration.RebuildNavmeshOnStuck && stuckCount >= Configuration.RebuildNavmeshAfterStuckXTimes)
+            {
+                // 🔴 觸發後必須把卡住計數歸零,否則計數只會一直往上加(玩家還卡著就不會滿足
+                //    StuckHelper 那個「一段時間沒再卡住」的歸零條件),結果是門檻一旦越過,
+                //    之後每一次卡住偵測都再重建一次網格 —— 而全量重建期間玩家更動不了,
+                //    形成自我維持迴圈(實機 log 曾連續 128 次全量重建)。
+                Svc.Log.Information($"[卡住處理] 連續卡住達 {Configuration.RebuildNavmeshAfterStuckXTimes} 次,要求 vnavmesh 重建網格(計數已歸零,下次要再累積同樣次數才會重建)。");
                 VNavmesh_IPCSubscriber.Nav_Rebuild();
+                StuckHelper.ResetStuckCount();
+            }
             Stage = Stage.Reading_Path;
             return;
         }

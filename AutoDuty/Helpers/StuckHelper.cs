@@ -51,5 +51,18 @@ namespace AutoDuty.Helpers
 
             return false;
         }
+
+        /// <summary>
+        /// 🔴 呼叫端「因為卡住次數達標而採取了行動」之後要呼叫這個,把計數歸零。
+        ///
+        /// counter 原本只在「連續 10 倍 MinStuckTime 沒再卡住」時才歸零。但只要玩家真的卡死,
+        /// 卡住偵測就會每秒再命中一次,那個歸零條件永遠不成立 ⇒ counter 一旦越過
+        /// RebuildNavmeshAfterStuckXTimes 門檻,之後**每一次**卡住偵測都會再觸發一次重建網格,
+        /// 而不是設定畫面字面上寫的「每 X 次」。全量重建期間玩家更不會動,於是自我維持。
+        ///
+        /// 歸零之後行為變成:第 X 次卡住觸發一次動作 → 計數重來 → 第 2X 次再觸發一次,
+        /// 與設定項「Rebuild Navmesh when stuck / X times」的字面語意一致。
+        /// </summary>
+        internal static void ResetStuckCount() => counter = 0;
     }
 }
