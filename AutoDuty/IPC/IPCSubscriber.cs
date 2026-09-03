@@ -493,6 +493,33 @@ namespace AutoDuty.IPC
 
         internal static bool IsEnabled => IPCSubscriber_Common.IsReady("vnavmesh");
 
+        /// <summary>
+        /// 綁定可見性。這三支是 AutoDuty 的移動核心,EzIPC 綁不上時欄位停在 null、
+        /// 呼叫時擲 NullReferenceException —— 使用者看到的是「角色不會動」,很難自己連到 IPC。
+        /// 所以在建構完成後就檢查一次(不等到第一次呼叫),沒綁上就寫一行 Information 供回報。
+        /// <para>
+        /// 🔴 靜態建構式擲例外會讓整個型別終身不可用(TypeInitializationException),
+        /// 所以整段包 try/catch —— 診斷本身絕不能變成新的故障源。
+        /// </para>
+        /// <para>
+        /// 📌 C# 的靜態欄位初始設定式在靜態建構式本體之前依序執行,所以跑到這裡時
+        /// <c>Pkg</c> 已經建好、EzIPC.Init 也已經在它的建構式裡跑完了。
+        /// </para>
+        /// </summary>
+        static VNavmesh_IPCSubscriber()
+        {
+            try
+            {
+                IPCSubscriber_Common.LogIfUnbound(Pkg.Pathfind,          "vnavmesh", "Nav.Pathfind");
+                IPCSubscriber_Common.LogIfUnbound(Pkg.MoveTo,            "vnavmesh", "Path.MoveTo");
+                IPCSubscriber_Common.LogIfUnbound(Pkg.PathfindAndMoveTo, "vnavmesh", "SimpleMove.PathfindAndMoveTo");
+            }
+            catch (Exception ex)
+            {
+                Svc.Log.Error($"VNavmesh_IPCSubscriber 的 IPC 綁定檢查自己失敗了(不影響 IPC 本身): {ex}");
+            }
+        }
+
         internal static bool  Nav_IsReady()       => Pkg.IsReady();
         internal static float Nav_BuildProgress() => Pkg.BuildProgress();
         internal static bool  Nav_Reload()        => Pkg.Reload();
@@ -510,8 +537,19 @@ namespace AutoDuty.IPC
 
         internal static bool SimpleMove_PathfindInProgress() => Pkg.PathfindInProgress();
 
+        // ── ECommons 4906fd97 之後才收得回來的三支 ──
+        // 套件把它們宣告成自訂具名委派(VnavmeshIPC.Delegates.Pathfind / PathMoveTo /
+        // PathfindAndMoveTo)。舊版 EzIPC 訂閱端對非泛型委派呼叫 GetGenericTypeDefinition()
+        // 會擲例外、被外層 catch 吃掉,欄位永遠停在 null,所以這三支一度自己在側車裡
+        // 用 Func<>/Action<> 重新宣告一次。4906fd97 改用 TryGetDelegateSignature 之後
+        // 任何委派型別都綁得上,側車撤除、收斂回套件實例。
+        // 端點名與簽名逐字不變(Nav.Pathfind / Path.MoveTo / SimpleMove.PathfindAndMoveTo),
+        // SafeWrapper 也同為 IPCException,對提供端沒有任何差別。
+        internal static Task<List<Vector3>> Nav_Pathfind(Vector3 from, Vector3 to, bool fly) => Pkg.Pathfind(from, to, fly);
+        internal static void Path_MoveTo(List<Vector3> waypoints, bool fly) => Pkg.MoveTo(waypoints, fly);
+        internal static bool SimpleMove_PathfindAndMoveTo(Vector3 position, bool canFly) => Pkg.PathfindAndMoveTo(position, canFly);
+
         // ── 以下走側車，理由見 IPCSubscriberSidecar.cs ──
-        internal static Task<List<Vector3>> Nav_Pathfind(Vector3 from, Vector3 to, bool fly) => VNavmeshExtraIPC.Nav_Pathfind(from, to, fly);
         internal static Task<List<Vector3>> Nav_PathfindCancelable(Vector3 from, Vector3 to, bool fly, CancellationToken token) => VNavmeshExtraIPC.Nav_PathfindCancelable(from, to, fly, token);
         internal static void Nav_PathfindCancelAll()      => VNavmeshExtraIPC.Nav_PathfindCancelAll();
         internal static bool Nav_PathfindInProgress()     => VNavmeshExtraIPC.Nav_PathfindInProgress();
@@ -521,9 +559,6 @@ namespace AutoDuty.IPC
 
         internal static Vector3 Query_Mesh_NearestPoint(Vector3 p, float halfExtentXZ, float halfExtentY) => VNavmeshExtraIPC.Query_Mesh_NearestPoint(p, halfExtentXZ, halfExtentY);
         internal static Vector3 Query_Mesh_PointOnFloor(Vector3 p, bool allowUnlandable, float halfExtentXZ) => VNavmeshExtraIPC.Query_Mesh_PointOnFloor(p, allowUnlandable, halfExtentXZ);
-
-        internal static void Path_MoveTo(List<Vector3> waypoints, bool fly) => VNavmeshExtraIPC.Path_MoveTo(waypoints, fly);
-        internal static bool SimpleMove_PathfindAndMoveTo(Vector3 position, bool canFly) => VNavmeshExtraIPC.SimpleMove_PathfindAndMoveTo(position, canFly);
 
         internal static bool Window_IsOpen()          => VNavmeshExtraIPC.Window_IsOpen();
         internal static void Window_SetOpen(bool on)  => VNavmeshExtraIPC.Window_SetOpen(on);
@@ -949,6 +984,29 @@ namespace AutoDuty.IPC
     internal class IPCSubscriber_Common
     {
         internal static bool IsReady(string pluginName) => DalamudReflector.TryGetDalamudPlugin(pluginName, out _, false, true);
+
+        /// <summary>
+        /// IPC 成員綁定檢查:<paramref name="member"/> 是 null 就代表 EzIPC 沒有把這個端點接上
+        /// (委派型別不受支援、或參數超過 9 個),之後呼叫它會擲 NullReferenceException。
+        /// <para>
+        /// ⚠️ 這個檢查與「提供端有沒有安裝」無關:EzIPC 走的 GetIpcSubscriber 不看 InstalledPlugins,
+        /// 沒裝那個外掛照樣綁得上(要到呼叫時才回 default)。所以這一行只會在真的接線失敗時出現,
+        /// 不會對沒裝該外掛的使用者洗版。
+        /// </para>
+        /// <para>
+        /// 📌 寫 Information 而不是 Debug:使用者的 LogLevel 是 1(Debug 其實收得到,盲區只有
+        /// Verbose),但實機 log 單檔有 12~69 萬行 Debug,要使用者回報的訊息寫 Debug 會被淹沒。
+        /// </para>
+        /// </summary>
+        internal static void LogIfUnbound(Delegate member, string pluginName, string endpoint)
+        {
+            if (member != null)
+                return;
+
+            Svc.Log.Information($"[IPC 綁定檢查] {pluginName} 的「{endpoint}」綁定失敗:" +
+                                "EzIPC 沒有指派這個成員,呼叫它會擲 NullReferenceException。" +
+                                "請連同這一行回報給開發者。");
+        }
 
         internal static Version Version(string pluginName) => DalamudReflector.TryGetDalamudPlugin(pluginName, out var dalamudPlugin, false, true) ? dalamudPlugin.GetType().Assembly.GetName().Version : new Version(0, 0, 0, 0);
 

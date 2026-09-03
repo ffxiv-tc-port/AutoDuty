@@ -26,8 +26,13 @@ namespace AutoDuty.IPC
     //      (欄位從沒被指派，根本沒有 wrapper 可攔)。
     //      故沿用原本的 Func<>／Action<> 形狀，逐字同行為。
     //      ✅ 2026-09-03：ECommons 已 repin 到 4906fd97（EzIPC 改用 TryGetDelegateSignature，
-    //         接受任何委派型別），(乙) 從此綁得上。BossMod 的 Presets.AddTransientStrategy 已據此
-    //         撤掉側車、收斂回套件實例；vnavmesh 剩下的 (乙) 尚未收斂（見下方各條註記）。
+    //         接受任何委派型別），(乙) 從此綁得上，**這一類現在是空的**。
+    //         BossMod 的 Presets.AddTransientStrategy、以及 vnavmesh 的 Nav.Pathfind／
+    //         Path.MoveTo／SimpleMove.PathfindAndMoveTo 都已撤掉側車、收斂回套件實例。
+    //         分類本身保留作為歷史：以後再遇到綁不上的成員仍然歸在這一類。
+    //      🔴 收斂回套件之後，「綁不上」的失敗形態是欄位停在 null、呼叫時 NullReferenceException。
+    //         所以 VNavmesh_IPCSubscriber 的靜態建構式會在建構完成後立刻檢查那三支，
+    //         沒綁上就寫一行 Information（見 IPCSubscriber_Common.LogIfUnbound）。
     //
     // (丙) 套件有、但泛型參數與我方不同的 —— 例如 PandorasBox 的 GetFeatureEnabled 套件宣告成
     //      Func<string, bool?> 而我方是 Func<string, bool>。兩者跨 IPC 的轉換路徑不同
@@ -64,9 +69,6 @@ namespace AutoDuty.IPC
         private static EzIPCDisposalToken[] _disposalTokens =
             EzIPC.Init(typeof(VNavmeshExtraIPC), "vnavmesh", SafeWrapper.IPCException);
 
-        /// <summary>🔴 (乙) 套件宣告成自訂 delegate <c>VnavmeshIPC.Delegates.Pathfind</c>。</summary>
-        [EzIPC("Nav.Pathfind", true)] internal static readonly Func<Vector3, Vector3, bool, Task<List<Vector3>>> Nav_Pathfind;
-
         /// <summary>(甲) 套件沒有這個端點。</summary>
         [EzIPC("Nav.PathfindCancelable", true)] internal static readonly Func<Vector3, Vector3, bool, CancellationToken, Task<List<Vector3>>> Nav_PathfindCancelable;
         /// <summary>(甲) 套件沒有這個端點。</summary>
@@ -84,11 +86,6 @@ namespace AutoDuty.IPC
         [EzIPC("Query.Mesh.NearestPoint", true)] internal static readonly Func<Vector3, float, float, Vector3> Query_Mesh_NearestPoint;
         /// <summary>(丙) 套件回傳 <c>Vector3?</c>，我方是 <c>Vector3</c>。MapHelper 的旗標落地點查詢在用。</summary>
         [EzIPC("Query.Mesh.PointOnFloor", true)] internal static readonly Func<Vector3, bool, float, Vector3> Query_Mesh_PointOnFloor;
-
-        /// <summary>🔴 (乙) 套件宣告成自訂 delegate <c>VnavmeshIPC.Delegates.PathMoveTo</c>。</summary>
-        [EzIPC("Path.MoveTo", true)] internal static readonly Action<List<Vector3>, bool> Path_MoveTo;
-        /// <summary>🔴 (乙) 套件宣告成自訂 delegate <c>VnavmeshIPC.Delegates.PathfindAndMoveTo</c>。</summary>
-        [EzIPC("SimpleMove.PathfindAndMoveTo", true)] internal static readonly Func<Vector3, bool, bool> SimpleMove_PathfindAndMoveTo;
 
         /// <summary>(甲) 套件沒有這個端點。</summary>
         [EzIPC("Window.IsOpen", true)] internal static readonly Func<bool> Window_IsOpen;
