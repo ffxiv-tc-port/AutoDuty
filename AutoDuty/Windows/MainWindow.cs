@@ -425,6 +425,35 @@ public class MainWindow : Window, IDisposable
         }
     }
 
+    /// <summary>
+    /// 任務逾時計數。逾時不會讓 AutoDuty 停下來(AbortOnTimeout=false),它只是被靜靜放行 ——
+    /// 所以這是使用者唯一看得見「剛剛跳過了一步」的地方。沒發生過就整行不畫,不占版面。
+    /// </summary>
+    /// <remarks>
+    /// 掃視得到的是「有沒有、幾次」,細節(是哪個任務、多久以前、工作階段總數)放 tooltip。
+    /// 任務名可能真的不存在(ECommons 允許不具名任務),那種情況畫「?」而不是空白 ——
+    /// 「不知道」本身要看得見,不能長得像「沒問題」。
+    /// </remarks>
+    internal static void DrawTaskTimeoutStatus()
+    {
+        int shown = TaskTimeoutWatcher.RunCount > 0 ? TaskTimeoutWatcher.RunCount : TaskTimeoutWatcher.SessionCount;
+        if (shown <= 0)
+            return;
+
+        ImGui.TextColored(new Vector4(1f, 0.72f, 0.2f, 1f), "Task timeouts: ??".Loc(shown));
+
+        string lastTask = TaskTimeoutWatcher.LastTaskName ?? "?";
+        string ago = TaskTimeoutWatcher.LastTimeoutTick > 0
+                         ? $"{(Environment.TickCount64 - TaskTimeoutWatcher.LastTimeoutTick) / 1000}s"
+                         : "?";
+
+        ToolTip("A queued step ran past its time limit. AutoDuty does not stop on a timeout, it just moves on, so a boss fight or a treasure chest may have been skipped.".Loc()
+                + "\n" + "Last timed-out task: ??".Loc(lastTask)
+                + "\n" + "Last occurrence: ?? ago".Loc(ago)
+                + "\n" + "This run: ??, this session: ??".Loc(TaskTimeoutWatcher.RunCount, TaskTimeoutWatcher.SessionCount)
+                + "\n" + "Full details are in the Dalamud log (search for TaskTimeout).".Loc());
+    }
+
     internal static void ToolTip(string text)
     {
         if (ImGui.IsItemHovered())
@@ -549,6 +578,9 @@ public class MainWindow : Window, IDisposable
             if (!ImGui.CollapsingHeader("Use despite staging. Support will not be given".Loc() + "##stagingHeader"))
                 return;
         }
+
+        // 逾時計數畫在分頁列上面 —— 不管使用者在哪個分頁都掃得到,而且沒逾時就完全不畫。
+        DrawTaskTimeoutStatus();
 
         EzTabBar("MainTab", null, openTabName, ImGuiTabBarFlags.None, tabList.ToArray());
     }

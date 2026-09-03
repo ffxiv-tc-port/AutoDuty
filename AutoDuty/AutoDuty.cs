@@ -353,7 +353,15 @@ public sealed class AutoDuty : IDalamudPlugin
             TaskManager = new()
             {
                 AbortOnTimeout = false,
-                TimeoutSilently = true
+
+                // 🔴 這裡原本是 true。ECommons 的 LegacyTaskManager 在 TimeoutSilently=true 時
+                //    把逾時訊息從 PluginLog.Warning 導去 PluginLog.Verbose(TaskManager.cs 的
+                //    LogTimeout),而使用者的 Dalamud LogLevel 是 1(Serilog 的 Debug 門檻)——
+                //    Verbose(0) 正好是唯一被濾掉的等級 ⇒ 每一次任務逾時在實機 log 上完全不存在。
+                //    配上 AbortOnTimeout=false(逾時不中止、直接放行往下跑),症狀就是王戰整段被
+                //    跳過、寶箱沒撿、人還在副本裡就走下一步,而使用者看不到任何訊息。
+                //    改成 false 讓它回到 Warning;另外 TaskTimeoutWatcher 會在 UI 上累計次數。
+                TimeoutSilently = false
             };
 
             TrustHelper.PopulateTrustMembers();
@@ -995,6 +1003,10 @@ public sealed class AutoDuty : IDalamudPlugin
 
         if (CurrentTerritoryContent == null)
             return;
+
+        // 這是 Run(RunContext) 也會匯流進來的唯一入口,而且過了上面那幾道退出檢查才算真的要跑。
+        // 每開新的一輪就把「本次執行」的逾時計數歸零(工作階段總數不歸零,tooltip 仍看得到)。
+        TaskTimeoutWatcher.OnRunStarted();
 
         // Legacy entrypoint: infer source only when no explicit RunContext was provided.
         ActiveRunContext ??= new RunContext
@@ -2117,6 +2129,11 @@ public sealed class AutoDuty : IDalamudPlugin
         // 一輪多本可以跑好幾個小時，而租約上限只有 60 分鐘 —— 不續約的話 YesAlready
         // 會在副本跑到一半自己醒過來搶按窗。
         YesAlready_IPCSubscriber.Tick();
+
+        // 任務逾時的觀察哨。必須跑在 TaskManager 自己的 Tick 之後 —— 這是成立的:
+        // 建構子先 TaskManager = new()(它在自己的建構子裡掛上 Svc.Framework.Update),
+        // 之後才 Svc.Framework.Update += Framework_Update,多播委派照訂閱順序呼叫。
+        TaskTimeoutWatcher.Tick();
 
         PreStageChecks();
 

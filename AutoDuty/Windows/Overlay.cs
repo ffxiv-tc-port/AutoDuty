@@ -137,5 +137,9 @@ public unsafe class Overlay : Window
                 ImGui.SameLine(0, 5);
                 ImGui.TextColored(new Vector4(0, 255f, 0, 1), Plugin.Action.Length > 40 ? Plugin.Action[..37] + "..." : Plugin.Action);
             }
+
+        // 疊加層是跑本時真的在畫面上的東西 —— 逾時被靜靜放行(AbortOnTimeout=false)時,
+        // 這裡是使用者當下唯一看得到的提示。沒逾時就整行不畫,不占版面。
+        MainWindow.DrawTaskTimeoutStatus();
     }
 }
