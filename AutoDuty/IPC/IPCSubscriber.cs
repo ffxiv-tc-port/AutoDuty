@@ -139,12 +139,26 @@ namespace AutoDuty.IPC
         internal static bool Presets_GetForceDisabled() => Pkg.Presets_GetForceDisabled();
         internal static bool Presets_SetForceDisabled() => Pkg.Presets_SetForceDisabled();
 
-        /// <summary>🔴 側車：套件把它宣告成自訂 delegate，本版 ECommons 綁不上會停在 null。</summary>
+        /// <summary>
+        /// 套件把它宣告成自訂 delegate <c>BossModIPC.Delegates.AddTransientStrategyDelegate</c>。
+        /// 舊版 ECommons 的 EzIPC 訂閱端對非泛型委派呼叫 <c>GetGenericTypeDefinition()</c> 會擲例外、
+        /// 被外層 catch 吃掉，欄位永遠停在 null，所以這裡一度改走 <c>BossModExtraIPC</c> 原生側車。
+        /// ECommons 4906fd97（本 repo 的子模組已 repin 到該顆）新增 <c>TryGetDelegateSignature</c> 後
+        /// 已能綁上任何委派型別，側車撤除、收斂回套件實例。
+        /// IPC 端點名逐字不變，仍是 <c>BossMod.Presets.AddTransientStrategy</c>。
+        /// 離線驗證台：<c>C:/Users/lother/.claude/tools/fleet/ezipc_pkg_delegate_test</c>
+        /// —— 對本 repo 建出的 ECommons.dll／ECommons.IPC.dll 實際完成綁定並往返四個參數，含反向校準。
+        /// </summary>
         /// <remarks>string presetName, string moduleTypeName, string trackName, string value</remarks>
         internal static bool Presets_AddTransientStrategy(string presetName, string moduleTypeName, string trackName, string value) =>
-            BossModExtraIPC.Presets_AddTransientStrategy(presetName, moduleTypeName, trackName, value);
+            Pkg.Presets_AddTransientStrategy(presetName, moduleTypeName, trackName, value);
 
-        internal static void Dispose() => BossModExtraIPC.Dispose();
+        /// <summary>
+        /// 全 repo 沒有呼叫點（其餘 <c>*_IPCSubscriber.Dispose()</c> 也一樣），保留以免回退既有介面。
+        /// 套件實例的 IPC 成員全是訂閱端，而 EzIPC 只對提供端與事件產生 disposal token，
+        /// 所以撤掉側車之後這裡本來就沒有東西要拆；全域拆除由 <c>ECommonsMain.Dispose()</c> 負責。
+        /// </summary>
+        internal static void Dispose() { }
 
         public static void AddPreset(string name, string preset)
         {

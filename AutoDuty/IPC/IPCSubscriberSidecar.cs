@@ -25,8 +25,9 @@ namespace AutoDuty.IPC
     //      照搬會在呼叫時 NullReferenceException，而且 SafeWrapper 攔不到
     //      (欄位從沒被指派，根本沒有 wrapper 可攔)。
     //      故沿用原本的 Func<>／Action<> 形狀，逐字同行為。
-    //      📌 ECommons repin 到含 AnalyzeDelegateField／AssignDelegateToField 的版本後，
-    //         (乙) 可刪掉改用套件實例。
+    //      ✅ 2026-09-03：ECommons 已 repin 到 4906fd97（EzIPC 改用 TryGetDelegateSignature，
+    //         接受任何委派型別），(乙) 從此綁得上。BossMod 的 Presets.AddTransientStrategy 已據此
+    //         撤掉側車、收斂回套件實例；vnavmesh 剩下的 (乙) 尚未收斂（見下方各條註記）。
     //
     // (丙) 套件有、但泛型參數與我方不同的 —— 例如 PandorasBox 的 GetFeatureEnabled 套件宣告成
     //      Func<string, bool?> 而我方是 Func<string, bool>。兩者跨 IPC 的轉換路徑不同
@@ -53,24 +54,6 @@ namespace AutoDuty.IPC
         /// 變成完全靜默的空操作。目前全 repo 沒有呼叫點，所以還沒被踩到。
         /// </summary>
         [EzIPC] internal static readonly Action<Action> EnqueueHET;
-
-        internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
-    }
-
-    /// <summary>BossMod 側車。prefix 與門面類相同：<c>BossMod</c>，wrapper 同為 AnyException。</summary>
-    internal static class BossModExtraIPC
-    {
-        private static EzIPCDisposalToken[] _disposalTokens =
-            EzIPC.Init(typeof(BossModExtraIPC), "BossMod", SafeWrapper.AnyException);
-
-        /// <summary>
-        /// 🔴 (乙) 套件宣告成自訂 delegate <c>BossModIPC.Delegates.AddTransientStrategyDelegate</c>，
-        /// 本版 ECommons 綁不上 ⇒ 欄位會是 null。這是 SetRange／SetMovement／SetPositional
-        /// 三個功能的唯一出口，照搬會讓 BossMod AI 的位移與站位策略整組靜默失效。
-        /// </summary>
-        /// <remarks>string presetName, string moduleTypeName, string trackName, string value</remarks>
-        [EzIPC("Presets.AddTransientStrategy")]
-        internal static readonly Func<string, string, string, string, bool> Presets_AddTransientStrategy;
 
         internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
     }
