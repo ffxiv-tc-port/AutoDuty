@@ -9,6 +9,7 @@ using System.Numerics;
 using Dalamud.Game.Command;
 using Dalamud.Plugin;
 using Dalamud.Interface.Windowing;
+using Dalamud.Interface.ImGuiNotification;
 using Dalamud.Plugin.Services;
 using System.Collections.Generic;
 using System.IO;
@@ -108,6 +109,9 @@ public sealed class AutoDuty : IDalamudPlugin
             switch (value)
             {
                 case Stage.Stopped:
+                    // 必須在 StopAndResetALL() 之前:它結尾會把 Action 清空,
+                    // 而通知要拿 Action 當「停在哪一步」的佐證。
+                    NotifyIfAutomationStoppedItself();
                     StopAndResetALL();
                     break;
                 case Stage.Paused:
@@ -256,6 +260,20 @@ public sealed class AutoDuty : IDalamudPlugin
     internal List<Data.Classes.LogMessage> DalamudLogEntries = [];
     private LevelingMode levelingModeEnum = LevelingMode.None;
     private Stage _stage = Stage.Stopped;
+
+    /// <summary>
+    /// 下一次 Stage 被設成 Stage.Stopped 時的「自己停下來」原因。
+    /// null 代表那次停止是使用者主動要求的(按鈕 / /autoduty stop / 外部 IPC),不通知。
+    /// 這是白名單:只有 MarkSelfStop 會填它。將來新增停止點若忘了呼叫,
+    /// 預設結果是「不通知」而不是「誤報」。
+    /// </summary>
+    private string? _pendingStopReason;
+
+    /// <summary>
+    /// 那次停止的完成音效是不是已經由既有的終止流程(LoopsCompleteActions)排過了。
+    /// 用來避免正常跑完的路徑響兩次。
+    /// </summary>
+    private bool _pendingStopSoundHandled;
     private const string CommandName = "/autoduty";
     private readonly DirectoryInfo _configDirectory;
     private readonly ActionsManager _actions;
@@ -738,6 +756,7 @@ public sealed class AutoDuty : IDalamudPlugin
 
             if (!PlannerTryApplyCurrentSelection(resetLoopCounter: false))
             {
+                MarkSelfStop("Planner could not apply the next duty.");
                 Stage = Stage.Stopped;
                 return;
             }
@@ -1083,6 +1102,7 @@ public sealed class AutoDuty : IDalamudPlugin
         // Do not apply planner duty selection on that path, or it can interfere with termination/between-loop actions.
         if (queue && ActiveRunContext?.Source == RunSource.Planner && !Configuration.PlannerPaused && !PlannerTryApplyCurrentSelection(resetLoopCounter: false))
         {
+            MarkSelfStop("Planner could not apply the next duty.");
             Stage = Stage.Stopped;
             return;
         }
@@ -1305,7 +1325,13 @@ public sealed class AutoDuty : IDalamudPlugin
 
         States      &= ~PluginState.Looping;
         CurrentLoop =  0;
-        TaskManager.Enqueue(() => SchedulerHelper.ScheduleAction("SetStageStopped", () => Stage = Stage.Stopped, 1));
+        // 這一停是排程延遲執行的,所以原因必須跟賦值寫在同一個 lambda 裡 ——
+        // 旗標的存活期才不會被中間插進來的別的停止動作吃掉。
+        TaskManager.Enqueue(() => SchedulerHelper.ScheduleAction("SetStageStopped", () =>
+        {
+            MarkSelfStop("All loops finished.", Configuration.EnableTerminationActions && Configuration.PlayEndSound);
+            Stage = Stage.Stopped;
+        }, 1));
     }
 
     private void AutoEquipRecommendedGear()
@@ -1818,7 +1844,11 @@ public sealed class AutoDuty : IDalamudPlugin
             }
         }
         else
+        {
+            // 這一條不經過 LoopsCompleteActions(),所以既有的完成音效在這裡本來就不會響。
+            MarkSelfStop("All loops finished.");
             Stage = Stage.Stopped;
+        }
     }
 
     private void GetGeneralSettings()
@@ -2316,6 +2346,64 @@ public sealed class AutoDuty : IDalamudPlugin
 
         Wrath_IPCSubscriber.Release();
         Action = "";
+    }
+
+    /// <summary>
+    /// 標記「接下來這一次 Stage = Stage.Stopped 是 AutoDuty 自己停的」並附上原因。
+    /// 只能在非使用者觸發的停止點呼叫。使用者按 Stop、下 /autoduty stop、
+    /// 或別的外掛叫 IPC 端點 AutoDuty.Stop 都不可以呼叫 —— 那些不算「自己停了」。
+    /// </summary>
+    /// <param name="reason">給使用者看的英文原文,顯示時才做 .Loc() 查表。</param>
+    /// <param name="endSoundAlreadyQueued">既有的終止流程是不是已經排了完成音效。</param>
+    private void MarkSelfStop(string reason, bool endSoundAlreadyQueued = false)
+    {
+        _pendingStopReason       = reason;
+        _pendingStopSoundHandled = endSoundAlreadyQueued;
+    }
+
+    /// <summary>
+    /// 在「Stage 真的由非 Stopped 掉到 Stopped」而且那次是 AutoDuty 自己停的時候,發一則通知。
+    /// </summary>
+    private void NotifyIfAutomationStoppedItself()
+    {
+        string? reason       = _pendingStopReason;
+        bool    soundHandled = _pendingStopSoundHandled;
+        _pendingStopReason       = null;
+        _pendingStopSoundHandled = false;
+
+        // 使用者主動停:MainWindow 的十個按鈕、/autoduty stop、IPC Stop 都不會填 _pendingStopReason。
+        if (reason == null)
+            return;
+
+        // Stage 的 setter 沒有 early-return 守衛:已經是 Stopped 時再賦值一次仍會整段跑一遍。
+        // CheckFinishing() 的 else 分支就在每幀路徑上,少了這個邊緣判斷會一直念。
+        if (_stage == Stage.Stopped)
+            return;
+
+        if (!Configuration.NotifyWhenStoppedItself)
+            return;
+
+        // 刻意用 Information:使用者跑 LogLevel 1,這一級一定收得到,事後對照用。
+        Svc.Log.Information($"[StopNotify] AutoDuty 自己停了:{reason}(最後動作:{Action})");
+
+        string localizedReason = reason.Loc();
+        string headline        = "AutoDuty stopped on its own.".Loc();
+        _ = Svc.Framework.RunOnFrameworkThread(() =>
+        {
+            Svc.NotificationManager.AddNotification(new Notification
+            {
+                Title           = "AutoDuty",
+                Content         = headline + "\n" + localizedReason,
+                MinimizedText   = headline,
+                Type            = NotificationType.Warning,
+                InitialDuration = TimeSpan.FromSeconds(30),
+                Minimized       = false,
+            });
+
+            // 沿用既有的完成音效,不另外做播放層;正常跑完的路徑已經響過就不重複。
+            if (Configuration.PlayEndSound && !soundHandled)
+                SoundHelper.StartSound(true, Configuration.CustomSound, Configuration.SoundEnum);
+        });
     }
 
     public void Dispose()

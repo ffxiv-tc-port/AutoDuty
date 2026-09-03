@@ -624,6 +624,9 @@ public class Configuration
     public string SoundPath = "";
     public TerminationMode TerminationMethodEnum = TerminationMode.Do_Nothing;
     public bool TerminationKeepActive = true;
+    // 「自動化不是被你停掉、是自己停了」通知。預設關 —— 既有使用者的 JSON 已經有這個鍵之前
+    // 都吃不到任何行為變化,要開必須自己到設定裡勾。
+    public bool NotifyWhenStoppedItself = false;
     
     //BMAI Config Options
     public bool HideBossModAIConfig           = false;
@@ -2475,6 +2478,12 @@ public static class ConfigTab
         {
             if (ImGui.Checkbox("Enable".Loc() + "###TerminationEnable", ref Configuration.EnableTerminationActions))
                 Configuration.Save();
+
+            // 刻意放在 ImRaii.Disabled 之外:自己停下來的通知不該被「終止動作」總開關牽連,
+            // 因為失敗停止的那兩條路徑根本不經過終止動作。
+            if (ImGui.Checkbox("Notify when AutoDuty stops on its own".Loc(), ref Configuration.NotifyWhenStoppedItself))
+                Configuration.Save();
+            ImGuiComponents.HelpMarker("Shows a Dalamud notification when AutoDuty stops because it finished all loops or hit an error. Stopping it yourself never notifies.".Loc());
 
             using (ImRaii.Disabled(!Configuration.EnableTerminationActions))
             {
