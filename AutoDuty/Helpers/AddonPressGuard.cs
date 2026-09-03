@@ -293,7 +293,7 @@ namespace AutoDuty.Helpers
                     }
 
                     // Talk 類的多次互動窗走逃生口是常態(每一頁都會走到),寫 Debug 不洗版;
-                    // 單答終結窗走到這裡才是異常,寫 Information(使用者跑 LogLevel 2)。
+                    // 單答終結窗走到這裡才是異常,寫 Information(使用者跑 LogLevel 1,Debug 收得到但單檔數十萬行會淹沒)。
                     if (escapeFrames <= RoutineRePressEscapeFrames)
                     {
                         if (EzThrottler.Throttle($"AddonPressGuard-RoutineRelease-{addonName}", 10000))
@@ -462,7 +462,7 @@ namespace AutoDuty.Helpers
                && closed.Address == address
                && frame - closed.Frame < closed.EscapeFrames;
 
-        /// <summary>被擋那一幀的診斷:寫 Information(使用者跑 LogLevel 2),每扇窗 1 秒節流免得洗版。</summary>
+        /// <summary>被擋那一幀的診斷:寫 Information(使用者跑 LogLevel 1,Debug 收得到但單檔數十萬行會淹沒),每扇窗 1 秒節流免得洗版。</summary>
         private static void LogHold(string addonName, nint address, string pressKey)
         {
             if (EzThrottler.Throttle($"AddonPressGuard-Hold-{addonName}", 1000))

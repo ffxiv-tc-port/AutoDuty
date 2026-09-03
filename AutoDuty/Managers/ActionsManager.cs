@@ -240,7 +240,7 @@ namespace AutoDuty.Managers
                 Plugin.Indexer += index;
             else
                 Plugin.Indexer = index;
-            // 使用者跑 LogLevel 2,診斷一律 Information。ModifyIndex 步驟很少,不會洗版。
+            // 使用者跑 LogLevel 1(盲區只有 Verbose),診斷一律 Information。ModifyIndex 步驟很少,不會洗版。
             Svc.Log.Information($"ModifyIndex: {before} -> {Plugin.Indexer} (arg={index}, relative={modify})");
             Plugin.Stage = Stage.Reading_Path;
         }

@@ -82,8 +82,10 @@ public unsafe class OverrideCamera : IDisposable
     private void OnDetourError(Exception ex)
     {
         ++_detourErrors;
-        // this runs per frame - never log unthrottled. Information (not Debug) because reporting
-        // users run at LogLevel 2.
+        // this runs per frame - never log unthrottled. Information (not Debug) because the user
+        // runs at LogLevel 1 (Serilog Verbose=0/Debug=1), so Debug is NOT filtered out - but a
+        // real log carries 120k-690k Debug lines and anything we want reported back would drown
+        // in them. Only Verbose is a true blind spot.
         var now = DateTime.UtcNow;
         if (now - _lastDetourErrorLog < TimeSpan.FromSeconds(30))
             return;

@@ -35,7 +35,7 @@ namespace AutoDuty.Managers
             //    回的 false 被吞掉,這一步照樣算「做完」。這條路徑不像 SquadronManager 後面有 int.MaxValue
             //    的下游等待,所以不會卡死 —— 但外層 AutoDuty.Queue()(AutoDuty.cs:1362-1363)那兩道等待
             //    一道都攔不住:「Queue-WaitNotValid」用預設 10 秒逾時且 AbortOnTimeout=false(逾時放行,
-            //    而且 TimeoutSilently=true 只寫 Verbose ⇒ 使用者的 LogLevel 2 完全看不到),
+            //    而且 TimeoutSilently=true 只寫 Verbose ⇒ 使用者的 LogLevel 1 恰好只濾掉 Verbose,完全看不到),
             //    「Queue-WaitValid」等的是「玩家有效」—— 按鈕沒送出去時玩家本來就有效 ⇒ 立刻通過。
             //    ⇒ 靜默誤判成「已經排隊完成」繼續往下跑,而玩家還站在 VVDFinder 前面。
             //    改成回傳 TryFireCallBack 的結果(綁 Func<bool?> 多載):擋下就回 false、下一幀再來;
