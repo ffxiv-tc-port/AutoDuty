@@ -2083,6 +2083,11 @@ public sealed class AutoDuty : IDalamudPlugin
 
     public void Framework_Update(IFramework framework)
     {
+        // 🔴 YesAlready 壓制租約的續約心跳（內部自行節流，沒在壓制時是一個布林判斷就返回）。
+        // 一輪多本可以跑好幾個小時，而租約上限只有 60 分鐘 —— 不續約的話 YesAlready
+        // 會在副本跑到一半自己醒過來搶按窗。
+        YesAlready_IPCSubscriber.Tick();
+
         PreStageChecks();
 
         this.Framework_Update_InDuty(framework);

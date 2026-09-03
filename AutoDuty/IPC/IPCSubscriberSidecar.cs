@@ -120,4 +120,40 @@ namespace AutoDuty.IPC
 
         internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
     }
+
+    /// <summary>YesAlready 側車。prefix 與門面類相同：<c>YesAlready</c>。</summary>
+    /// <remarks>
+    /// (甲) 套件（<c>ECommons.IPC.Subscribers.YesAlready.YesAlreadyIPC</c>）只收了
+    /// <c>IsPluginEnabled</c>／<c>SetPluginEnabled</c> 兩支，<b>沒有</b>壓制租約那一組。
+    /// <para>
+    /// 🔴 <b>為什麼是側車而不是去改套件</b>：<c>ECommons.IPC</c> 是<b>子模組</b>，動它要連帶
+    /// 改 gitlink 並影響其他消費端 —— 而這一組端點目前只有 AutoDuty 要用。側車的存在理由
+    /// 正是這個（見本檔檔頭），所以收在這裡。
+    /// </para>
+    /// <para>
+    /// 🔴 <b>提供端沒有這幾支時</b>（YesAlready 沒安裝、或版本太舊）：
+    /// <see cref="SafeWrapper.IPCException"/> 會把 <c>IpcNotReadyError</c> 吃掉並回
+    /// <see langword="default"/> ⇒ <see cref="Guid.Empty"/>／<see langword="false"/>。
+    /// 呼叫端（<c>YesAlready_IPCSubscriber</c>）就是靠這個訊號退回舊的開關寫入的。
+    /// </para>
+    /// </remarks>
+    internal static class YesAlreadyExtraIPC
+    {
+        private static EzIPCDisposalToken[] _disposalTokens =
+            EzIPC.Init(typeof(YesAlreadyExtraIPC), "YesAlready", SafeWrapper.IPCException);
+
+        /// <summary>(甲) 取得一把記名的壓制租約；回 <see cref="Guid.Empty"/>＝提供端給不了。</summary>
+        [EzIPC] internal static readonly Func<string, int, Guid> AcquireSuppressionFor;
+
+        /// <summary>
+        /// (甲) 續約（心跳）。<b>回 <see langword="false"/> 代表那把已經不在了</b>，
+        /// 必須重新取得，不要當成續約成功。
+        /// </summary>
+        [EzIPC] internal static readonly Func<Guid, int, bool> RenewSuppressionFor;
+
+        /// <summary>(甲) 交回一把租約。冪等。</summary>
+        [EzIPC] internal static readonly Func<Guid, bool> ReleaseSuppression;
+
+        internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
+    }
 }
