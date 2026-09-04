@@ -833,7 +833,10 @@ public sealed class AutoDuty : IDalamudPlugin
                                                      container.Paths[CurrentPath > -1 ? CurrentPath : 0];
 
             PathFile = path?.FilePath ?? "";
-            Actions = [.. path?.Actions];
+            // path 可能是 null(SelectPath 在容器沒有任何可用路徑時回 null)。
+            // 上一行早就用 ?. 承認了這件事,但 [.. path?.Actions] 在 path 為 null 時
+            // 會對 null 做展開 ⇒ 直接 NRE。空路徑要退回空清單。
+            Actions = path == null ? [] : [.. path.Actions];
             //Svc.Log.Info($"Loading Path: {CurrentPath} {ListBoxPOSText.Count}");
         }
         catch (Exception e)

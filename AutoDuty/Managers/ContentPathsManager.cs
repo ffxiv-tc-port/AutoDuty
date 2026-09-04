@@ -126,6 +126,17 @@ namespace AutoDuty.Managers
 
             public DutyPath? SelectPath(out int pathIndex, Job? job = null)
             {
+                // Paths 可能是空的:RemoveInvalidPaths() 會把解析失敗的 path 從容器裡拿掉,
+                // 但**不會**把因此空掉的容器從 DictionaryPaths 移除 ⇒ 某個副本的路徑檔全部
+                // 壞掉時,舊寫法的 this.Paths[0] 會擲 ArgumentOutOfRangeException。
+                // 回傳型別本來就是 DutyPath?,這裡把「沒有可選路徑」表達成 null + pathIndex = -1
+                // (-1 就是呼叫端既有的「沒有路徑」值,見 AutoDuty.cs 的 RunContext 與 MainTab)。
+                if (this.Paths.Count == 0)
+                {
+                    pathIndex = -1;
+                    return null;
+                }
+
                 job ??= PlayerHelper.GetJob();
 
                 DutyPath defaultPath = this.Paths[0];
@@ -284,7 +295,16 @@ namespace AutoDuty.Managers
                         }
                     }
 
-                    return pathFile!;
+                    // 解析失敗時 pathFile 仍然是 null —— 舊寫法的 `pathFile!` 只是用驚嘆號把
+                    // 「這裡不會是 null」宣告掉,實際回傳的就是 null,於是
+                    // Actions => PathFile.Actions 以及呼叫端的 PathFile.Meta 全部直接 NRE。
+                    // 改成退回一個空的 PathFile(Actions 是空清單、Meta 有預設值):
+                    // 讀的人拿到「這個路徑沒有動作」而不是崩潰,而這個 DutyPath 已在上面被
+                    // MarkInvalid() 標記,下一個 tick 就會被 RemoveInvalidPaths 移除。
+                    // 🔴 刻意每次都 new 一個,不共用靜態實例:BuildTab 的存檔流程會拿到這個物件
+                    //    並就地寫入 Actions(pathFile.Actions = [.. Plugin.Actions]),
+                    //    共用實例會被寫髒並汙染其他路徑。
+                    return pathFile ?? new Classes.PathFile();
                 }
             }
 
