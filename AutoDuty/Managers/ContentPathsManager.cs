@@ -358,7 +358,15 @@ namespace AutoDuty.Managers
 
     internal static class ContentPathContainerExtensions
     {
-        public static bool IsFirstPath(this ContentPathsManager.ContentPathContainer container, ContentPathsManager.DutyPath dp) => 
-            container.Paths[0] == dp;
+        /// <summary>
+        /// 容器可能是空的(RemoveInvalidPaths 把解析失敗的 path 拿掉之後,空掉的容器不會從
+        /// DictionaryPaths 移除),舊寫法的 Paths[0] 會擲 ArgumentOutOfRangeException。
+        /// 🔴 唯一的呼叫點 PathsTab.Draw() 在該檔既有 try/catch 的**範圍之外**,例外會一路
+        ///    逃到 Dalamud 的 Window.Draw() —— 10 秒內兩次就會被自動重試永久關掉,
+        ///    使用者看到的是「路徑分頁整個消失」。
+        /// 空容器沒有「第一個路徑」,回 false 是正確答案。
+        /// </summary>
+        public static bool IsFirstPath(this ContentPathsManager.ContentPathContainer container, ContentPathsManager.DutyPath dp) =>
+            container.Paths.Count > 0 && container.Paths[0] == dp;
     }
 }
