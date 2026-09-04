@@ -828,9 +828,18 @@ public sealed class AutoDuty : IDalamudPlugin
                 return;
             }
 
-            ContentPathsManager.DutyPath? path = CurrentPath < 0 ?
-                                                     container.SelectPath(out CurrentPath) :
-                                                     container.Paths[CurrentPath > -1 ? CurrentPath : 0];
+            // container.Paths 可能是空的,CurrentPath 也可能指到已經被 RemoveInvalidPaths
+            // 拿掉的索引 —— 這兩種情形舊寫法的 container.Paths[...] 都會擲
+            // ArgumentOutOfRangeException,被下面的 catch 吞成一行 Error,結果是
+            // PathFile 與 Actions 整個沒被設定,留著上一個副本的殘值。
+            // 索引無效時就重新選一次:SelectPath 會一併把有效的索引寫回 CurrentPath,
+            // 容器是空的時候它回 null 並把 CurrentPath 設成 -1,也就是這個檔案既有的
+            // 「沒有路徑」值(見 RunContext.PathIndex 與 MainTab)。
+            // 📌 原本的 `CurrentPath > -1 ? CurrentPath : 0` 是死條件:能走到那一個分支的
+            //    前提就是 CurrentPath >= 0,那個三元運算永遠只會取到 CurrentPath。
+            ContentPathsManager.DutyPath? path = CurrentPath >= 0 && CurrentPath < container.Paths.Count ?
+                                                     container.Paths[CurrentPath] :
+                                                     container.SelectPath(out CurrentPath);
 
             PathFile = path?.FilePath ?? "";
             // path 可能是 null(SelectPath 在容器沒有任何可用路徑時回 null)。
