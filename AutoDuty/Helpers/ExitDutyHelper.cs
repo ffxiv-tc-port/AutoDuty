@@ -18,7 +18,8 @@ namespace AutoDuty.Helpers
 
         internal override void Start()
         {
-            _exitPressedMenu = 0;
+            _exitPressedMenu    = 0;
+            _notReadySinceFrame = NotTracking;
 
             base.Start();
 
@@ -55,11 +56,47 @@ namespace AutoDuty.Helpers
 
         private static long _exitPressedFrame;
 
+        /// <summary>
+        /// 「視窗可見、但 IsAddonReady 仍不過」連續多少個 framework tick 之後,不管怎樣都再送一次 <c>Show()</c>。
+        /// </summary>
+        /// <remarks>
+        /// 🔴 <b>這是我們加的逃生口,不是社群修正原本的一部分。</b>社群修正
+        /// (okaminico/AutoDuty-1@d8067980)把「可見但未就緒」時的 <c>Show()</c> 整個拿掉,
+        /// 理由是<b>懷疑</b>每幀重複 <c>Show()</c> 會打斷視窗自己的載入流程 —— 作者原文寫的就是「懷疑」,
+        /// 那是假設不是證明。假設要是不成立(真正卡住的原因是那扇窗<b>需要</b>再被推一次),
+        /// 照抄就等於新增一種卡法:「可見但永遠不就緒」時我們從此再也不送 <c>Show()</c>,
+        /// 那條路徑會一路空轉到 <see cref="TimeOut"/>(60 秒)為止。
+        /// <para>
+        /// 所以改成「絕大多數時間不送、隔夠久還是送一次」:社群修正想要的效果(不要每幀洗它)完整保留 ——
+        /// 每幀約 100 次/秒降到約 0.33 次/秒,少三個數量級,視窗有充裕時間把載入跑完;
+        /// 而假設不成立時仍然會週期性重推,不會卡死。這與 <see cref="ExitPressSettleFrames"/> 是同一條原則:
+        /// <b>把「未證實的假設」改成「假設不成立也不會卡死」</b>。
+        /// </para>
+        /// <para>
+        /// 📌 換算:使用者機器實測 <b>10.07 毫秒/幀</b>(n=290),300 幀 ≈ <b>3.0 秒</b>,
+        /// 在 60 秒 <see cref="TimeOut"/> 內約可重推 19 次。
+        /// 🔴 數的是 framework tick(<see cref="AddonPressGuard.CurrentFrame"/>)不是繪製幀,
+        /// 理由同 <see cref="ExitPressSettleFrames"/>:繪製幀在過場動畫期間完全停住。
+        /// </para>
+        /// </remarks>
+        private const int NotReadyEscapeFrames = 300;
+
+        /// <summary><see cref="_notReadySinceFrame"/> 的「目前沒在追蹤」哨兵值。</summary>
+        /// <remarks>
+        /// 🔴 哨兵值<b>不能用 0</b>:<see cref="AddonPressGuard.CurrentFrame"/> 從 0 起算,
+        /// 第一個 framework tick 真的會是 0 —— 用 0 當哨兵會讓逃生口在那一幀被判成「沒在追蹤」而永遠重新起算。
+        /// </remarks>
+        private const long NotTracking = -1;
+
+        /// <summary>目前這段「視窗可見但未就緒」是從第幾個 framework tick 開始的。</summary>
+        private static long _notReadySinceFrame = NotTracking;
+
         protected override void HelperStopUpdate(IFramework framework)
         {
             base.HelperStopUpdate(framework);
             this._currentTerritoryType = 0;
             _exitPressedMenu           = 0;
+            _notReadySinceFrame        = NotTracking;
         }
 
         protected override void HelperUpdate(IFramework framework)
@@ -120,6 +157,11 @@ namespace AutoDuty.Helpers
         /// </list>
         /// 📌 選單真的關不掉也不會留著:<see cref="AddonsToClose"/> 已經列了 ContentsFinderMenu,
         /// <c>ActiveHelperBase.HelperStopUpdate</c> 停止時會用 <c>Close(true)</c> 收掉它。
+        /// <para>
+        /// 📌 <b>社群修正</b>:分支診斷 log 與「② 可見但未就緒時不重複 <c>Show()</c>」兩項來自
+        /// okaminico/AutoDuty-1@1ccfe0e2 與 @d8067980(該 repo 是本 repo 的 fork)。
+        /// 我們額外補上 <see cref="NotReadyEscapeFrames"/> 逃生口 —— 理由見該常數的說明。
+        /// </para>
         /// </remarks>
         private static unsafe void Exit()
         {
@@ -134,7 +176,8 @@ namespace AutoDuty.Helpers
                 && GenericHelpers.IsAddonReady(addonSelectYesno))
             {
                 // 確認框出現了 ⇒ 上一發「退出」有生效,那扇選單已經在關閉流程裡,關窗那一發永遠不要補。
-                _exitPressedMenu = 0;
+                _exitPressedMenu    = 0;
+                _notReadySinceFrame = NotTracking;
                 AddonHelper.FireCallBack(addonSelectYesno, true, 0);
                 return;
             }
@@ -145,21 +188,72 @@ namespace AutoDuty.Helpers
             // 兩層都判空後同幀即用;為 null 時本 tick 不動作,下 tick 重試(每幀熱路徑,不寫 log)。
             AgentModule* agentModule = AgentModule.Instance();
             if (agentModule == null)
+            {
+                if (EzThrottler.Throttle("ExitDutyHelper-Diag-NoAgentModule", 5000))
+                    Svc.Log.Debug("[ExitDutyHelper][診斷] AgentModule.Instance() 目前是 null,還在等。");
                 return;
+            }
 
             AgentInterface* agentContentsFinderMenu = agentModule->GetAgentByInternalId(AgentId.ContentsFinderMenu);
             if (agentContentsFinderMenu == null)
-                return;
-
-            // ② 窗還沒開才 Show()。
-            if (!GenericHelpers.TryGetAddonByName("ContentsFinderMenu", out AtkUnitBase* addonContentsFinderMenu)
-                || !GenericHelpers.IsAddonReady(addonContentsFinderMenu))
             {
-                // 選單已經不在了(多半就是上一發「退出」把它收掉了)⇒ 沒有東西要補關。
-                _exitPressedMenu = 0;
-                agentContentsFinderMenu->Show();
+                if (EzThrottler.Throttle("ExitDutyHelper-Diag-NoAgent", 5000))
+                    Svc.Log.Debug("[ExitDutyHelper][診斷] ContentsFinderMenu 的 agent 還沒建立(GetAgentByInternalId 回 null),還在等。");
                 return;
             }
+
+            // ② 窗還沒開才 Show()。
+            bool addonFound = GenericHelpers.TryGetAddonByName("ContentsFinderMenu", out AtkUnitBase* addonContentsFinderMenu);
+            if (!addonFound || !GenericHelpers.IsAddonReady(addonContentsFinderMenu))
+            {
+                // 🔴 視窗其實已經找得到、也可見,只是 IsAddonReady 另外兩個條件(LoadedState/IsFullyLoaded)
+                // 還沒過 ⇒ 視窗正在自己的載入/穩定流程中,這時候不要再呼叫 Show()。
+                // 懷疑：對一扇已經可見的窗每一幀重複呼叫 Show() 會打斷它的載入流程，
+                // 造成「視窗一直開著、卻永遠沒 ready」的無限迴圈 —— 這正是這次回報卡住的樣子。
+                // 只有「真的還沒開出來」(找不到，或找到了但 IsVisible=false，多半是上一發「退出」
+                // 已經把它收掉)才需要再喊一次 Show()。
+                bool addonVisible = addonFound && addonContentsFinderMenu->IsVisible;
+
+                if (EzThrottler.Throttle("ExitDutyHelper-Diag-NotReady", 5000))
+                {
+                    string extra = addonFound
+                        ? $", LoadedState={addonContentsFinderMenu->UldManager.LoadedState}, IsFullyLoaded={addonContentsFinderMenu->IsFullyLoaded()}"
+                        : "";
+                    Svc.Log.Debug($"[ExitDutyHelper][診斷] ContentsFinderMenu 還沒就緒。" +
+                        $" 視窗找到={addonFound}, IsVisible={(addonFound ? addonVisible.ToString() : "n/a")}{extra}" +
+                        (addonVisible ? "（可見但未就緒，這次不重複呼叫 Show()，等它自己穩定）" : "（不可見，呼叫 Show()）"));
+                }
+
+                if (!addonVisible)
+                {
+                    // 選單已經不在了(多半就是上一發「退出」把它收掉了)⇒ 沒有東西要補關。
+                    _exitPressedMenu    = 0;
+                    _notReadySinceFrame = NotTracking;
+                    agentContentsFinderMenu->Show();
+                }
+                else if (_notReadySinceFrame == NotTracking)
+                {
+                    // 「可見但未就緒」的第一幀:只記下起點,先讓它自己穩定,這一輪不介入。
+                    _notReadySinceFrame = frame;
+                }
+                else if (frame - _notReadySinceFrame >= NotReadyEscapeFrames)
+                {
+                    // 🔴 逃生口(見 NotReadyEscapeFrames 的說明):等這麼久還停在「可見但未就緒」,
+                    //    代表社群修正那個「重複 Show() 會打斷載入」的懷疑在這個情境下沒說中 ——
+                    //    再推一次,不要讓它空轉到 60 秒逾時。重新起算 ⇒ 之後每 NotReadyEscapeFrames 幀重推一次。
+                    if (EzThrottler.Throttle("ExitDutyHelper-NotReadyEscape", 10000))
+                        Svc.Log.Information($"[ExitDutyHelper] ContentsFinderMenu 可見但未就緒已持續 {frame - _notReadySinceFrame} 幀" +
+                                            $"(約 {(frame - _notReadySinceFrame) * 10.07 / 1000:0.0} 秒),走逃生口再送一次 Show()。");
+
+                    _notReadySinceFrame = frame;
+                    agentContentsFinderMenu->Show();
+                }
+
+                return;
+            }
+
+            // 視窗就緒了 ⇒ 不再處於「可見但未就緒」,逃生口的計時歸零。
+            _notReadySinceFrame = NotTracking;
 
             // 🔴 只當作識別用的位址,底下全程只做等值比較,永遠不解參。
             nint menu = (nint)addonContentsFinderMenu;
@@ -201,7 +295,13 @@ namespace AutoDuty.Helpers
 
             // ④ 選「退出」。守衛擋下(回 false)＝這扇選單的這一發已經按過 ⇒ 這一幀什麼都不再送。
             if (!AddonHelper.TryFireCallBack(addonContentsFinderMenu, true, 0))
+            {
+                if (EzThrottler.Throttle("ExitDutyHelper-Diag-GuardBlocked", 5000))
+                    Svc.Log.Debug("[ExitDutyHelper][診斷] ContentsFinderMenu 已就緒，但 TryFireCallBack 被 AddonPressGuard 擋下，還在重試。");
                 return;
+            }
+
+            Svc.Log.Debug($"[ExitDutyHelper][診斷] 已對 ContentsFinderMenu 送出「退出」callback。");
 
             // 記下「按了哪一扇、在第幾幀」—— 關窗那一發交給 ③ 隔幾幀之後再決定要不要補。
             _exitPressedMenu  = menu;
