@@ -627,6 +627,18 @@ public class Configuration
     // 「自動化不是被你停掉、是自己停了」通知。預設關 —— 既有使用者的 JSON 已經有這個鍵之前
     // 都吃不到任何行為變化,要開必須自己到設定裡勾。
     public bool NotifyWhenStoppedItself = false;
+
+    /// <summary>
+    /// AutoDuty 自己停下來時，透過 IPC 請 TataruPraise（塔塔露誇獎）念一句。
+    /// </summary>
+    /// <remarks>
+    /// 📌 預設 <c>true</c>：TataruPraise 沒安裝時整條路是靜默 no-op（IPC 擲
+    /// <c>IpcNotReadyError</c> 被吃掉），而 TataruPraise 自己的總開關（預設關）與冷卻也還在，
+    /// 所以預設開<b>不會</b>讓任何人多聽到聲音。
+    /// ⚠️ 與 <see cref="NotifyWhenStoppedItself"/> 刻意分成兩個旗標：那個是桌面通知，
+    /// 這個是語音。想聽聲音的人不必連帶被彈通知，反之亦然。
+    /// </remarks>
+    public bool TataruPraiseOnStoppedItself = true;
     
     //BMAI Config Options
     public bool HideBossModAIConfig           = false;
@@ -2484,6 +2496,11 @@ public static class ConfigTab
             if (ImGui.Checkbox("Notify when AutoDuty stops on its own".Loc(), ref Configuration.NotifyWhenStoppedItself))
                 Configuration.Save();
             ImGuiComponents.HelpMarker("Shows a Dalamud notification when AutoDuty stops because it finished all loops or hit an error. Stopping it yourself never notifies.".Loc());
+
+            // 與上面那個勾選框刻意分開：桌面通知與語音通知是兩件事。
+            if (ImGui.Checkbox("Ask Tataru to speak when AutoDuty stops on its own (requires TataruPraise)".Loc(), ref Configuration.TataruPraiseOnStoppedItself))
+                Configuration.Save();
+            ImGuiComponents.HelpMarker("Needs the TataruPraise plugin installed and its own master switch turned on. Without it this option does nothing at all - no error, no sound. Stopping AutoDuty yourself never speaks.".Loc());
 
             using (ImRaii.Disabled(!Configuration.EnableTerminationActions))
             {

@@ -2397,6 +2397,17 @@ public sealed class AutoDuty : IDalamudPlugin
         if (_stage == Stage.Stopped)
             return;
 
+        // 🔴 刻意放在 NotifyWhenStoppedItself 的閘門「之前」：那個旗標是「Dalamud 桌面通知」
+        //    的開關而且預設關；語音通知是另一件事、有自己的開關，兩者不該互相牽連。
+        // 🔴 IPC 的實作跑在呼叫端的執行緒上 ⇒ 一律丟回主執行緒再叫（已在主執行緒時是同步執行）。
+        // 🔴 fail-safe：TataruPraise 沒裝／關著／池裡沒句子都只是安靜的 no-op，絕不影響跑本流程。
+        if (Configuration.TataruPraiseOnStoppedItself)
+        {
+            // 區域副本：流程分析的「非 null」推不進 lambda，直接捕獲 reason 會是 string?。
+            string praiseReason = reason;
+            _ = Svc.Framework.RunOnFrameworkThread(() => TataruPraiseIPC.TryPraise(praiseReason));
+        }
+
         if (!Configuration.NotifyWhenStoppedItself)
             return;
 
