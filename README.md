@@ -26,7 +26,7 @@
 
 ## 搭配插件
 
-- 導航：[vnavmesh](https://puni.sh/api/repository/veyn)
+- 導航：[vnavmesh](https://github.com/ffxiv-tc-port/vnavmesh)
 - 自動戰鬥：Wrath Combo 或 Rotation Solver Reborn（擇一）
 - 頭目自動應對：Veyn's Boss Mod 或 BossmodReborn（擇一）
 - 選用：Deliveroo（自動繳交公會物資）、Gearsetter（自動找裝備升級）、
