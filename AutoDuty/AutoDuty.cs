@@ -1899,7 +1899,11 @@ public sealed class AutoDuty : IDalamudPlugin
         if (Configuration.AutoManageVnavAlignCamera && VNavmesh_IPCSubscriber.IsEnabled && VNavmesh_IPCSubscriber.Path_GetAlignCamera())
             _settingsActive |= SettingsActive.Vnav_Align_Camera_Off;
         */
-        if (YesAlready_IPCSubscriber.IsEnabled && YesAlready_IPCSubscriber.IsEnabled)
+        // 🔴 這裡原本是 `IsEnabled && IsEnabled`（同一個條件寫兩次）——上游 erdelf 是
+        //    `IsEnabled && IsPluginEnabled()`。重複的版本讓「YesAlready 只要裝著」就設旗標，
+        //    不管使用者有沒有開它 ⇒ AutoDuty 進場把它關掉、結束再打開，
+        //    於是**本來刻意關著的 YesAlready 會被 AutoDuty 打開**。
+        if (YesAlready_IPCSubscriber.IsEnabled && YesAlready_IPCSubscriber.IsPluginEnabled())
             _settingsActive |= SettingsActive.YesAlready;
 
         if (PandorasBox_IPCSubscriber.IsEnabled && PandorasBox_IPCSubscriber.GetFeatureEnabled("Auto-interact with Objects in Instances"))
@@ -1945,15 +1949,22 @@ public sealed class AutoDuty : IDalamudPlugin
             if (VNavmesh_IPCSubscriber.IsEnabled)
                 VNavmesh_IPCSubscriber.Path_SetAlignCamera(false);
         }
+        // 🔴 還原之後要把旗標清掉。原本 _settingsActive 只有 `|=`、全檔沒有任何清除 ⇒ 旗標終身累積，
+        //    於是：第 1 趟時 Pandora 的某功能開著（旗標設起）→ 使用者之後手動關掉它 →
+        //    第 2 趟結束時 AutoDuty 仍然照著過期的旗標**把它重新打開**。
+        //    清掉之後，下一趟的 GetGeneralSettings() 會重新評估當下的實際狀態。
+        //    ⚠️ 只在 on==true（還原那一側）清；on==false 是剛設起旗標的那一側，不能清。
         if (PandorasBox_IPCSubscriber.IsEnabled && _settingsActive.HasFlag(SettingsActive.Pandora_Interact_Objects))
         {
             Svc.Log.Debug($"Setting PandorasBos Auto-interact with Objects in Instances: {on}");
             PandorasBox_IPCSubscriber.SetFeatureEnabled("Auto-interact with Objects in Instances", on);
+            if (on) _settingsActive &= ~SettingsActive.Pandora_Interact_Objects;
         }
         if (YesAlready_IPCSubscriber.IsEnabled && _settingsActive.HasFlag(SettingsActive.YesAlready))
         {
             Svc.Log.Debug($"Setting YesAlready Enabled: {on}");
             YesAlready_IPCSubscriber.SetState(on);
+            if (on) _settingsActive &= ~SettingsActive.YesAlready;
         }
     }
 
