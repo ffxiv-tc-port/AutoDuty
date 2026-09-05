@@ -1958,7 +1958,7 @@ public static class ConfigTab
                         ImGui.Text("* Items outside the armoury chest requires Gearsetter plugin".Loc());
                         ImGui.Text("Get @ ".Loc());
                         ImGui.SameLine(0, 0);
-                        ImGuiEx.TextCopy(ImGuiHelper.LinkColor, @"https://plugins.carvel.li");
+                        ImGuiEx.TextCopy(ImGuiHelper.LinkColor, @"https://raw.githubusercontent.com/ffxiv-tc-port/DalamudPluginsTC/main/repo.json");
                     }
 
                     ImGui.Unindent();
@@ -2323,6 +2323,7 @@ public static class ConfigTab
                     ImGui.SameLine();
                     ImGui.Text("Get @ ".Loc());
                     ImGui.SameLine(0, 0);
+                    // 這條仍是國際服的庫，因為台服艦隊沒有 DiscardHelper 的移植版可指。
                     ImGuiEx.TextCopy(ImGuiHelper.LinkColor, @"https://puni.sh/api/repository/vera");
                 }
 
@@ -2422,7 +2423,7 @@ public static class ConfigTab
                     ImGui.Text("* Auto GC Turnin Requires AutoRetainer plugin".Loc());
                     ImGui.Text("Get @ ".Loc());
                     ImGui.SameLine(0, 0);
-                    ImGuiEx.TextCopy(ImGuiHelper.LinkColor, @"https://love.puni.sh/ment.json");
+                    ImGuiEx.TextCopy(ImGuiHelper.LinkColor, @"https://raw.githubusercontent.com/ffxiv-tc-port/DalamudPluginsTC/main/repo.json");
                 }
 
                 if(ImGui.Checkbox("Triple Triad".Loc(), ref Configuration.TripleTriadEnabled))
@@ -2471,7 +2472,7 @@ public static class ConfigTab
                     ImGui.Text("* AutoRetainer requires a plugin".Loc());
                     ImGui.Text("Visit ".Loc());
                     ImGui.SameLine(0, 0);
-                    ImGuiEx.TextCopy(ImGuiHelper.LinkColor, @"https://puni.sh/plugin/AutoRetainer");
+                    ImGuiEx.TextCopy(ImGuiHelper.LinkColor, @"https://raw.githubusercontent.com/ffxiv-tc-port/DalamudPluginsTC/main/repo.json");
                 }
             }
         }
