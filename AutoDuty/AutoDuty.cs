@@ -1786,8 +1786,18 @@ public sealed class AutoDuty : IDalamudPlugin
         Stage = Stage.Reading_Path;
         States |= PluginState.Navigating;
         StopForCombat = true;
-        if (Configuration.AutoManageVnavAlignCamera && !VNavmesh_IPCSubscriber.Path_GetAlignCamera())
+        // 對齊鏡頭:設定說明承諾的是「開始時打開,結束時若本來沒開就關回去」
+        // (Config.cs 的 HelpMarker:"...and disable it when done if it was not set")。
+        // 這裡只負責前半段,並記下「進來時是關的」;還原在 SetGeneralSettings(true)。
+        // 🔴 一定要先過 IsEnabled:vnavmesh 沒裝時 SafeWrapper.IPCException 會把
+        //    Path_GetAlignCamera() 靜默吃成 default(false),少了這道閘門就會把
+        //    「根本沒有 vnavmesh」誤記成「本來是關的」,結束時對著空氣還原。
+        if (Configuration.AutoManageVnavAlignCamera && VNavmesh_IPCSubscriber.IsEnabled && !VNavmesh_IPCSubscriber.Path_GetAlignCamera())
+        {
+            _settingsActive |= SettingsActive.Vnav_Align_Camera_On;
+            Svc.Log.Information("vnavmesh 對齊鏡頭:進導航前是關的,導航期間打開,整趟結束時會關回去");
             VNavmesh_IPCSubscriber.Path_SetAlignCamera(true);
+        }
 
         if (this.Configuration is { AutoManageBossModAISettings: true, BM_UpdatePresetsAutomatically: true })
         {
@@ -1877,6 +1887,14 @@ public sealed class AutoDuty : IDalamudPlugin
 
     private void GetGeneralSettings()
     {
+        // ── 歷史:對齊鏡頭的「舊政策」擷取端 ──
+        // 下面這兩行(原文逐字保留)是上游早年的政策:「使用者本來開著 → 進場先關掉 →
+        // 結束再開回來」,對應旗標 SettingsActive.Vnav_Align_Camera_Off。
+        // 它在本 repo 可考的最早一顆 commit 就已經是註解掉的狀態,而且 erdelf(上游)、
+        // aliceric27、okaminico 等所有 fork 至今都維持註解掉——不是我們的合併弄丟的。
+        // 現行政策方向相反(StartNavigation 進導航時「打開」),所以這段不可以直接取消註解:
+        // 那會變成兩個相反的政策同時存在。現行政策的擷取端在 StartNavigation(),
+        // 還原端在 SetGeneralSettings() 裡的 Vnav_Align_Camera_On 分支。
         /*
         if (Configuration.AutoManageVnavAlignCamera && VNavmesh_IPCSubscriber.IsEnabled && VNavmesh_IPCSubscriber.Path_GetAlignCamera())
             _settingsActive |= SettingsActive.Vnav_Align_Camera_Off;
@@ -1899,6 +1917,33 @@ public sealed class AutoDuty : IDalamudPlugin
         {
             Svc.Log.Debug($"Setting VnavAlignCamera: {on}");
             VNavmesh_IPCSubscriber.Path_SetAlignCamera(on);
+        }
+
+        // 上面那條是舊政策的還原端:設它的旗標那段在 GetGeneralSettings() 裡是註解掉的,
+        // 所以條件永遠不成立、實際是死碼。原樣保留(與上游一致),不要當成清理刪掉。
+        //
+        // 下面這條才是現行政策的還原端:StartNavigation() 把「本來關著」的對齊鏡頭打開了,
+        // 這裡在整趟真的結束時關回去——設定說明承諾的那一半,在此之前一直沒有實作,
+        // 於是使用者的對齊鏡頭被單向打開後就再也不會關回去。
+        //
+        // 🔴 為什麼要額外擋 Looping/Navigating:SetGeneralSettings(true) 有四個呼叫點,
+        //    只有 StopAndResetALL() 代表「整趟結束」(它是 Stage.Stopped 的 setter 唯一入口,
+        //    所有停止路徑與 Dispose 都會過)。另外三個是單機流程的收尾
+        //    (ActiveHelperBase.HelperStopUpdate / GotoHelper.Stop / MapHelper.StopMoveToMapMarker),
+        //    它們雖然都有 !Looping 閘門,但 IPC 的 Start() / 指令 "start" 會走進
+        //    「Navigating 有、Looping 沒有」的狀態,那時助手收尾就會提早打進來,
+        //    把還在導航中的鏡頭設定關掉。補上 Navigating 這一軸才是完整的閘門。
+        //    StopAndResetALL() 在呼叫本函式之前已經把 States 清成 None,所以正常收尾照樣會過。
+        // 🔴 旗標只在「真的還原到了」才清:被閘門擋下時留著,等真正結束時再還原,不會漏掉。
+        if (on
+            && Configuration.AutoManageVnavAlignCamera
+            && _settingsActive.HasFlag(SettingsActive.Vnav_Align_Camera_On)
+            && !States.HasAnyFlag(PluginState.Looping, PluginState.Navigating))
+        {
+            _settingsActive &= ~SettingsActive.Vnav_Align_Camera_On;
+            Svc.Log.Information("還原 vnavmesh 對齊鏡頭:關回進導航前的狀態(關閉)");
+            if (VNavmesh_IPCSubscriber.IsEnabled)
+                VNavmesh_IPCSubscriber.Path_SetAlignCamera(false);
         }
         if (PandorasBox_IPCSubscriber.IsEnabled && _settingsActive.HasFlag(SettingsActive.Pandora_Interact_Objects))
         {
