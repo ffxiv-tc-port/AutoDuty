@@ -2198,6 +2198,12 @@ public sealed class AutoDuty : IDalamudPlugin
 
     public void Framework_Update(IFramework framework)
     {
+        // 從別的執行緒打進來的 IPC 指令(Run／Start／Stop),照先進先出在這裡排乾。
+        // 🔴 放在最前面:同一格排進來的指令要在這一格的 Stage 判斷之前生效,
+        //    否則會白白多等一格,而 Stop 多等一格代表多跑一格的自動化。
+        //    細節見 IPC/IPCProvider.cs 的 RunOnFramework。
+        IPCProvider.DrainPendingWork();
+
         // 🔴 YesAlready 壓制租約的續約心跳（內部自行節流，沒在壓制時是一個布林判斷就返回）。
         // 一輪多本可以跑好幾個小時，而租約上限只有 5 分鐘 —— 不續約的話 YesAlready
         // 會在副本跑到一半自己醒過來搶按窗。
