@@ -35,6 +35,7 @@ using Dalamud.Game.ClientState.Conditions;
 using AutoDuty.Properties;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
+using FFXIVClientStructs.FFXIV.Component.GUI;
 using AutoDuty.Updater;
 
 namespace AutoDuty;
@@ -1863,7 +1864,20 @@ public sealed class AutoDuty : IDalamudPlugin
         };
     }
 
-    private void CheckFinishing()
+    // CheckFinishing 底下那個「等 Action／路徑真的跑完」的守衛自己沒有逾時：如果戰後的
+    // Interactable 步驟卡在無止境重試（例如撿寶那條 InteractableCheck 迴圈永遠到不了結束條件），
+    // Action 就永遠不會變回空字串，CheckFinishing-WaitAction 會每 500ms 把自己重新排一次、
+    // 永遠退不出副本。這個欄位記錄「目前這一段等待」從什麼時候開始，超過上限就放棄等待直接退本，
+    // 不要無限期掛著。
+    private DateTime? _checkFinishingWaitSince;
+
+    // 🔴 逃生口的長度。下游（okaminico）取 60 秒。
+    //    ⚠️ 它與 ActionsManager.Interactable 的 90 秒等待有張力：極火龍那種「個人化剝取物件」
+    //    實測要等 40 幾秒才會變成 IsTargetable，正常情況塞得進 60 秒，但若伺服器更慢，
+    //    這個逃生口會先到期把人拉出副本。兩個數字都沒有台服實機驗證，要調就一起調。
+    private const int CheckFinishingWaitTimeoutSeconds = 60;
+
+    private unsafe void CheckFinishing()
     {
         //we finished lets exit the duty or stop
         var plannerRun = ActiveRunContext?.Source == RunSource.Planner;
@@ -1874,6 +1888,42 @@ public sealed class AutoDuty : IDalamudPlugin
                 (!Configuration.OnlyExitWhenDutyDone || this.DutyState == DutyState.DutyComplete) &&
                 !this.States.HasFlag(PluginState.Navigating))
             {
+                // 骰寶箱（Need/Greed/Pass）視窗還開著就先別退本 —— 就算是靠別的外掛（例如
+                // LazyLoot）自動幫忙骰，也要親自確認那個視窗真的關閉了才算數，不能只憑
+                // Action／路徑這種間接狀態去猜「應該骰完了」。這個等待刻意不受下面的逾時
+                // 保底影響：骰寶箱是玩家在意、有真實意義的等待，不是卡死的 bug，強制跳過
+                // 反而會在還沒骰完的時候就把大家拉出副本，弄丟稀有素材／坐騎的擲骰機會。
+                if (GenericHelpers.TryGetAddonByName("NeedGreed", out AtkUnitBase* needGreedAddon) && GenericHelpers.IsAddonReady(needGreedAddon))
+                {
+                    SchedulerHelper.ScheduleAction("CheckFinishing-WaitNeedGreed", this.CheckFinishing, 500);
+                    return;
+                }
+
+                // 遊戲可能在戰後的路徑步驟還沒跑完時就把 DutyCompleted 立起來 —— 例如極火龍
+                // 打完後的剝取素材是「Boss」步驟之後的幾個 Interactable 動作，那時候並不處於
+                // Navigating，所以上面那個 PluginState.Navigating 判斷蓋不到，以前就會在互動到
+                // 一半的時候被拉出副本。
+                //
+                // 只看 Action 不夠：Update() 裡在 DoneNavigating 判斷之後有一行
+                // `Action = Stage.ToCustomString()`，每一格都會把它重設成 Stage 自己的名字，
+                // 所以在「戰鬥結束」與「下一個路徑動作真的開始」之間，它有可能有一格讀到空字串，
+                // 而 DutyCompleted 剛好落在那個縫裡就會漏過去。所以另外要求路徑本身也真的跑到
+                // 底（Indexer >= Actions.Count，跟上面 Navigating 完成判斷用的是同一個條件），
+                // 這樣即使落在那一格縫裡，還沒做完的 Interactable 步驟一樣擋得住退本。
+                if (!string.IsNullOrEmpty(Action) || (Actions.Count > 0 && Indexer < Actions.Count))
+                {
+                    _checkFinishingWaitSince ??= DateTime.Now;
+                    if (DateTime.Now - _checkFinishingWaitSince.Value < TimeSpan.FromSeconds(CheckFinishingWaitTimeoutSeconds))
+                    {
+                        SchedulerHelper.ScheduleAction("CheckFinishing-WaitAction", this.CheckFinishing, 500);
+                        return;
+                    }
+
+                    Svc.Log.Information($"[CheckFinishing] 等待 Action／路徑跑完已超過 {CheckFinishingWaitTimeoutSeconds} 秒" +
+                                        $"（Action='{Action}', Indexer={Indexer}/{Actions.Count}），放棄等待直接退本，避免永遠卡在副本裡。");
+                }
+
+                _checkFinishingWaitSince = null;
                 if (ExitDutyHelper.State != ActionState.Running)
                     ExitDuty();
                 if (Configuration.AutoManageRotationPluginState && !Configuration.UsingAlternativeRotationPlugin)
