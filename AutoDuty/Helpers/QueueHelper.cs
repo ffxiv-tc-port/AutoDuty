@@ -242,7 +242,15 @@ namespace AutoDuty.Helpers
             if (textNode == null || textNode->AtkResNode.Type != NodeType.Text)
                 return "?";
 
-            return textNode->NodeText.ToString().Replace("...", "");
+            // 🔴 ToString() 不剝 SeString payload：副本名裡的 payload 會解出 U+FFFD 或雜字元，
+            //    讓這行診斷訊息看起來像記憶體壞掉。改走 GetText()（MemoryHelper.ReadSeString
+            //    → 只保留 TextPayload）。這站不餵守衛，所以原本只是髒 log、不會讓功能停擺。
+            // ⚠️ StringPtr 判空不能省（AsSpan() 會建出長度非零、指向位址 0 的 Span）；
+            //    取不到就回 "?"，與本方法既有的「不知道」慣例一致。
+            if (!textNode->NodeText.StringPtr.HasValue)
+                return "?";
+
+            return textNode->NodeText.GetText().Replace("...", "");
         }
 
         private void QueueRegular()
