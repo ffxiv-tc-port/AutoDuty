@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
+using Lumina.Text.ReadOnly;
 
 namespace AutoDuty.Helpers
 {
@@ -30,6 +31,39 @@ namespace AutoDuty.Helpers
     /// </remarks>
     internal static class SeStringTextExtractor
     {
+        /// <summary>
+        /// 把原生記憶體讀來的 <see cref="SeString"/> 攤成「<b>與 Lumina 資料表逐字可比</b>」的純文字。
+        /// </summary>
+        /// <remarks>
+        /// 🔑 <b>選它還是選 <see cref="ExtractDisplayText"/>,判準只有一條:另一端是什麼。</b>
+        /// <list type="bullet">
+        /// <item>另一端是 <b>Lumina 資料表</b>(<c>row.Name.ToString()</c> 或 <c>ExtractText()</c>)
+        /// ⇒ 用這支。</item>
+        /// <item>另一端是 <b>Dalamud</b> 的 <c>TextValue</c>,或同樣走訪 payload 的自家碼
+        /// ⇒ 用 <see cref="ExtractDisplayText"/>。</item>
+        /// </list>
+        /// <para>
+        /// 🔴 <b>兩邊差在連字符。</b>遊戲把地名裡的破折號用 <c>02 1F 01 03</c>
+        /// (<see cref="SeHyphenPayload"/>)送,而三套實作對它的處置互不相同:
+        /// Lumina 的 <c>ReadOnlySeStringSpan.ExtractText()</c> 渲染成 <b>U+002D HYPHEN-MINUS</b>、
+        /// Dalamud 的 <see cref="SeHyphenPayload"/><c>.Text</c> 是 <b>U+2013 EN DASH</b>、
+        /// ECommons 的 <c>GetText()</c> 則<b>整個丟掉</b>。
+        /// ⇒ 拿錯基準去比「烏爾達哈 - 納爾階」這種名字會<b>恆假</b>,
+        /// 而且失敗形式是「找不到、回 0」不是報錯。
+        /// </para>
+        /// <para>
+        /// 📌 <b>作法</b>:把 Dalamud 解析好的 payload 重新 <c>Encode()</c> 回位元組,
+        /// 再交給 Lumina 自己的解析器 —— 這樣不必複製 Lumina 對 NewLine／NonBreakingSpace／
+        /// Hyphen／SoftHyphen 的規則,將來它改了也自動跟上。
+        /// (離線實測五種輸入:純文字／連字符／斜體開關／NonBreakingSpace／SoftHyphen,
+        /// <c>Encode()</c> 的位元組都與原始位元組逐字相同,輸出也與 Lumina 端逐字相同。)
+        /// </para>
+        /// </remarks>
+        internal static string ExtractLuminaText(SeString? seString)
+            => seString == null
+                   ? string.Empty
+                   : new ReadOnlySeStringSpan(seString.Encode()).ExtractText();
+
         /// <summary>把 <paramref name="seString"/> 攤成純文字;<see langword="null"/> 回空字串。</summary>
         internal static string ExtractDisplayText(SeString? seString)
         {
