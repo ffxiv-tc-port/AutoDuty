@@ -9,11 +9,13 @@ using System.Numerics;
 using Dalamud.Game.Command;
 using Dalamud.Plugin;
 using Dalamud.Interface.Windowing;
+using Dalamud.Interface.ImGuiNotification;
 using Dalamud.Plugin.Services;
 using System.Collections.Generic;
 using System.IO;
 using ECommons;
 using ECommons.DalamudServices;
+using ECommons.LanguageHelpers;
 using AutoDuty.Windows;
 using AutoDuty.IPC;
 using AutoDuty.External;
@@ -24,7 +26,7 @@ using System.Linq;
 using ECommons.GameFunctions;
 using ECommons.Automation;
 using FFXIVClientStructs.FFXIV.Client.Game;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using ECommons.ExcelServices;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using Dalamud.IoC;
@@ -33,7 +35,7 @@ using Dalamud.Game.ClientState.Conditions;
 using AutoDuty.Properties;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
-using Serilog.Events;
+using FFXIVClientStructs.FFXIV.Component.GUI;
 using AutoDuty.Updater;
 
 namespace AutoDuty;
@@ -108,10 +110,16 @@ public sealed class AutoDuty : IDalamudPlugin
             switch (value)
             {
                 case Stage.Stopped:
+                    // 必須在 StopAndResetALL() 之前:它結尾會把 Action 清空,
+                    // 而通知要拿 Action 當「停在哪一步」的佐證。
+                    NotifyIfAutomationStoppedItself();
                     StopAndResetALL();
                     break;
                 case Stage.Paused:
                     PreviousStage = Stage;
+                    StuckEscalationHelper.Reset();
+                    // Path.Stop 只清已在走的路徑點;還在算的那一筆算完會照樣開走,所以先取消尋路。
+                    VNavmesh_IPCSubscriber.Nav_PathfindCancelAll();
                     if (VNavmesh_IPCSubscriber.Path_NumWaypoints() > 0)
                         VNavmesh_IPCSubscriber.Path_Stop();
                     FollowHelper.SetFollow(null);
@@ -122,9 +130,13 @@ public sealed class AutoDuty : IDalamudPlugin
                     ActionInvoke();
                     break;
                 case Stage.Condition:
+                {
                     Action = $"ConditionChange";
-                    SchedulerHelper.ScheduleAction("ConditionChangeStageReadingPath", () => _stage = Stage.Reading_Path, () => !Svc.Condition[ConditionFlag.BetweenAreas] && !Svc.Condition[ConditionFlag.BetweenAreas51] && !Svc.Condition[ConditionFlag.Jumping61]);
+                    // 傳送途中停過（即使又重新開始）的那一筆，傳送結束時不可再把 Stage 改回 Reading_Path。
+                    int generation = StopGeneration;
+                    SchedulerHelper.ScheduleAction("ConditionChangeStageReadingPath", () => { if (generation == StopGeneration) _stage = Stage.Reading_Path; }, () => !Svc.Condition[ConditionFlag.BetweenAreas] && !Svc.Condition[ConditionFlag.BetweenAreas51] && !Svc.Condition[ConditionFlag.Jumping61]);
                     break;
+                }
                 case Stage.Waiting_For_Combat:
                     BossMod_IPCSubscriber.SetRange(Plugin.Configuration.MaxDistanceToTargetFloat);
                     break;
@@ -194,26 +206,96 @@ public sealed class AutoDuty : IDalamudPlugin
     internal PluginState States = PluginState.None;
     internal int Indexer = -1;
     internal bool MainListClicked = false;
-    internal IBattleChara? BossObject;
+    // ⚠️ 不要把 IGameObject 存進欄位跨幀用:包裝是共用的、位址會被就地改寫,IsValid() 只檢查有沒有登入。
+    // BossObject 會跨很多幀存活(ActionsManager.BossMoveCheck 是 TaskManager 的檢查式,會反覆重跑),
+    // 王在分階段消失/重生、團滅或離開副本時就是攔不到的 AccessViolation。
+    // 所以只存 GameObjectId、每次讀取時重查物件表:查不到就走 null 分支而不是崩潰。
+    private ulong? bossObjectId = null;
+
+    internal IBattleChara? BossObject
+    {
+        get => this.bossObjectId is null ? null : Svc.Objects.SearchById(this.bossObjectId.Value) as IBattleChara;
+        set => this.bossObjectId = value?.GameObjectId;
+    }
     internal static IGameObject? ClosestObject => Svc.Objects.Where(o => o.IsTargetable && o.ObjectKind.EqualsAny(Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventObj, Dalamud.Game.ClientState.Objects.Enums.ObjectKind.BattleNpc)).OrderBy(ObjectHelper.GetDistanceToPlayer).TryGetFirst(out var gameObject) ? gameObject : null;
     internal OverrideCamera OverrideCamera;
     internal MainWindow MainWindow { get; init; }
     internal Overlay Overlay { get; init; }
     internal bool InDungeon => ContentHelper.DictionaryContent.ContainsKey(Svc.ClientState.TerritoryType);
     internal bool SkipTreasureCoffer = false;
+
+    /// <summary>
+    /// 多變迷宮(Variant Dungeon)目前走到的分歧編號,給
+    /// <see cref="Data.PathActionConditionVariantPath"/> 判斷步驟該不該執行。
+    /// 目前沒有任何程式碼會改變它:上游由 VariantVote 動作在投票時寫入,而我方刻意不移植 ——
+    /// 它的唯一消費者 (1315) The Merchant's Tale 台服沒有。所以它恆為 0,只有 pathIndices 含 0 的條件會成立。
+    /// 等台服實裝該副本(判準:CFC 表出現指向 territory 1315 的列)再移植。
+    /// </summary>
+    internal byte VariantPath = 0;
+
     internal string Action = "";
     internal string PathFile = "";
+
+    /// <summary>
+    /// 目前這次 Wait 等待的結束時刻(<see cref="Environment.TickCount64"/> 基準)。0 = 沒有在等。
+    /// 由 <c>ActionsManager.Wait</c> 寫入 —— 為什麼不直接用 EzThrottler 反推,見那裡的說明。
+    /// </summary>
+    internal long WaitStepEndTick;
+
+    /// <summary>目前這次 Wait 等待原本設定的毫秒數。0 = 沒有在等。</summary>
+    internal int WaitStepDurationMs;
+
+    internal void ClearWaitStepTiming()
+    {
+        WaitStepEndTick    = 0;
+        WaitStepDurationMs = 0;
+    }
+
     internal TaskManager TaskManager;
     internal Job JobLastKnown;
     internal DutyState DutyState = DutyState.None;
-    internal Chat Chat;
     internal PathAction PathAction = new();
     internal List<Data.Classes.LogMessage> DalamudLogEntries = [];
     private LevelingMode levelingModeEnum = LevelingMode.None;
     private Stage _stage = Stage.Stopped;
+
+    /// <summary>
+    /// 下一次 Stage 被設成 Stage.Stopped 時的「自己停下來」原因。
+    /// null 代表那次停止是使用者主動要求的(按鈕 / /autoduty stop / 外部 IPC),不通知。
+    /// 這是白名單:只有 MarkSelfStop 會填它。將來新增停止點若忘了呼叫,
+    /// 預設結果是「不通知」而不是「誤報」。
+    /// </summary>
+    private string? _pendingStopReason;
+
+    /// <summary>
+    /// 那次停止的完成音效是不是已經由既有的終止流程(LoopsCompleteActions)排過了。
+    /// 用來避免正常跑完的路徑響兩次。
+    /// </summary>
+    private bool _pendingStopSoundHandled;
+
+    /// <summary>那次自己停下是「卡住、要人來處理」：塔塔露念「需要幫忙」而不是「跑本停止」。</summary>
+    private bool _pendingStopNeedsHelp;
+
+    /// <summary>這一場副本玩家已死幾次。只在框架執行緒讀寫；歸零點是 Run() 與 StartNavigation()。</summary>
+    private int _deathsThisDuty;
+
+    /// <summary>每停下一次（StopAndResetALL 第一行）加一；延遲回呼捕捉它，觸發時對不上＝停下之前排的，不可再動作。只在框架執行緒讀寫。</summary>
+    internal int StopGeneration;
     private const string CommandName = "/autoduty";
     private readonly DirectoryInfo _configDirectory;
     private readonly ActionsManager _actions;
+
+    /// <summary>
+    /// 解限模式「交戰中繼續走到定點」目前有沒有把 BossMod 的自動移動關掉。
+    /// 只在進出戰鬥的那一次送 IPC,不要每幀送。
+    /// </summary>
+    private bool _unsyncedKeepMovingArmed;
+
+    /// <summary>戰鬥等待中「這次脫戰」開始的時刻（TickCount64）；null＝還在戰鬥中。</summary>
+    private long? _combatCalmSince;
+
+    /// <summary>戰鬥旗標連打時會短暫掉下，要連續脫戰這麼久才算打完。</summary>
+    private const long CombatSettleMs = 2000;
     private readonly SquadronManager _squadronManager;
     private readonly VariantManager _variantManager;
     private readonly OverrideAFK _overrideAFK;
@@ -234,6 +316,24 @@ public sealed class AutoDuty : IDalamudPlugin
         {
             Plugin = this;
             ECommonsMain.Init(PluginInterface, Plugin, Module.DalamudReflector, Module.ObjectFunctions);
+            // 讓「呼叫了對方沒有的 IPC 方法」不再完全靜默。
+            // 訂閱越早越好：事件只在 IPC **呼叫**當下才被查閱，在這裡訂閱就涵蓋往後所有呼叫。
+            EzIpcFailureLog.Enable();
+            IPCSubscriber_Common.WatchInstalledPlugins();
+
+            // ECommons.IPC 的 IPCBase 預設 wrapper 是 SafeWrapper.None(例外直接往外擲)，
+            // 而且它是 lazy 單例、在第一次存取當下就烘死。AutoDuty 的門面類一律自己 new 並
+            // 把 wrapper 當建構式參數傳進去,所以不依賴這個值;這裡設成我方最常用的
+            // IPCException,是為了「萬一有人改用 ECommonsIPC.X 單例」時不會退回會擲例外的 None。
+            ECommons.IPC.Subscribers.IPCBase.DefaultWrapper = ECommons.EzIpcManager.SafeWrapper.IPCException;
+
+            // WrathCombo.API 若沒初始化,第一次呼叫會擲 UninitializedException;它也能自己從
+            // ECommons 反射拿 PluginInterface,但那條路失敗時是靜默回 null,所以明確傳進去。
+            // 🔴 不加任何 ErrorType 抑制:讓它照常擲例外,由 Wrath_IPCSubscriber.WrathSafe
+            // 接住並轉交 EzIpcFailureLog —— 抑制掉的話 Wrath IPC 失敗會完全沒有 log。
+            WrathCombo.API.WrathIPCWrapper.Init(PluginInterface);
+
+            ECommons.LanguageHelpers.Localization.Init("ChineseTraditional");
             PictoService.Initialize(PluginInterface);
 
             this.isDev = PluginInterface.IsDev;
@@ -267,7 +367,11 @@ public sealed class AutoDuty : IDalamudPlugin
             TaskManager = new()
             {
                 AbortOnTimeout = false,
-                TimeoutSilently = true
+
+                // 🔴 刻意 false:true 時 ECommons 的 LegacyTaskManager 把逾時訊息從 Warning 導去 Verbose(實機 log 收不到),
+                //    配上 AbortOnTimeout=false(逾時不中止、直接放行往下跑),症狀就是王戰整段被跳過、寶箱沒撿,
+                //    而使用者看不到任何訊息。TaskTimeoutWatcher 另外在 UI 上累計次數。
+                TimeoutSilently = false
             };
 
             TrustHelper.PopulateTrustMembers();
@@ -278,12 +382,11 @@ public sealed class AutoDuty : IDalamudPlugin
             FileHelper.Init();
             Patcher.Patch(startup: true);
 
-            Chat = new();
             _overrideAFK = new();
             _ipcProvider = new();
             _squadronManager = new(TaskManager);
             _variantManager = new(TaskManager);
-            _actions = new(Plugin, Chat, TaskManager);
+            _actions = new(Plugin, TaskManager);
             BuildTab.ActionsList = _actions.ActionsList;
             OverrideCamera = new();
             Overlay = new();
@@ -297,29 +400,29 @@ public sealed class AutoDuty : IDalamudPlugin
             Svc.Commands.AddHandler("/ad", new CommandInfo(OnCommand) { });
             Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
             {
-                HelpMessage = "\n/autoduty or /ad -> opens main window\n" +
-                "/autoduty or /ad config or cfg -> opens config window / modifies config\n" +
-                "/autoduty or /ad start -> starts autoduty when in a Duty\n" +
-                "/autoduty or /ad stop -> stops everything\n" +
-                "/autoduty or /ad pause -> pause route\n" +
-                "/autoduty or /ad resume -> resume route\n" +
-                "/autoduty or /ad turnin -> GC Turnin\n" +
-                "/autoduty or /ad desynth -> Desynth's your inventory\n" +
-                "/autoduty or /ad repair -> Repairs your gear\n" +
-                "/autoduty or /ad equiprec-> Equips recommended gear\n" +
-                "/autoduty or /ad extract -> Extract's materia from equipment\n" +
-                "/autoduty or /ad turnin -> GC Turnin\n" +
-                "/autoduty or /ad goto -> goes to\n" +
-                "/autoduty or /ad dataid -> Logs and copies your target's dataid to clipboard\n" +
-                "/autoduty or /ad exitduty -> exits duty\n" +
-                "/autoduty or /ad queue -> queues duty\n" +
-                "/autoduty or /ad moveto -> move's to territorytype and location sent\n" +
-                "/autoduty or /ad overlay -> opens overlay\n" +
-                "/autoduty or /ad overlay lock-> toggles locking the overlay\n" +
-                "/autoduty or /ad overlay nobg-> toggles the overlay's background\n" +
-                "/autoduty or /ad movetoflag -> moves to the flag map marker\n" +
-                "/autoduty or /ad run -> starts auto duty in territory type specified\n" +
-                "/autoduty or /ad tt -> logs and copies to clipboard the Territory Type number for duty specified\n"
+                HelpMessage = "\n/autoduty or /ad -> opens main window\n".Loc() +
+                "/autoduty or /ad config or cfg -> opens config window / modifies config\n".Loc() +
+                "/autoduty or /ad start -> starts autoduty when in a Duty\n".Loc() +
+                "/autoduty or /ad stop -> stops everything\n".Loc() +
+                "/autoduty or /ad pause -> pause route\n".Loc() +
+                "/autoduty or /ad resume -> resume route\n".Loc() +
+                "/autoduty or /ad turnin -> GC Turnin\n".Loc() +
+                "/autoduty or /ad desynth -> Desynth's your inventory\n".Loc() +
+                "/autoduty or /ad repair -> Repairs your gear\n".Loc() +
+                "/autoduty or /ad equiprec-> Equips recommended gear\n".Loc() +
+                "/autoduty or /ad extract -> Extract's materia from equipment\n".Loc() +
+                "/autoduty or /ad turnin -> GC Turnin\n".Loc() +
+                "/autoduty or /ad goto -> goes to\n".Loc() +
+                "/autoduty or /ad dataid -> Logs and copies your target's dataid to clipboard\n".Loc() +
+                "/autoduty or /ad exitduty -> exits duty\n".Loc() +
+                "/autoduty or /ad queue -> queues duty\n".Loc() +
+                "/autoduty or /ad moveto -> move's to territorytype and location sent\n".Loc() +
+                "/autoduty or /ad overlay -> opens overlay\n".Loc() +
+                "/autoduty or /ad overlay lock-> toggles locking the overlay\n".Loc() +
+                "/autoduty or /ad overlay nobg-> toggles the overlay's background\n".Loc() +
+                "/autoduty or /ad movetoflag -> moves to the flag map marker\n".Loc() +
+                "/autoduty or /ad run -> starts auto duty in territory type specified\n".Loc() +
+                "/autoduty or /ad tt -> logs and copies to clipboard the Territory Type number for duty specified\n".Loc()
             });
 
             PluginInterface.UiBuilder.Draw += DrawUI;
@@ -335,7 +438,8 @@ public sealed class AutoDuty : IDalamudPlugin
             Svc.DutyState.DutyWiped += DutyState_DutyWiped;
             Svc.DutyState.DutyRecommenced += DutyState_DutyRecommenced;
             Svc.DutyState.DutyCompleted += DutyState_DutyCompleted;
-            Svc.Log.MinimumLogLevel = LogEventLevel.Debug;
+            // 刻意不在這裡設外掛自訂記錄等級(設成 Debug 沒有實際作用);
+            // 要看 Debug 內容要到 /xllog 調整全域等級。
             PluginInterface.UiBuilder.Draw += UiBuilderOnDraw;
         }
         catch (Exception e)
@@ -362,13 +466,18 @@ public sealed class AutoDuty : IDalamudPlugin
     {
         if (PlayerHelper.IsValid)
         {
+            // 沒有東西要畫就不開 Pictomancy 的繪製框：開了即使什麼都沒加，
+            // 它也會跑完整輪離屏繪製、再疊一張全透明的全螢幕貼圖。
+            if (!BuildTab.DrawHelperWanted && !this.PathDrawWanted())
+                return;
+
             using PctDrawList? drawList = PictoService.Draw();
 
             if (drawList != null)
             {
                 BuildTab.DrawHelper(drawList);
 
-                if (Plugin.Configuration.PathDrawEnabled && CurrentTerritoryContent?.TerritoryType == Svc.ClientState.TerritoryType && this.Actions.Any() && (this.Indexer < 0 || !this.Actions[this.Indexer].Name.Equals("Boss") || Stage != Stage.Action))
+                if (this.PathDrawWanted())
                 {
                     Vector3 lastPos         = Player.Position;
                     float   stepCountFactor = (1f / this.Configuration.PathDrawStepCount);
@@ -400,12 +509,19 @@ public sealed class AutoDuty : IDalamudPlugin
         }
     }
 
+    /// <summary>這一幀要不要畫「接下來幾步」的路線提示。只讀狀態、沒有副作用，一幀內重複呼叫結果相同。</summary>
+    private bool PathDrawWanted() =>
+        Plugin.Configuration.PathDrawEnabled && CurrentTerritoryContent?.TerritoryType == Svc.ClientState.TerritoryType && this.Actions.Any() && (this.Indexer < 0 || this.Indexer >= this.Actions.Count || !this.Actions[this.Indexer].Name.Equals("Boss") || Stage != Stage.Action);
+
     private void DutyState_DutyStarted(object? sender, ushort e) => DutyState = DutyState.DutyStarted;
     private void DutyState_DutyWiped(object? sender, ushort e) => DutyState = DutyState.DutyWiped;
     private void DutyState_DutyRecommenced(object? sender, ushort e) => DutyState = DutyState.DutyRecommenced;
     private void DutyState_DutyCompleted(object? sender, ushort e)
     {
         DutyState = DutyState.DutyComplete;
+        // 已停止＝使用者自己打完的副本：不收尾、不碰別的插件。只記下副本狀態，之後若在副本裡按開始仍讀得到。
+        if (Stage == Stage.Stopped)
+            return;
         PlannerOnDutyCompleted();
         this.CheckFinishing();
     }
@@ -510,9 +626,9 @@ public sealed class AutoDuty : IDalamudPlugin
             var startingPlanner = ctx.Source == RunSource.Planner;
             if (runningPlanner != startingPlanner)
             {
-                MainWindow.ShowPopup("Mode", runningPlanner
-                    ? "Planner is running. Stop it first."
-                    : "AutoDuty is running. Stop it first.");
+                MainWindow.ShowPopup("Mode".Loc(), runningPlanner
+                    ? "Planner is running. Stop it first.".Loc()
+                    : "AutoDuty is running. Stop it first.".Loc());
                 return;
             }
         }
@@ -667,6 +783,7 @@ public sealed class AutoDuty : IDalamudPlugin
 
             if (!PlannerTryApplyCurrentSelection(resetLoopCounter: false))
             {
+                MarkSelfStop("Planner could not apply the next duty.");
                 Stage = Stage.Stopped;
                 return;
             }
@@ -726,16 +843,20 @@ public sealed class AutoDuty : IDalamudPlugin
             Actions.Clear();
             if (!ContentPathsManager.DictionaryPaths.TryGetValue(Svc.ClientState.TerritoryType, out ContentPathsManager.ContentPathContainer? container))
             {
-                PathFile = $"{PathsDirectory.FullName}{Path.DirectorySeparatorChar}({Svc.ClientState.TerritoryType}) {CurrentTerritoryContent?.EnglishName?.Replace(":", "")}.json";
+                PathFile = ContentPathsManager.BuildDefaultPathFilePath(Svc.ClientState.TerritoryType, CurrentTerritoryContent?.EnglishName);
                 return;
             }
 
-            ContentPathsManager.DutyPath? path = CurrentPath < 0 ?
-                                                     container.SelectPath(out CurrentPath) :
-                                                     container.Paths[CurrentPath > -1 ? CurrentPath : 0];
+            // container.Paths 可能是空的,CurrentPath 也可能指到已經被 RemoveInvalidPaths 拿掉的索引。
+            // 索引無效時就重新選一次:SelectPath 會一併把有效的索引寫回 CurrentPath,容器是空的時候它回 null
+            // 並把 CurrentPath 設成 -1,也就是這個檔案既有的「沒有路徑」值(見 RunContext.PathIndex 與 MainTab)。
+            ContentPathsManager.DutyPath? path = CurrentPath >= 0 && CurrentPath < container.Paths.Count ?
+                                                     container.Paths[CurrentPath] :
+                                                     container.SelectPath(out CurrentPath);
 
             PathFile = path?.FilePath ?? "";
-            Actions = [.. path?.Actions];
+            // path 可能是 null(SelectPath 在容器沒有任何可用路徑時回 null):空路徑要退回空清單,不對 null 做展開。
+            Actions = path == null ? [] : [.. path.Actions];
             //Svc.Log.Info($"Loading Path: {CurrentPath} {ListBoxPOSText.Count}");
         }
         catch (Exception e)
@@ -745,13 +866,23 @@ public sealed class AutoDuty : IDalamudPlugin
         }
     }
 
-    private unsafe bool StopLoop => Configuration.EnableTerminationActions && 
+    private unsafe bool StopLoop
+    {
+        get
+        {
+            // AgentHUD.Instance() 在 UIModule/代理人尚未建立時會回 null。
+            // 取不到就讓「無休息經驗」這條停止條件不成立 —— 不能拿未知資料去觸發「停止循環」。
+            AgentHUD* agentHud = AgentHUD.Instance();
+
+            return Configuration.EnableTerminationActions &&
                                         (CurrentTerritoryContent == null ||
                                         (Configuration.StopLevel && Player.Level >= Configuration.StopLevelInt) ||
-                                        (Configuration.StopNoRestedXP && AgentHUD.Instance()->ExpRestedExperience == 0) ||
-                                        (Configuration.StopItemQty && (Configuration.StopItemAll 
+                                        (Configuration.StopNoRestedXP && agentHud != null && agentHud->ExpRestedExperience == 0) ||
+                                        (Configuration.StopItemQty && (Configuration.StopItemAll
                                             ? Configuration.StopItemQtyItemDictionary.All(x => InventoryManager.Instance()->GetInventoryItemCount(x.Key) >= x.Value.Value)
                                             : Configuration.StopItemQtyItemDictionary.Any(x => InventoryManager.Instance()->GetInventoryItemCount(x.Key) >= x.Value.Value))));
+        }
+    }
 
     private void TrustLeveling()
     {
@@ -768,6 +899,8 @@ public sealed class AutoDuty : IDalamudPlugin
     private void ClientState_TerritoryChanged(ushort t)
     {
         if (Stage == Stage.Stopped) return;
+
+        BossMod_IPCSubscriber.RestoreBmrAIEnabled(t);
 
         Svc.Log.Debug($"ClientState_TerritoryChanged: t={t}");
 
@@ -807,7 +940,7 @@ public sealed class AutoDuty : IDalamudPlugin
                 {
                     TaskManager.Enqueue(() => { Action = $"Waiting {Configuration.WaitTimeBeforeAfterLoopActions}s"; }, "Loop-WaitTimeBeforeAfterLoopActionsActionSet");
                     TaskManager.Enqueue(() => EzThrottler.Throttle("Loop-WaitTimeBeforeAfterLoopActions", Configuration.WaitTimeBeforeAfterLoopActions * 1000), "Loop-WaitTimeBeforeAfterLoopActionsThrottle");
-                    TaskManager.Enqueue(() => EzThrottler.Check("Loop-WaitTimeBeforeAfterLoopActions"), Configuration.WaitTimeBeforeAfterLoopActions * 1000, "Loop-WaitTimeBeforeAfterLoopActionsCheck");
+                    TaskManager.Enqueue(() => EzThrottler.Check("Loop-WaitTimeBeforeAfterLoopActions"), Configuration.WaitTimeBeforeAfterLoopActions * 1000 + ActionsManager.ThrottleTimeoutMarginMs, "Loop-WaitTimeBeforeAfterLoopActionsCheck");
                     TaskManager.Enqueue(() => { Action = $"After Loop Actions"; }, "Loop-AfterLoopActionsSetAction");
                 }
 
@@ -850,6 +983,9 @@ public sealed class AutoDuty : IDalamudPlugin
         {
             if (value && (Stage != Stage.Dead || DeathHelper.DeathState != PlayerLifeState.Dead))
             {
+                // 要在設 DeathState 之前：那會排程 OnDeath（變體/解限時會按確認框），停下之後不該再按。
+                if (CountDeathAndStopIfLimitReached())
+                    return;
                 Svc.Log.Debug($"We Died, Setting Stage to Dead");
                 DeathHelper.DeathState = PlayerLifeState.Dead;
                 Stage = Stage.Dead;
@@ -893,6 +1029,11 @@ public sealed class AutoDuty : IDalamudPlugin
 
         if (CurrentTerritoryContent == null)
             return;
+
+        // 這是 Run(RunContext) 也會匯流進來的唯一入口,而且過了上面那幾道退出檢查才算真的要跑。
+        // 每開新的一輪就把「本次執行」的逾時計數歸零(工作階段總數不歸零,tooltip 仍看得到)。
+        TaskTimeoutWatcher.OnRunStarted();
+        _deathsThisDuty = 0;
 
         // Legacy entrypoint: infer source only when no explicit RunContext was provided.
         ActiveRunContext ??= new RunContext
@@ -985,7 +1126,7 @@ public sealed class AutoDuty : IDalamudPlugin
         }
         TaskManager.Enqueue(() => Svc.Log.Debug($"Done Queueing-WaitDutyStarted, NavIsReady"));
         TaskManager.Enqueue(() => Svc.DutyState.IsDutyStarted,          "Run-WaitDutyStarted");
-        TaskManager.Enqueue(() => VNavmesh_IPCSubscriber.Nav_IsReady(), int.MaxValue, "Run-WaitNavIsReady");
+        TaskManager.Enqueue(WaitForNavReady(), int.MaxValue, "Run-WaitNavIsReady");
         TaskManager.Enqueue(() => Svc.Log.Debug($"Start Navigation"));
         TaskManager.Enqueue(() => StartNavigation(startFromZero), "Run-StartNavigation");
         if (CurrentLoop == 0)
@@ -1000,6 +1141,7 @@ public sealed class AutoDuty : IDalamudPlugin
         // Do not apply planner duty selection on that path, or it can interfere with termination/between-loop actions.
         if (queue && ActiveRunContext?.Source == RunSource.Planner && !Configuration.PlannerPaused && !PlannerTryApplyCurrentSelection(resetLoopCounter: false))
         {
+            MarkSelfStop("Planner could not apply the next duty.");
             Stage = Stage.Stopped;
             return;
         }
@@ -1132,7 +1274,7 @@ public sealed class AutoDuty : IDalamudPlugin
         TaskManager.Enqueue(() => Svc.ClientState.TerritoryType == CurrentTerritoryContent.TerritoryType, int.MaxValue, "Loop-WaitCorrectTerritory");
         TaskManager.Enqueue(() => PlayerHelper.IsValid, int.MaxValue, "Loop-WaitPlayerValid");
         TaskManager.Enqueue(() => Svc.DutyState.IsDutyStarted, int.MaxValue, "Loop-WaitDutyStarted");
-        TaskManager.Enqueue(() => VNavmesh_IPCSubscriber.Nav_IsReady(), int.MaxValue, "Loop-WaitNavReady");
+        TaskManager.Enqueue(WaitForNavReady(), int.MaxValue, "Loop-WaitNavReady");
         TaskManager.Enqueue(() => Svc.Log.Debug($"StartNavigation"));
         TaskManager.Enqueue(() => StartNavigation(true), "Loop-StartNavigation");
     }
@@ -1222,7 +1364,13 @@ public sealed class AutoDuty : IDalamudPlugin
 
         States      &= ~PluginState.Looping;
         CurrentLoop =  0;
-        TaskManager.Enqueue(() => SchedulerHelper.ScheduleAction("SetStageStopped", () => Stage = Stage.Stopped, 1));
+        // 這一停是排程延遲執行的,所以原因必須跟賦值寫在同一個 lambda 裡 ——
+        // 旗標的存活期才不會被中間插進來的別的停止動作吃掉。
+        TaskManager.Enqueue(() => SchedulerHelper.ScheduleAction("SetStageStopped", () =>
+        {
+            MarkSelfStop("All loops finished.", Configuration.EnableTerminationActions && Configuration.PlayEndSound);
+            Stage = Stage.Stopped;
+        }, 1));
     }
 
     private void AutoEquipRecommendedGear()
@@ -1282,14 +1430,21 @@ public sealed class AutoDuty : IDalamudPlugin
 
     private void StageReadingPath()
     {
+        // 側移期間不在 Stage.Moving,卡住偵測不會跑,側移的逾時只能在這裡收。
+        StuckEscalationHelper.TickSidestep();
+
         if (!PlayerHelper.IsValid || !EzThrottler.Check("PathFindFailure") || Indexer == -1 || Indexer >= Actions.Count)
+            return;
+
+        // 使用者在操作移動:不送路徑、不推進步驟,等他停手。
+        if (ManualMoveYield.Yielding)
             return;
 
         Action = $"{(Actions.Count > Indexer ? Plugin.Actions[Indexer].ToCustomString() : "")}";
 
         PathAction = Actions[Indexer];
 
-        bool sync = !this.Configuration.Unsynced || !this.Configuration.DutyModeEnum.EqualsAny(DutyMode.Raid, DutyMode.Regular, DutyMode.Trial);
+        bool sync = !this.Configuration.Unsynced || this.Configuration.DutyModeEnum is not (DutyMode.Raid or DutyMode.Regular or DutyMode.Trial);
         if (PathAction.Tag.HasFlag(ActionTag.Unsynced) && sync)
         {
             Svc.Log.Debug($"Skipping path entry {Actions[Indexer]} because we are synced");
@@ -1332,6 +1487,44 @@ public sealed class AutoDuty : IDalamudPlugin
             return;
         }
 
+        // 步驟條件:全部成立才執行。空集合(絕大多數步驟)不進這個分支,行為與加入條件之前相同。
+        if (PathAction.Conditions.Count > 0)
+        {
+            PathActionCondition? unfulfilled = null;
+            foreach (PathActionCondition condition in PathAction.Conditions)
+            {
+                bool ok;
+                try
+                {
+                    ok = condition.IsFulfilled();
+                }
+                catch (Exception ex)
+                {
+                    // 條件算不出來就當成不成立(跳過該步驟),而不是讓例外把整個 Framework.Update 打斷。
+                    Svc.Log.Warning($"Path condition {condition.ParseKey} threw, treating as not fulfilled: {ex}");
+                    ok = false;
+                }
+
+                if (!ok)
+                {
+                    unfulfilled = condition;
+                    break;
+                }
+            }
+
+            if (unfulfilled != null)
+            {
+                Svc.Log.Debug($"Skipping path entry {PathAction.Name} because condition [{unfulfilled.Describe()}] is not fulfilled");
+                Indexer++;
+                return;
+            }
+        }
+
+        // 隊形:非王步驟時跟著坦克走,除非這一步標了 NoPartyCoherency。
+        // ⚠️ StayCloseToTank 內部還有 Configuration.PartyCoherency 這道閘門(預設關),關著時一律送 None。
+        BossMod_IPCSubscriber.StayCloseToTank(!(PathAction.Name.Equals("Boss", StringComparison.InvariantCultureIgnoreCase) ||
+                                                PathAction.Flags.HasFlag(PathActionFlags.NoPartyCoherency)));
+
         if (PathAction.Position == Vector3.Zero)
         {
             Stage = Stage.Action;
@@ -1341,7 +1534,7 @@ public sealed class AutoDuty : IDalamudPlugin
         if (!VNavmesh_IPCSubscriber.SimpleMove_PathfindInProgress() && !VNavmesh_IPCSubscriber.Path_IsRunning())
         {
             Chat.Instance.ExecuteCommand("/automove off");
-            VNavmesh_IPCSubscriber.Path_SetTolerance(0.25f);
+            VNavmesh_IPCSubscriber.Path_RequestTolerance(0.25f);
             if (PathAction.Name == "MoveTo" && PathAction.Arguments.Count > 0 && bool.TryParse(PathAction.Arguments[0], out bool useMesh) && !useMesh)
             {
                 VNavmesh_IPCSubscriber.Path_MoveTo([PathAction.Position], false);
@@ -1388,16 +1581,91 @@ public sealed class AutoDuty : IDalamudPlugin
         {
             if (Configuration.AutoManageRotationPluginState && !Configuration.UsingAlternativeRotationPlugin)
                 SetRotationPluginSettings(true);
-            VNavmesh_IPCSubscriber.Path_Stop();
-            Stage = Stage.Waiting_For_Combat;
-            return;
+
+            if (Configuration.UnsyncedKeepMovingInCombat && Configuration.IsUnsyncActive())
+            {
+                // 解限模式「交戰中繼續走到定點」:不切進 Waiting_For_Combat,讓 vnavmesh 繼續跑路徑,技能交給輪替外掛。
+                // 🔴 走位權必須只有一個主人:BossMod 的 NormalMovement 是另一套獨立的 pathfinder,兩邊同時要走會
+                //    互相抵銷、角色原地不動。所以這裡明確把 BossMod 的移動關掉,由 vnavmesh 獨佔走位。
+                //    ⚠️ SetMovement 只有在 AutoManageBossModAISettings 開著時才會真的送出去;
+                //    沒開的話 AutoDuty 本來就沒有幫忙套 BossMod 的 preset,也就沒有走位權之爭。
+                if (!_unsyncedKeepMovingArmed)
+                {
+                    _unsyncedKeepMovingArmed = true;
+                    BossMod_IPCSubscriber.SetMovement(false);
+                    Svc.Log.Information("[解限] 交戰中繼續走到定點:已關閉 BossMod 的自動移動,改由 vnavmesh 獨佔走位。");
+                }
+
+                KeepMovingTargetAssist();
+            }
+            else
+            {
+                // 戰鬥中留著殘路徑,BMR 就整段不注入閃避移動 ⇒ 連還在算的尋路一起取消。
+                VNavmesh_IPCSubscriber.Nav_PathfindCancelAll();
+                VNavmesh_IPCSubscriber.Path_Stop();
+                _combatCalmSince = null;
+                Stage = Stage.Waiting_For_Combat;
+                return;
+            }
         }
+        else if (_unsyncedKeepMovingArmed && !PlayerHelper.InCombat)
+        {
+            // 離開戰鬥就把移動權還給 BossMod,免得這個設定的影響漏到後面的一般導航。
+            // 🔴 這裡一定要再判一次 !InCombat:上面那個 if 為假也可能是「還在戰鬥中,但
+            //    StopForCombat 被路徑步驟關掉了」,那種情況的 SetMovement(false) 是那個步驟
+            //    自己要的,不可以被我們還原掉。
+            _unsyncedKeepMovingArmed = false;
+            BossMod_IPCSubscriber.SetMovement(true);
+            Svc.Log.Information("[解限] 交戰結束:已還原 BossMod 的自動移動。");
+        }
+
+        // 路徑是被使用者的移動輸入取消的,不是走到了:不推進、不重送,停手後由 Framework_Update 改回 Reading_Path 重走這一步。
+        if (ManualMoveYield.Yielding)
+            return;
 
         if (StuckHelper.IsStuck(out byte stuckCount))
         {
+            Vector3 stuckAt = Player.Position;
+
+            // 第 2 階刻意排在 Path_Stop 之前:邊走邊跳才有機會越過卡住的邊緣。
+            if (Configuration.StuckEscalationEnabled && StuckEscalationHelper.TryJump(stuckCount, stuckAt))
+                return;
+
             VNavmesh_IPCSubscriber.Path_Stop();
-            if (Configuration.RebuildNavmeshOnStuck && stuckCount >= Configuration.RebuildNavmeshAfterStuckXTimes)
-                VNavmesh_IPCSubscriber.Nav_Rebuild();
+
+            if (Configuration.StuckEscalationEnabled && StuckEscalationHelper.TrySidestep(stuckCount, PathAction.Position))
+            {
+                // 側移路徑跑完之前 StageReadingPath 不會重下原目標(它只在沒有路徑在跑時才下)。
+                Stage = Stage.Reading_Path;
+                return;
+            }
+
+            if (Configuration.StuckEscalationEnabled && StuckEscalationHelper.ShouldSkipStep(stuckCount) && CanSkipCurrentStep)
+            {
+                Svc.Log.Information($"[卡住處理] 第 4 階:在 {stuckAt} 連續卡住 {stuckCount + 1} 次,跳過目前這一步。");
+                SkipCurrentStep();
+                return;
+            }
+
+            if (stuckCount >= StuckEscalationHelper.RebuildAtCount)
+            {
+                // 🔴 最後一階一定要把卡住計數歸零,否則計數只會一直往上加(玩家還卡著就不會滿足
+                //    StuckHelper 那個「一段時間沒再卡住」的歸零條件),結果是門檻一旦越過,
+                //    之後每一次卡住偵測都再觸發一次 —— 而全量重建期間玩家更動不了,
+                //    形成自我維持迴圈。
+                if (Configuration.RebuildNavmeshOnStuck)
+                {
+                    Svc.Log.Information($"[卡住處理] 第 5 階:在 {stuckAt} 連續卡住 {stuckCount + 1} 次,要求 vnavmesh 重建網格(計數已歸零)。");
+                    VNavmesh_IPCSubscriber.Nav_Rebuild();
+                    StuckHelper.ResetStuckCount();
+                }
+                else if (Configuration.StuckEscalationEnabled)
+                {
+                    Svc.Log.Information($"[卡住處理] 在 {stuckAt} 連續卡住 {stuckCount + 1} 次,重建網格已關閉,階梯從頭再跑一輪。");
+                    StuckHelper.ResetStuckCount();
+                }
+            }
+
             Stage = Stage.Reading_Path;
             return;
         }
@@ -1418,7 +1686,7 @@ public sealed class AutoDuty : IDalamudPlugin
             return;
         }
 
-        if (EzThrottler.Throttle("BossChecker", 25) && PathAction.Equals("Boss") && PathAction.Position != Vector3.Zero && ObjectHelper.BelowDistanceToPlayer(PathAction.Position, 50, 10))
+        if (EzThrottler.Throttle("BossChecker", 25) && PathAction.Name.Equals("Boss") && PathAction.Position != Vector3.Zero && ObjectHelper.BelowDistanceToPlayer(PathAction.Position, 50, 10))
         {
             BossObject = ObjectHelper.GetBossObject(25);
             if (BossObject != null)
@@ -1440,10 +1708,52 @@ public sealed class AutoDuty : IDalamudPlugin
         
         if (!TaskManager.IsBusy)
         {
+            BossMod_IPCSubscriber.DisableRealAIPreset();
             Stage = Stage.Reading_Path;
             Indexer++;
             return;
         }
+    }
+
+    /// <summary>
+    /// 解限模式「交戰中繼續走」用的目標補位:沒有目標時鎖定最近的、已經在戰鬥中的敵對 NPC,
+    /// 讓輪替外掛有東西可以打。(這條路徑不會進 Waiting_For_Combat,所以那邊的鎖定邏輯不會跑。)
+    /// </summary>
+    /// <remarks>
+    /// 🔴 只在同一幀內掃描並設定目標,不把任何 IGameObject 留到下一幀。
+    /// 判敵意刻意只用 Dalamud 的 <c>StatusFlags</c>/<c>BattleNpcKind</c>(直接讀 CS 結構欄位),
+    /// 不走 ECommons 那個吃寫死特徵碼的 IsHostile()/GetNameplateKind(),
+    /// 免得特徵碼在台服失效時靜默失準。
+    /// </remarks>
+    private static void KeepMovingTargetAssist()
+    {
+        if (Svc.Targets.Target != null)
+            return;
+
+        IGameObject? nearest         = null;
+        float        nearestDistance = float.MaxValue;
+
+        foreach (IGameObject obj in Svc.Objects)
+        {
+            if (obj is not IBattleNpc battleNpc
+                || battleNpc.BattleNpcKind != Dalamud.Game.ClientState.Objects.Enums.BattleNpcSubKind.Enemy
+                || !obj.IsTargetable
+                || obj.IsDead
+                || !battleNpc.StatusFlags.HasFlag(Dalamud.Game.ClientState.Objects.Enums.StatusFlags.Hostile)
+                || !battleNpc.StatusFlags.HasFlag(Dalamud.Game.ClientState.Objects.Enums.StatusFlags.InCombat))
+                continue;
+
+            float distance = ObjectHelper.GetDistanceToPlayer(obj);
+
+            if (distance > 75f || distance >= nearestDistance)
+                continue;
+
+            nearest         = obj;
+            nearestDistance = distance;
+        }
+
+        if (nearest != null)
+            Svc.Targets.Target = nearest;
     }
 
     private void StageWaitingForCombat()
@@ -1453,7 +1763,12 @@ public sealed class AutoDuty : IDalamudPlugin
 
         Action = $"Waiting For Combat";
 
-        
+        // AI.SetPreset 只在 InCombat 時才真的武裝(見 IPCSubscriber.SetPreset)。進副本時打的那一次武裝不到
+        // 卻已經吃掉 5 秒節流;若進場沒幾秒就撞到雜魚,StageMoving 的補打會被節流擋掉並立刻切進這裡。
+        // 所以這裡持續嘗試(受同一個節流保護,不會洗頻),節流一過期就補上。
+        if (PlayerHelper.InCombat && this.Configuration is { AutoManageRotationPluginState: true, UsingAlternativeRotationPlugin: false })
+            SetRotationPluginSettings(true);
+
         if (ReflectionHelper.Avarice_Reflection.PositionalChanged(out Positional positional) && !Plugin.Configuration.UsingAlternativeBossPlugin && IPCSubscriber_Common.IsReady("BossModReborn"))
             BossMod_IPCSubscriber.SetPositional(positional);
 
@@ -1470,6 +1785,7 @@ public sealed class AutoDuty : IDalamudPlugin
 
         if (PlayerHelper.InCombat)
         {
+            _combatCalmSince = null;
             if (Svc.Targets.Target == null)
             {
                 //find and target closest attackable npc, if we are not targeting
@@ -1504,7 +1820,16 @@ public sealed class AutoDuty : IDalamudPlugin
         }
         else if (!PlayerHelper.InCombat && !VNavmesh_IPCSubscriber.SimpleMove_PathfindInProgress())
         {
+            // 脫戰要連續 CombatSettleMs 才收回 AI 預設:單次看到就收,下一隻接著打時會被 5 秒的重新武裝節流擋住。
+            long now = Environment.TickCount64;
+            _combatCalmSince ??= now;
+            if (now - _combatCalmSince.Value < CombatSettleMs)
+                return;
+
+            _combatCalmSince = null;
+            Svc.Log.Debug($"[戰鬥等待] 已連續脫戰 {CombatSettleMs} 毫秒,收回 AI 預設、繼續路徑。");
             BossMod_IPCSubscriber.SetRange(Configuration.MaxDistanceToTargetFloat);
+            BossMod_IPCSubscriber.DisableRealAIPreset();
 
             VNavmesh_IPCSubscriber.Path_Stop();
             Stage = Stage.Reading_Path;
@@ -1517,14 +1842,14 @@ public sealed class AutoDuty : IDalamudPlugin
         if (ContentHelper.DictionaryContent.TryGetValue(Svc.ClientState.TerritoryType, out var content))
         {
             CurrentTerritoryContent = content;
-            PathFile = $"{Plugin.PathsDirectory.FullName}/({Svc.ClientState.TerritoryType}) {content.EnglishName?.Replace(":", "")}.json";
+            PathFile = ContentPathsManager.BuildDefaultPathFilePath(Svc.ClientState.TerritoryType, content.EnglishName);
             LoadPath();
         }
         else
         {
             CurrentTerritoryContent = null;
             PathFile = "";
-            MainWindow.ShowPopup("Error", "Unable to load content for Territory");
+            MainWindow.ShowPopup("Error".Loc(), "Unable to load content for Territory".Loc());
             return;
         }
         //MainWindow.OpenTab("Mini");
@@ -1534,11 +1859,22 @@ public sealed class AutoDuty : IDalamudPlugin
             Overlay.IsOpen = true;
         }
         MainListClicked = false;
+        // 每一場（含每一輪循環）開始導航都會走到這裡，復活後的流程不會 ⇒ 死亡計數的歸零點。
+        _deathsThisDuty = 0;
         Stage = Stage.Reading_Path;
         States |= PluginState.Navigating;
         StopForCombat = true;
-        if (Configuration.AutoManageVnavAlignCamera && !VNavmesh_IPCSubscriber.Path_GetAlignCamera())
+        // 對齊鏡頭:設定說明承諾的是「開始時打開,結束時若本來沒開就關回去」。
+        // 這裡只負責前半段,並記下「進來時是關的」;還原在 SetGeneralSettings(true)。
+        // 🔴 一定要先過 IsEnabled:vnavmesh 沒裝時 SafeWrapper.IPCException 會把
+        //    Path_GetAlignCamera() 靜默吃成 default(false),少了這道閘門就會把
+        //    「根本沒有 vnavmesh」誤記成「本來是關的」,結束時對著空氣還原。
+        if (Configuration.AutoManageVnavAlignCamera && VNavmesh_IPCSubscriber.IsEnabled && !VNavmesh_IPCSubscriber.Path_GetAlignCamera())
+        {
+            _settingsActive |= SettingsActive.Vnav_Align_Camera_On;
+            Svc.Log.Information("vnavmesh 對齊鏡頭:進導航前是關的,導航期間打開,整趟結束時會關回去");
             VNavmesh_IPCSubscriber.Path_SetAlignCamera(true);
+        }
 
         if (this.Configuration is { AutoManageBossModAISettings: true, BM_UpdatePresetsAutomatically: true })
         {
@@ -1570,10 +1906,52 @@ public sealed class AutoDuty : IDalamudPlugin
     private void DoneNavigating()
     {
         States &= ~PluginState.Navigating;
+        // 路徑真的跑完了。Update() 尾端那個通用 fallback 蓋不到 Reading_Path;最後一步若是單純 MoveTo,
+        // Action 會停在舊字串,讓 CheckFinishing 誤判「還沒做完」白等一輪逃生口。
+        Action = string.Empty;
         this.CheckFinishing();
     }
 
-    private void CheckFinishing()
+    /// <summary>
+    /// Nav.IsReady only means vnavmesh has *a* navmesh object loaded, not that it actually
+    /// covers the player's current position (some instanced solo/Trust duties stream in
+    /// geometry vnavmesh's auto-build never fully captures). Passively waiting on IsReady
+    /// forever, as the old code did, hangs indefinitely in that case. Force a full rebuild
+    /// (no cache) if it hasn't become ready within a few seconds.
+    /// </summary>
+    private static Func<bool?> WaitForNavReady()
+    {
+        DateTime waitStart = DateTime.MinValue;
+        return () =>
+        {
+            if (VNavmesh_IPCSubscriber.Nav_IsReady())
+                return true;
+            if (waitStart == DateTime.MinValue)
+                waitStart = DateTime.Now;
+            else if ((DateTime.Now - waitStart).TotalSeconds >= 5)
+            {
+                Svc.Log.Info("Navmesh not ready after 5s, forcing rebuild");
+                VNavmesh_IPCSubscriber.Nav_Rebuild();
+                waitStart = DateTime.Now;
+            }
+            return false;
+        };
+    }
+
+    // CheckFinishing 底下那個「等 Action／路徑真的跑完」的守衛自己沒有逾時：如果戰後的
+    // Interactable 步驟卡在無止境重試（例如撿寶那條 InteractableCheck 迴圈永遠到不了結束條件），
+    // Action 就永遠不會變回空字串，CheckFinishing-WaitAction 會每 500ms 把自己重新排一次、
+    // 永遠退不出副本。這個欄位記錄「目前這一段等待」從什麼時候開始，超過上限就放棄等待直接退本，
+    // 不要無限期掛著。
+    private DateTime? _checkFinishingWaitSince;
+
+    // 🔴 逃生口的長度。
+    //    ⚠️ 它與 ActionsManager.Interactable 的 90 秒等待有張力：極火龍那種「個人化剝取物件」
+    //    實測要等 40 幾秒才會變成 IsTargetable，正常情況塞得進 60 秒，但若伺服器更慢，
+    //    這個逃生口會先到期把人拉出副本。兩個數字都沒有台服實機驗證，要調就一起調。
+    private const int CheckFinishingWaitTimeoutSeconds = 60;
+
+    private unsafe void CheckFinishing()
     {
         //we finished lets exit the duty or stop
         var plannerRun = ActiveRunContext?.Source == RunSource.Planner;
@@ -1584,6 +1962,35 @@ public sealed class AutoDuty : IDalamudPlugin
                 (!Configuration.OnlyExitWhenDutyDone || this.DutyState == DutyState.DutyComplete) &&
                 !this.States.HasFlag(PluginState.Navigating))
             {
+                // 骰寶箱（Need/Greed/Pass）視窗還開著就先別退本 —— 就算是靠別的外掛（例如
+                // LazyLoot）自動幫忙骰，也要親自確認那個視窗真的關閉了才算數，不能只憑
+                // Action／路徑這種間接狀態去猜「應該骰完了」。這個等待刻意不受下面的逾時
+                // 保底影響：骰寶箱是玩家在意、有真實意義的等待，不是卡死的 bug，強制跳過
+                // 反而會在還沒骰完的時候就把大家拉出副本，弄丟稀有素材／坐騎的擲骰機會。
+                if (GenericHelpers.TryGetAddonByName("NeedGreed", out AtkUnitBase* needGreedAddon) && GenericHelpers.IsAddonReady(needGreedAddon))
+                {
+                    SchedulerHelper.ScheduleAction("CheckFinishing-WaitNeedGreed", this.CheckFinishing, 500);
+                    return;
+                }
+
+                // 遊戲可能在戰後的路徑步驟還沒跑完時就把 DutyCompleted 立起來(例如王之後的剝取 Interactable 步驟),
+                // 那時候並不處於 Navigating,上面那個判斷蓋不到。只看 Action 也不夠:Update() 每一格都會把它重設成
+                // Stage 自己的名字,中間有可能有一格讀到空字串。所以另外要求路徑本身也真的跑到底
+                // （Indexer >= Actions.Count），還沒做完的 Interactable 步驟一樣擋得住退本。
+                if (!string.IsNullOrEmpty(Action) || (Actions.Count > 0 && Indexer < Actions.Count))
+                {
+                    _checkFinishingWaitSince ??= DateTime.Now;
+                    if (DateTime.Now - _checkFinishingWaitSince.Value < TimeSpan.FromSeconds(CheckFinishingWaitTimeoutSeconds))
+                    {
+                        SchedulerHelper.ScheduleAction("CheckFinishing-WaitAction", this.CheckFinishing, 500);
+                        return;
+                    }
+
+                    Svc.Log.Information($"[CheckFinishing] 等待 Action／路徑跑完已超過 {CheckFinishingWaitTimeoutSeconds} 秒" +
+                                        $"（Action='{Action}', Indexer={Indexer}/{Actions.Count}），放棄等待直接退本，避免永遠卡在副本裡。");
+                }
+
+                _checkFinishingWaitSince = null;
                 if (ExitDutyHelper.State != ActionState.Running)
                     ExitDuty();
                 if (Configuration.AutoManageRotationPluginState && !Configuration.UsingAlternativeRotationPlugin)
@@ -1592,17 +1999,27 @@ public sealed class AutoDuty : IDalamudPlugin
                     BossMod_IPCSubscriber.DisablePresets();
             }
         }
-        else
+        else if (Stage != Stage.Stopped)
+        {
+            // 已停止時不再設一次 Stopped：setter 每次都整套重跑 StopAndResetALL，會關掉使用者之後自己開的循環插件。
+            // 這一條不經過 LoopsCompleteActions(),所以既有的完成音效在這裡本來就不會響。
+            MarkSelfStop("All loops finished.");
             Stage = Stage.Stopped;
+        }
     }
 
     private void GetGeneralSettings()
     {
+        // 下面註解掉的兩行是舊政策的擷取端:「使用者本來開著 → 進場先關掉 → 結束再開回來」,旗標 Vnav_Align_Camera_Off。
+        // 不可以直接取消註解:現行政策方向相反(StartNavigation 進導航時「打開」),那會變成兩個相反的政策同時存在。
+        // 現行政策的擷取端在 StartNavigation(),還原端在 SetGeneralSettings() 裡的 Vnav_Align_Camera_On 分支。
         /*
         if (Configuration.AutoManageVnavAlignCamera && VNavmesh_IPCSubscriber.IsEnabled && VNavmesh_IPCSubscriber.Path_GetAlignCamera())
             _settingsActive |= SettingsActive.Vnav_Align_Camera_Off;
         */
-        if (YesAlready_IPCSubscriber.IsEnabled && YesAlready_IPCSubscriber.IsEnabled)
+        // 🔴 第二個條件必須是 IsPluginEnabled():只判「YesAlready 裝著」就設旗標的話,AutoDuty 進場把它關掉、
+        //    結束再打開,本來刻意關著的 YesAlready 會被 AutoDuty 打開。
+        if (YesAlready_IPCSubscriber.IsEnabled && YesAlready_IPCSubscriber.IsPluginEnabled())
             _settingsActive |= SettingsActive.YesAlready;
 
         if (PandorasBox_IPCSubscriber.IsEnabled && PandorasBox_IPCSubscriber.GetFeatureEnabled("Auto-interact with Objects in Instances"))
@@ -1621,15 +2038,36 @@ public sealed class AutoDuty : IDalamudPlugin
             Svc.Log.Debug($"Setting VnavAlignCamera: {on}");
             VNavmesh_IPCSubscriber.Path_SetAlignCamera(on);
         }
+
+        // 上面那條是舊政策的還原端:設它的旗標那段在 GetGeneralSettings() 裡是註解掉的,實際是死碼;與上游一致,原樣保留。
+        // 下面這條才是現行政策的還原端:StartNavigation() 把「本來關著」的對齊鏡頭打開了,這裡在整趟真的結束時關回去。
+        // 🔴 額外擋 Looping/Navigating:四個呼叫點裡只有 StopAndResetALL() 代表「整趟結束」(它先把 States 清成 None);
+        //    另外三個是單機流程的收尾,IPC 的 Start() / 指令 "start" 走進「Navigating 有、Looping 沒有」的狀態時會提早打進來。
+        // 🔴 旗標只在「真的還原到了」才清:被閘門擋下時留著,等真正結束時再還原,不會漏掉。
+        if (on
+            && Configuration.AutoManageVnavAlignCamera
+            && _settingsActive.HasFlag(SettingsActive.Vnav_Align_Camera_On)
+            && !States.HasAnyFlag(PluginState.Looping, PluginState.Navigating))
+        {
+            _settingsActive &= ~SettingsActive.Vnav_Align_Camera_On;
+            Svc.Log.Information("還原 vnavmesh 對齊鏡頭:關回進導航前的狀態(關閉)");
+            if (VNavmesh_IPCSubscriber.IsEnabled)
+                VNavmesh_IPCSubscriber.Path_SetAlignCamera(false);
+        }
+        // 🔴 還原之後要把旗標清掉,下一趟的 GetGeneralSettings() 才會重新評估當下的實際狀態;不清的話,
+        //    使用者之後手動關掉的功能會在下一趟結束時被 AutoDuty 照著過期的旗標重新打開。
+        //    ⚠️ 只在 on==true（還原那一側）清；on==false 是剛設起旗標的那一側，不能清。
         if (PandorasBox_IPCSubscriber.IsEnabled && _settingsActive.HasFlag(SettingsActive.Pandora_Interact_Objects))
         {
             Svc.Log.Debug($"Setting PandorasBos Auto-interact with Objects in Instances: {on}");
             PandorasBox_IPCSubscriber.SetFeatureEnabled("Auto-interact with Objects in Instances", on);
+            if (on) _settingsActive &= ~SettingsActive.Pandora_Interact_Objects;
         }
         if (YesAlready_IPCSubscriber.IsEnabled && _settingsActive.HasFlag(SettingsActive.YesAlready))
         {
             Svc.Log.Debug($"Setting YesAlready Enabled: {on}");
             YesAlready_IPCSubscriber.SetState(on);
+            if (on) _settingsActive &= ~SettingsActive.YesAlready;
         }
     }
 
@@ -1793,7 +2231,9 @@ public sealed class AutoDuty : IDalamudPlugin
 
     private void CheckRetainerWindow()
     {
-        if (AutoRetainerHelper.State == ActionState.Running || AutoRetainer_IPCSubscriber.IsBusy() || AM_IPCSubscriber.IsRunning() || Stage == Stage.Paused)
+        // AutoBot(AutoMarket)/AutoRetainer沒裝時就不要打這兩支 IPC。SafeWrapper 雖然會吃掉
+        // IpcNotReadyError 並回 false，但每一次失敗都會走進 EzIpcFailureLog 的例外路徑。
+        if (AutoRetainerHelper.State == ActionState.Running || (AutoRetainer_IPCSubscriber.IsEnabled && AutoRetainer_IPCSubscriber.IsBusy()) || (AM_IPCSubscriber.IsEnabled && AM_IPCSubscriber.IsRunning()) || Stage == Stage.Paused)
             return;
 
         if (Svc.Condition[ConditionFlag.OccupiedSummoningBell])
@@ -1804,7 +2244,7 @@ public sealed class AutoDuty : IDalamudPlugin
     {
         if (Interactables.Count == 0) return;
 
-        var list = Svc.Objects.Where(x => Interactables.Contains(x.DataId));
+        var list = Svc.Objects.Where(x => Interactables.Contains(x.BaseId));
 
         if (!list.Any()) return;
 
@@ -1858,9 +2298,35 @@ public sealed class AutoDuty : IDalamudPlugin
 
     public void Framework_Update(IFramework framework)
     {
+        // 從別的執行緒打進來的 IPC 指令(Run／Start／Stop),照先進先出在這裡排乾。
+        // 🔴 放在最前面:同一格排進來的指令要在這一格的 Stage 判斷之前生效,
+        //    否則會白白多等一格,而 Stop 多等一格代表多跑一格的自動化。
+        //    細節見 IPC/IPCProvider.cs 的 RunOnFramework。
+        IPCProvider.DrainPendingWork();
+
+        // 🔴 YesAlready 壓制租約的續約心跳（內部自行節流，沒在壓制時是一個布林判斷就返回）。
+        // 一輪多本可以跑好幾個小時，而租約上限只有 5 分鐘 —— 不續約的話 YesAlready
+        // 會在副本跑到一半自己醒過來搶按窗。
+        // (LeaseMilliseconds = 300_000 = YesAlready SuppressionLeases.MaxLeaseMilliseconds; provider clamps, it does not reject)
+        YesAlready_IPCSubscriber.Tick();
+
+        // 🔴 vnavmesh 路徑容許值租約的續約心跳＋閒置放約(內部自行節流;
+        //    沒有租約時是一個欄位判斷就返回)。租約上限 5 分鐘,不續約的話
+        //    容許值會在副本跑到一半跳回使用者的值。
+        VnavmeshToleranceLease.Tick();
+
+        // 任務逾時的觀察哨。必須跑在 TaskManager 自己的 Tick 之後 —— 這是成立的:
+        // 建構子先 TaskManager = new()(它在自己的建構子裡掛上 Svc.Framework.Update),
+        // 之後才 Svc.Framework.Update += Framework_Update,多播委派照訂閱順序呼叫。
+        TaskTimeoutWatcher.Tick();
+
         PreStageChecks();
 
         this.Framework_Update_InDuty(framework);
+
+        ManualMoveYield.Tick();
+        if (ManualMoveYield.TakeResume() && Stage == Stage.Moving)
+            Stage = Stage.Reading_Path;
 
         switch (Stage)
         {
@@ -1883,8 +2349,163 @@ public sealed class AutoDuty : IDalamudPlugin
 
     public event IFramework.OnUpdateDelegate Framework_Update_InDuty = _ => {};
 
+    /// <summary>
+    /// 目前這一步能不能按「跳過」。
+    /// </summary>
+    /// <remarks>
+    /// 只在「真的有一個路徑步驟正在跑」時成立。刻意排除:
+    /// <c>Stage.Paused</c>(暫停會把 TaskManager 切成單步模式並記下 PreviousStage,
+    /// 跳過要中止佇列並換 Stage,兩者疊起來會讓「繼續」回到一個已經不存在的狀態 —— 請先按繼續)、
+    /// <c>Stage.Condition</c>(換區中,有一個排程動作稍後會把 Stage 拉回 Reading_Path,
+    /// 這時跳過會被那個排程覆蓋掉)、<c>Stage.Dead</c>/<c>Stage.Revived</c>/<c>Stage.Looping</c>/
+    /// <c>Stage.Stopped</c>(當下根本沒有正在執行的路徑步驟)。
+    /// </remarks>
+    internal bool CanSkipCurrentStep =>
+        States.HasFlag(PluginState.Navigating) &&
+        Indexer >= 0 && Indexer < Actions.Count &&
+        // 主視窗與疊加層每幀都讀：用 is 樣式，EqualsAny 每次呼叫都配置 params 陣列、閉包與委派。
+        Stage is Stage.Reading_Path or Stage.Moving or Stage.Action or Stage.Waiting_For_Combat;
+
+    /// <summary>
+    /// 目前正在跑的那一步是不是「Wait」而且真的在計時中。是的話回傳原本設定的毫秒數與已經等掉的毫秒數。
+    /// </summary>
+    /// <remarks>
+    /// 判「正在等」看的是 <c>ActionsManager.Wait</c> 自己記的計時,不是 <c>Plugin.Action</c> 的前綴 ——
+    /// StopForCombat 開著時,佇列前面那個「等脫戰」任務執行期間 Action 已經是 "Wait: N" 了,
+    /// 但 throttle 還沒起算,那段時間不算等待時間。
+    /// 另外要求記下的時長與步驟參數相同,免得把動作內部自己排的短等待(例如 BossLoot 的 250ms)
+    /// 誤認成這一步的等待。
+    /// </remarks>
+    internal bool TryGetCurrentWaitProgress(out int configuredMs, out int elapsedMs)
+    {
+        configuredMs = 0;
+        elapsedMs    = 0;
+
+        if (Indexer < 0 || Indexer >= Actions.Count)
+            return false;
+
+        PathAction step = Actions[Indexer];
+
+        if (!step.Name.Equals("Wait", StringComparison.OrdinalIgnoreCase) || step.Arguments.Count == 0)
+            return false;
+
+        if (!int.TryParse(step.Arguments[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out configuredMs) || configuredMs <= 0)
+        {
+            configuredMs = 0;
+            return false;
+        }
+
+        int duration = WaitStepDurationMs;
+
+        if (duration <= 0 || duration != configuredMs)
+            return false;
+
+        long remaining = WaitStepEndTick - Environment.TickCount64;
+
+        if (remaining <= 0 || remaining > duration)
+            return false;
+
+        elapsedMs = (int)(duration - remaining);
+        return true;
+    }
+
+    /// <summary>
+    /// 跳過正在執行的那一步,直接進入下一步。
+    /// 跳過的是計時中的 Wait 步驟時,順便把已經等掉的時間寫回路徑檔。
+    /// </summary>
+    /// <remarks>
+    /// 只動「這一步」的執行狀態:中止排隊中的任務、停掉導航、<see cref="Indexer"/> 加一、
+    /// 回到 <c>Stage.Reading_Path</c>。迴圈計數(<c>CurrentLoop</c>)、<see cref="States"/>、
+    /// 設定、已載入的路徑一律不動。
+    /// </remarks>
+    internal void SkipCurrentStep()
+    {
+        if (!CanSkipCurrentStep)
+        {
+            Svc.Log.Information($"[跳過步驟] 目前不在可跳過的狀態(Stage={Stage.ToCustomString()}, Indexer={Indexer}, Actions={Actions.Count}),不做任何事。");
+            return;
+        }
+
+        int        skippedIndex = Indexer;
+        PathAction step         = Actions[skippedIndex];
+        var        stageBefore  = Stage;
+
+        // 🔴 已等時間必須在做任何清理之前量 —— 清掉計時之後就量不到了。
+        bool waitInProgress = TryGetCurrentWaitProgress(out int configuredMs, out int elapsedMs);
+
+        switch (stageBefore)
+        {
+            case Stage.Action:
+                // 對照 StageAction() 正常走完一步的收尾,再補兩件 Abort() 會弄丟的事:
+                // (1) ForceAttack 可能正暫停著 BossMod 的「自動攻擊管理」,負責還原的任務排在佇列尾端;
+                // (2) 動作自己發起的導航(MoveToObject / Interactable / JumpTo …)還在跑,不停掉的話
+                //     StageReadingPath 會因為 Path_IsRunning() 而不肯開始下一步 —— 表現成「按了跳過卻卡住」。
+                TaskManager.Abort();
+                _actions?.RestoreBossModAutoAutos();
+                BossMod_IPCSubscriber.DisableRealAIPreset();
+                StopNavigationIfRunning();
+                break;
+            case Stage.Moving:
+                // 對照 StageMoving() 卡住重走的分支:停導航後回 Reading_Path。
+                StopNavigationIfRunning();
+                break;
+            case Stage.Waiting_For_Combat:
+                // 對照 StageWaitingForCombat() 脫戰後的收尾。
+                BossMod_IPCSubscriber.SetRange(Configuration.MaxDistanceToTargetFloat);
+                BossMod_IPCSubscriber.DisableRealAIPreset();
+                StopNavigationIfRunning();
+                break;
+            case Stage.Reading_Path:
+                // 這一步還沒開始跑,沒有東西要清。
+                break;
+        }
+
+        // EzThrottler 的 "Wait" 是全域且永久的 key。被我們 Abort() 中斷之後,尚未到期的殘值會留到
+        // 下一個 Wait 步驟 —— 那一步的 Throttle 會先回 false、被反覆重試,等於多等掉殘餘的時間。
+        // 這是我們自己造成的,所以自己清掉。
+        if (step.Name.Equals("Wait", StringComparison.OrdinalIgnoreCase))
+            EzThrottler.Reset("Wait");
+
+        ClearWaitStepTiming();
+        StuckEscalationHelper.Reset();
+
+        PathAction = new();
+        Action     = "";
+
+        Indexer = skippedIndex + 1;
+        Stage   = Stage.Reading_Path;
+
+        Svc.Log.Information($"[跳過步驟] 已跳過第 {skippedIndex} 步「{step.Name}」(Stage={stageBefore.ToCustomString()}),Indexer -> {Indexer}。");
+
+        if (waitInProgress)
+            StepSkipHelper.WriteBackWaitTime(skippedIndex, step, configuredMs, elapsedMs);
+        else
+            Svc.Chat.Print($"已跳過目前步驟：{step.Name}", "AutoDuty");
+    }
+
+    /// <summary>導航真的在跑時才叫 Path_Stop(),vnavmesh 沒載入就什麼都不做。</summary>
+    private static void StopNavigationIfRunning()
+    {
+        if (!VNavmesh_IPCSubscriber.IsEnabled)
+            return;
+
+        if (VNavmesh_IPCSubscriber.Path_IsRunning() || VNavmesh_IPCSubscriber.SimpleMove_PathfindInProgress())
+        {
+            VNavmesh_IPCSubscriber.Nav_PathfindCancelAll();
+            VNavmesh_IPCSubscriber.Path_Stop();
+        }
+    }
+
     private void StopAndResetALL()
     {
+        // 放最前面：後面任何一步擲例外，停下之前排的延遲回呼（OnDeath、傳送後改 Stage、復活後找捷徑）也都已失效。
+        StopGeneration++;
+        DeathHelper.OnAutomationStopped();
+        ClearWaitStepTiming();
+        StuckEscalationHelper.Reset();
+        BossMod_IPCSubscriber.ResetStayCloseToTankCache();
+        // 別的外掛透過 IPC 壓上來的設定覆寫,在停止時一律還原(呼叫端不必記得 Pop)。
+        ConfigOverrideHelper.Pop();
         if (_bareModeSettingsActive != SettingsActive.None)
         {
             Configuration.EnablePreLoopActions = _bareModeSettingsActive.HasFlag(SettingsActive.PreLoop_Enabled);
@@ -1892,15 +2513,33 @@ public sealed class AutoDuty : IDalamudPlugin
             Configuration.EnableTerminationActions = _bareModeSettingsActive.HasFlag(SettingsActive.TerminationActions_Enabled);
             _bareModeSettingsActive = SettingsActive.None;
         }
+        // 沒在跑時不取消尋路:Nav.PathfindCancelAll 會連別的插件正在算的路一起取消。
+        bool wasRunning = States != PluginState.None;
         States = PluginState.None;
         TaskManager?.SetStepMode(false);
         TaskManager?.Abort();
+
+        // ForceAttack 有可能正暫停著 BossMod 的「自動攻擊管理」,而負責還原的那個任務
+        // 剛剛被 TaskManager.Abort() 一起清掉了,所以這裡補一次(沒有暫停中就是 no-op)。
+        // ⚠️ 用 ?. 的理由和上面 TaskManager?. 一樣:建構式整段包在 try 裡,_actions 是到
+        //    中後段才指派的,建構式提早擲例外時 Dispose 仍會走到這裡。裸呼叫會在這裡再擲一個
+        //    NullReferenceException,把真正的載入失敗原因蓋掉。
+        _actions?.RestoreBossModAutoAutos();
+
+        if (_unsyncedKeepMovingArmed)
+        {
+            _unsyncedKeepMovingArmed = false;
+            BossMod_IPCSubscriber.SetMovement(true);
+        }
         MainListClicked              = false;
         this.Framework_Update_InDuty = _ => {};
         if (!InDungeon)
             CurrentLoop = 0;
-        if (Configuration.AutoManageBossModAISettings) 
+        if (Configuration.AutoManageBossModAISettings)
             BossMod_IPCSubscriber.DisablePresets();
+        // 途中關掉「自動管理 BossMod AI」時上面那行不會跑,改過的 AI 預設仍要還原(沒改過是空操作)。
+        BossMod_IPCSubscriber.RestoreUserAIPreset();
+        BossMod_IPCSubscriber.RestoreBmrAIEnabled(null);
 
         SetGeneralSettings(true);
         if (Configuration.AutoManageRotationPluginState && !Configuration.UsingAlternativeRotationPlugin)
@@ -1909,14 +2548,22 @@ public sealed class AutoDuty : IDalamudPlugin
             Indexer = -1;
         if (this.Configuration is { ShowOverlay: true, HideOverlayWhenStopped: true })
             Overlay.IsOpen = false;
-        if (VNavmesh_IPCSubscriber.IsEnabled && VNavmesh_IPCSubscriber.Path_GetTolerance() > 0.25F)
-            VNavmesh_IPCSubscriber.Path_SetTolerance(0.25f);
+        // 放開路徑容許值租約。
+        // 🔴 租約模式下只放約(提供端自動還原),只有真的走過舊路徑時才把容許值寫回去:
+        //    Path.GetTolerance 回的是「實際生效的值」(租約值 ?? 使用者的值),讀到的可能是
+        //    我們自己、甚至是別的外掛押著的租約值,而寫回去的目標卻是使用者那格欄位。
+        VNavmesh_IPCSubscriber.Path_ReleaseToleranceRequest();
         FollowHelper.SetFollow(null);
 
         ActiveRunContext = null;
 
-        if (VNavmesh_IPCSubscriber.IsEnabled && VNavmesh_IPCSubscriber.Path_IsRunning())
-            VNavmesh_IPCSubscriber.Path_Stop();
+        if (VNavmesh_IPCSubscriber.IsEnabled)
+        {
+            if (wasRunning)
+                VNavmesh_IPCSubscriber.Nav_PathfindCancelAll();
+            if (VNavmesh_IPCSubscriber.Path_IsRunning())
+                VNavmesh_IPCSubscriber.Path_Stop();
+        }
 
         if (MapHelper.State == ActionState.Running)
             MapHelper.StopMoveToMapMarker();
@@ -1932,6 +2579,109 @@ public sealed class AutoDuty : IDalamudPlugin
         Action = "";
     }
 
+    /// <summary>
+    /// 標記「接下來這一次 Stage = Stage.Stopped 是 AutoDuty 自己停的」並附上原因。
+    /// 只能在非使用者觸發的停止點呼叫。使用者按 Stop、下 /autoduty stop、
+    /// 或別的外掛叫 IPC 端點 AutoDuty.Stop 都不可以呼叫 —— 那些不算「自己停了」。
+    /// </summary>
+    /// <param name="reason">給使用者看的英文原文,顯示時才做 .Loc() 查表。</param>
+    /// <param name="endSoundAlreadyQueued">既有的終止流程是不是已經排了完成音效。</param>
+    /// <param name="needsHelp">是卡住要人處理（塔塔露念「需要幫忙」），不是正常收工。</param>
+    private void MarkSelfStop(string reason, bool endSoundAlreadyQueued = false, bool needsHelp = false)
+    {
+        _pendingStopReason       = reason;
+        _pendingStopSoundHandled = endSoundAlreadyQueued;
+        _pendingStopNeedsHelp    = needsHelp;
+    }
+
+    /// <summary>
+    /// 記下一次死亡；這一場的死亡數到了 <see cref="Configuration.StopAfterDeathsInDuty"/> 就停下 AutoDuty 並回 true。
+    /// </summary>
+    /// <remarks>
+    /// 只從「無法戰鬥」旗標由假轉真的事件進來，事件只在旗標改變時觸發 ⇒ 一次死亡只算一次。
+    /// 暫停中或不在副本裡不算：那時是玩家自己在操作。停下後復活確認與接手都交給玩家，這裡不按任何視窗。
+    /// </remarks>
+    private bool CountDeathAndStopIfLimitReached()
+    {
+        if (!InDungeon || States.HasFlag(PluginState.Paused))
+            return false;
+
+        _deathsThisDuty++;
+        int    limit    = Configuration.StopAfterDeathsInDuty;
+        string dutyName = CurrentTerritoryContent?.Name ?? Svc.ClientState.TerritoryType.ToString();
+        Svc.Log.Information($"[死亡上限] {dutyName}：這一場第 {_deathsThisDuty} 次死亡（門檻 {limit}，0＝不限）。");
+
+        if (limit <= 0 || _deathsThisDuty < limit)
+            return false;
+
+        Svc.Log.Information($"[死亡上限] {dutyName}：死亡 {_deathsThisDuty} 次達到門檻 {limit}，停止 AutoDuty，復活與接手交給玩家。");
+        // 多開的死亡回報照送：原本由 DeathState 的 setter 送，這條路不會走到那裡。
+        global::AutoDuty.Multibox.MultiboxUtility.IsDead(true);
+        Svc.Chat.Print("AutoDuty stopped after ?? deaths in ??. Revive and take over yourself; this run will not continue on its own.".Loc(_deathsThisDuty, dutyName), "AutoDuty");
+        MarkSelfStop("Stopped after dying too many times in this duty. Revive and take over yourself.", needsHelp: true);
+        Stage = Stage.Stopped;
+        return true;
+    }
+
+    /// <summary>
+    /// 在「Stage 真的由非 Stopped 掉到 Stopped」而且那次是 AutoDuty 自己停的時候,發一則通知。
+    /// </summary>
+    private void NotifyIfAutomationStoppedItself()
+    {
+        string? reason       = _pendingStopReason;
+        bool    soundHandled = _pendingStopSoundHandled;
+        bool    needsHelp    = _pendingStopNeedsHelp;
+        _pendingStopReason       = null;
+        _pendingStopSoundHandled = false;
+        _pendingStopNeedsHelp    = false;
+
+        // 使用者主動停:MainWindow 的按鈕、/autoduty stop、IPC Stop 都不會填 _pendingStopReason。
+        if (reason == null)
+            return;
+
+        // Stage 的 setter 沒有 early-return 守衛:已經是 Stopped 時再賦值一次仍會整段跑一遍。
+        // CheckFinishing() 的 else 分支就在每幀路徑上,少了這個邊緣判斷會一直念。
+        if (_stage == Stage.Stopped)
+            return;
+
+        // 🔴 刻意放在 NotifyWhenStoppedItself 的閘門「之前」：那個旗標是「Dalamud 桌面通知」
+        //    的開關而且預設關；語音通知是另一件事、有自己的開關，兩者不該互相牽連。
+        // 🔴 IPC 的實作跑在呼叫端的執行緒上 ⇒ 一律丟回主執行緒再叫（已在主執行緒時是同步執行）。
+        // 🔴 fail-safe：TataruPraise 沒裝／關著／池裡沒句子都只是安靜的 no-op，絕不影響跑本流程。
+        if (Configuration.TataruPraiseOnStoppedItself)
+        {
+            // 區域副本：流程分析的「非 null」推不進 lambda，直接捕獲 reason 會是 string?。
+            string praiseReason   = reason;
+            string praiseCategory = needsHelp ? TataruPraiseIPC.CategoryNeedHelp : TataruPraiseIPC.CategoryDutyRunStopped;
+            _ = Svc.Framework.RunOnFrameworkThread(() => TataruPraiseIPC.TryPraise(praiseReason, praiseCategory));
+        }
+
+        if (!Configuration.NotifyWhenStoppedItself)
+            return;
+
+        // 要使用者回報的診斷,事後對照用。
+        Svc.Log.Information($"[StopNotify] AutoDuty 自己停了:{reason}(最後動作:{Action})");
+
+        string localizedReason = reason.Loc();
+        string headline        = "AutoDuty stopped on its own.".Loc();
+        _ = Svc.Framework.RunOnFrameworkThread(() =>
+        {
+            Svc.NotificationManager.AddNotification(new Notification
+            {
+                Title           = "AutoDuty",
+                Content         = headline + "\n" + localizedReason,
+                MinimizedText   = headline,
+                Type            = NotificationType.Warning,
+                InitialDuration = TimeSpan.FromSeconds(30),
+                Minimized       = false,
+            });
+
+            // 沿用既有的完成音效,不另外做播放層;正常跑完的路徑已經響過就不重複。
+            if (Configuration.PlayEndSound && !soundHandled)
+                SoundHelper.StartSound(true, Configuration.CustomSound, Configuration.SoundEnum);
+        });
+    }
+
     public void Dispose()
     {
         GitHubHelper.Dispose();
@@ -1941,6 +2691,14 @@ public sealed class AutoDuty : IDalamudPlugin
         FileHelper.FileSystemWatcher.Dispose();
         FileHelper.FileWatcher.Dispose();
         WindowSystem.RemoveAllWindows();
+        // 🔴 要在 ECommonsMain.Dispose() 之前拆:AddonPressGuard 的解除封鎖監聽器掛在
+        //    Svc.AddonLifecycle 上,ECommons 收掉服務之後就沒有東西可以 Unregister 了,
+        //    留著的委派會指向已卸載的組件。
+        AddonPressGuard.ForceTeardown();
+        // 🔴 拆掉所有 *_IPCSubscriber，要在 ECommonsMain.Dispose() 之前：拆除動作用得到
+        //    Svc 的服務。放在 EzIpcFailureLog.Disable() 之前，拆的過程若有 IPC 失敗才記得到 log。
+        IPCSubscriber_Common.DisposeAllSubscribers();
+        EzIpcFailureLog.Disable();
         ECommonsMain.Dispose();
         MainWindow.Dispose();
         OverrideCamera.Dispose();
@@ -2054,8 +2812,8 @@ public sealed class AutoDuty : IDalamudPlugin
                 else
                     obj = ObjectHelper.GetObjectByName(Svc.Targets.Target?.Name.TextValue ?? "");
 
-                Svc.Log.Info($"{obj?.DataId}");
-                ImGui.SetClipboardText($"{obj?.DataId}");
+                Svc.Log.Info($"{obj?.BaseId}");
+                ImGui.SetClipboardText($"{obj?.BaseId}");
                 break;
             case "moveto":
                 var argss = args.Replace("moveto ", "").Split("|");

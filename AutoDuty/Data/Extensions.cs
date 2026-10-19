@@ -1,5 +1,5 @@
 ﻿using ECommons;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -45,6 +45,18 @@ namespace AutoDuty.Data
                 results.Add((v4, "|"));
                 results.Add((index == Plugin.Indexer ? v4 : new(0, 1, 0, 1), $"{pathAction.Note}"));
             }
+            // 旗標會改變這一步的行為,和條件一樣要在列上看得見。
+            if (pathAction.Flags != PathActionFlags.None)
+            {
+                results.Add((v4, "|"));
+                results.Add((index == Plugin.Indexer ? v4 : new(1, 165 / 255f, 0, 1), pathAction.Flags.ToCustomString()));
+            }
+            // 有條件的步驟會被整步跳過,這件事必須在列上看得見,不能只藏在 tooltip 或 log 裡。
+            foreach (PathActionCondition condition in pathAction.Conditions)
+            {
+                results.Add((v4, "|"));
+                results.Add((index == Plugin.Indexer ? v4 : new(1, 165 / 255f, 0, 1), condition.Describe()));
+            }
             return results;
         }
 
@@ -70,7 +82,7 @@ namespace AutoDuty.Data
             return outString;
         }
 
-        public static string ToCustomString(this PathAction pathAction) =>$"{(pathAction.Tag.HasAnyFlag(ActionTag.None, ActionTag.Treasure, ActionTag.Revival) ? "" : $"{pathAction.Tag.ToCustomString()}|")}{pathAction.Name}|{pathAction.Position.ToCustomString()}{(pathAction.Arguments.All(x => x.IsNullOrEmpty()) ? "" : $"|{pathAction.Arguments.ToCustomString()}")}{(pathAction.Note.IsNullOrEmpty() ? "" : $"|{pathAction.Note}")}";
+        public static string ToCustomString(this PathAction pathAction) =>$"{(pathAction.Tag.HasAnyFlag(ActionTag.None, ActionTag.Treasure, ActionTag.Revival) ? "" : $"{pathAction.Tag.ToCustomString()}|")}{pathAction.Name}|{pathAction.Position.ToCustomString()}{(pathAction.Arguments.All(x => x.IsNullOrEmpty()) ? "" : $"|{pathAction.Arguments.ToCustomString()}")}{(pathAction.Note.IsNullOrEmpty() ? "" : $"|{pathAction.Note}")}{(pathAction.Flags == PathActionFlags.None ? "" : $"|{pathAction.Flags.ToCustomString()}")}{(pathAction.Conditions.Count == 0 ? "" : $"|{string.Join(" & ", pathAction.Conditions.Select(c => c.Describe()))}")}";
 
         public static string ToCustomString(this Vector3 vector3) => vector3.ToString("F2", CultureInfo.InvariantCulture).Trim('<', '>');
 

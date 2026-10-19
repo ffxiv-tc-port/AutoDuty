@@ -11,7 +11,9 @@
       "Arguments": [
         "false"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -24,7 +26,9 @@
       "Arguments": [
         "2500"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -37,7 +41,9 @@
       "Arguments": [
         "true"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -50,7 +56,9 @@
       "Arguments": [
         "true"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -63,7 +71,9 @@
       "Arguments": [
         "false"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -76,7 +86,9 @@
       "Arguments": [
         "2500"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -89,7 +101,9 @@
       "Arguments": [
         "true"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -102,7 +116,9 @@
       "Arguments": [
         "true"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "Revival",
@@ -113,7 +129,9 @@
         "Z": 0.0
       },
       "Arguments": [],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -124,7 +142,9 @@
         "Z": 40.84859
       },
       "Arguments": [],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -135,7 +155,9 @@
         "Z": 5.9204926
       },
       "Arguments": [],
-      "Note": "Chirurgeon General"
+      "Conditions": [],
+      "Note": "Chirurgeon General",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -146,7 +168,9 @@
         "Z": -25.19606
       },
       "Arguments": [],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -159,7 +183,9 @@
       "Arguments": [
         "false"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -170,7 +196,9 @@
         "Z": -40.984848
       },
       "Arguments": [],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -183,7 +211,9 @@
       "Arguments": [
         "true"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -196,7 +226,9 @@
       "Arguments": [
         "IsReady"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -209,7 +241,9 @@
       "Arguments": [
         "false"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -222,7 +256,9 @@
       "Arguments": [
         "2500"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "Treasure",
@@ -233,7 +269,9 @@
         "Z": -129.10977
       },
       "Arguments": [],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -246,7 +284,9 @@
       "Arguments": [
         "true"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -259,20 +299,9 @@
       "Arguments": [
         "true"
       ],
-      "Note": ""
-    },
-    {
-      "Tag": "W2W",
-      "Name": "Wait",
-      "Position": {
-        "X": 120.51746,
-        "Y": -490.94412,
-        "Z": -181.58107
-      },
-      "Arguments": [
-        "2500"
-      ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -285,7 +314,24 @@
       "Arguments": [
         "false"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
+    },
+    {
+      "Tag": "W2W",
+      "Name": "Wait",
+      "Position": {
+        "X": 120.51746,
+        "Y": -490.94412,
+        "Z": -181.58107
+      },
+      "Arguments": [
+        "2500"
+      ],
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "Treasure",
@@ -296,7 +342,9 @@
         "Z": -199.03227
       },
       "Arguments": [],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -307,7 +355,9 @@
         "Z": -194.35382
       },
       "Arguments": [],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -320,7 +370,9 @@
       "Arguments": [
         "true"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "Revival",
@@ -331,7 +383,9 @@
         "Z": 0.0
       },
       "Arguments": [],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -342,7 +396,9 @@
         "Z": -228.66226
       },
       "Arguments": [],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -353,7 +409,9 @@
         "Z": -257.8255
       },
       "Arguments": [],
-      "Note": "Headsman"
+      "Conditions": [],
+      "Note": "Headsman",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -366,7 +424,9 @@
       "Arguments": [
         "false"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -379,7 +439,9 @@
       "Arguments": [
         "2500"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "Treasure",
@@ -390,7 +452,9 @@
         "Z": -174.37683
       },
       "Arguments": [],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -403,7 +467,9 @@
       "Arguments": [
         "true"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -416,7 +482,9 @@
       "Arguments": [
         "true"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -427,7 +495,9 @@
         "Z": -151.62737
       },
       "Arguments": [],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -440,7 +510,9 @@
       "Arguments": [
         "true"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -453,7 +525,9 @@
       "Arguments": [
         "IsReady"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -466,7 +540,9 @@
       "Arguments": [
         "false"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -479,7 +555,9 @@
       "Arguments": [
         "2500"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "Treasure",
@@ -490,7 +568,9 @@
         "Z": 188.40088
       },
       "Arguments": [],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -501,7 +581,9 @@
         "Z": 193.27481
       },
       "Arguments": [],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "W2W",
@@ -514,7 +596,9 @@
       "Arguments": [
         "true"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -525,7 +609,9 @@
         "Z": 181.98979
       },
       "Arguments": [],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -538,7 +624,9 @@
       "Arguments": [
         "false"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "Revival",
@@ -549,7 +637,9 @@
         "Z": 0.0
       },
       "Arguments": [],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -560,7 +650,9 @@
         "Z": 133.51065
       },
       "Arguments": [],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -571,9 +663,11 @@
         "Z": 121.73173
       },
       "Arguments": [
-        "false"
+        ""
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -586,7 +680,9 @@
       "Arguments": [
         "IsReady"
       ],
-      "Note": ""
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     },
     {
       "Tag": "None",
@@ -597,7 +693,9 @@
         "Z": -4.7156987
       },
       "Arguments": [],
-      "Note": "Immortal Remains"
+      "Conditions": [],
+      "Note": "Immortal Remains",
+      "Flags": "None"
     }
   ],
   "Meta": {
@@ -606,6 +704,18 @@
       {
         "Version": 230,
         "Change": "Adjusted Wait in W2W pulls, and Revival points before b1 and b2"
+      },
+      {
+        "Version": 284,
+        "Change": "Adjusted 2nd pull in 2nd arm"
+      },
+      {
+        "Version": 304,
+        "Change": "Version update"
+      },
+      {
+        "Version": 375,
+        "Change": "B3 entrance smoothened"
       }
     ],
     "Notes": []

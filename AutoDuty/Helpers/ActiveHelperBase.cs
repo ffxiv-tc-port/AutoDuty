@@ -34,9 +34,13 @@ namespace AutoDuty.Helpers
         {
             get
             {
-                T helper = new();
-                ActiveHelper.activeHelpers.Add(helper);
-                return instance ??= helper;
+                // 只登記真正的那一份：每次存取都 new 會讓停止清單累積用不到的副本，每份停止時各掛一份收尾。
+                if (instance == null)
+                {
+                    instance = new();
+                    ActiveHelper.activeHelpers.Add(instance);
+                }
+                return instance;
             }
         }
 
@@ -94,6 +98,8 @@ namespace AutoDuty.Helpers
 
             SchedulerHelper.DescheduleAction($"Helper_{this.Name}_TimeOut");
 
+            // 先退再掛：Stop() 可能被連呼多次，同一個收尾只該掛一份。
+            Svc.Framework.Update -= this.HelperStopUpdate;
             Svc.Framework.Update += this.HelperStopUpdate;
             Svc.Framework.Update -= this.HelperUpdate;
         }
@@ -135,14 +141,25 @@ namespace AutoDuty.Helpers
             Svc.Framework.Update -= this.HelperStopUpdate;
         }
 
+        /// <remarks>
+        /// 🔴 這支掛在 <see cref="HelperStopUpdate"/> 上<b>每幀</b>跑到清單全空為止,而 <c>Close(true)</c> 的 <c>true</c>
+        /// 就是 fireCallback —— 對「前一幀才被 <c>ClickSelectYesno</c>/<c>ClickTalk</c> 按過、正在關閉中」的窗
+        /// 再送一次 callback 就是攔不到的存取違規(<c>IsVisible</c> 在那幾幀仍然是 true,擋不住)。
+        /// 所以每一發 <c>Close(true)</c> 都先過 <see cref="AddonPressGuard.TryBeginClose"/>:
+        /// 同一位址上任何按法還在逃生口內就這一幀不關,照原本的「還沒關完」路徑回 false,下一幀再來。
+        /// </remarks>
         public unsafe bool CloseAddons()
         {
             for (int i = 0; i < this.AddonsToClose.Length; i++)
             {
                 if (GenericHelpers.TryGetAddonByName(this.AddonsToClose[i], out AtkUnitBase* atkUnitBase) && atkUnitBase->IsVisible)
                 {
-                    this.DebugLog("Closing Addon " + this.AddonsToClose[i]);
-                    atkUnitBase->Close(true);
+                    if (AddonPressGuard.TryBeginClose(this.AddonsToClose[i], atkUnitBase))
+                    {
+                        this.DebugLog("Closing Addon " + this.AddonsToClose[i]);
+                        atkUnitBase->Close(true);
+                    }
+
                     return false;
                 }
             }

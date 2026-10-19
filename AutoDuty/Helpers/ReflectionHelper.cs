@@ -39,7 +39,7 @@ namespace AutoDuty.Helpers
 
         internal static class RotationSolver_Reflection
         { 
-            internal static bool RotationSolverEnabled => DalamudReflector.TryGetDalamudPlugin("RotationSolver", out _, false, true);
+            internal static bool RotationSolverEnabled => IPCSubscriber_Common.IsReady("RotationSolver");
 
             internal static bool GetState => DalamudReflector.TryGetDalamudPlugin("RotationSolver", out var pl, false, true) && (bool)Assembly.GetAssembly(pl.GetType()).GetType("RotationSolver.Commands.RSCommands").GetField("_lastState", All).GetValue(null);
 
@@ -55,13 +55,13 @@ namespace AutoDuty.Helpers
                 switch (stateType)
                 {
                     case StateTypeEnum.Manual:
-                        new Chat().ExecuteCommand("/rotation manual");
+                        Chat.ExecuteCommand("/rotation manual");
                         break;
                     case StateTypeEnum.Auto:
-                        new Chat().ExecuteCommand("/rotation auto");
+                        Chat.ExecuteCommand("/rotation auto");
                         break;
                     default:
-                        new Chat().ExecuteCommand("/rotation cancel");
+                        Chat.ExecuteCommand("/rotation cancel");
                         break;
                 }
             }

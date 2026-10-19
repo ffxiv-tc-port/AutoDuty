@@ -1,5 +1,5 @@
 ﻿using Dalamud.Utility;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
@@ -125,6 +125,63 @@ namespace AutoDuty.Helpers
             ImGui.SetItemAllowOverlap();
             ImGui.Text(icon.ToIconString());
             ImGui.SameLine();
+        }
+
+        /// <summary>
+        /// 外觀與 Dalamud <c>ImGuiComponents.HelpMarker</c> 相同的說明圖示，差別是圖示停用時也看得到說明。
+        /// </summary>
+        /// <remarks>
+        /// Dalamud 版判 hover 不帶 <c>AllowWhenDisabled</c>，停用區段裡永遠不顯示。停用區段又把 <c>Style.Alpha</c>
+        /// 乘上 <c>DisabledAlpha</c>，所以只在圖示停用時把說明框推回 Alpha 1；沒停用時與 Dalamud 版逐項相同。
+        /// </remarks>
+        internal static void HelpMarkerAllowWhenDisabled(string helpText)
+        {
+            ImGui.SameLine();
+
+            using (ImRaii.PushFont(UiBuilder.IconFont))
+                ImGui.TextDisabled(FontAwesomeIcon.InfoCircle.ToIconString());
+
+            if (!ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                return;
+
+            // 預設旗標判不到 hover ⇒ 圖示是停用的。
+            bool iconDisabled = !ImGui.IsItemHovered(ImGuiHoveredFlags.None);
+            using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, 1f, iconDisabled))
+            using (ImRaii.Tooltip())
+            using (ImRaii.TextWrapPos(ImGui.GetFontSize() * 35.0f))
+                ImGui.Text(helpText);
+        }
+
+        /// <summary>
+        /// 分節標題（置中、點一下切換展開的 <c>Selectable</c>）：外層整段停用時標題照樣能展開／收合，標題之後的內容停用層數不變。
+        /// </summary>
+        /// <remarks>
+        /// <c>ImRaii.Enabled()</c> 暫時結束的只有 <c>ImRaii.Disabled</c> 推的層，離開時原數重開；
+        /// 直接呼叫 <c>ImGui.BeginDisabled</c> 的層它解不開。展開狀態照舊存在呼叫端傳進來的欄位。
+        /// </remarks>
+        internal static void SectionHeaderAlwaysEnabled(string label, ref bool open)
+        {
+            using (ImRaii.Enabled())
+            {
+                bool clicked;
+                using (ImRaii.PushStyle(ImGuiStyleVar.SelectableTextAlign, new Vector2(0.5f, 0.5f)))
+                    clicked = ImGui.Selectable(label, open, ImGuiSelectableFlags.DontClosePopups);
+
+                if (ImGui.IsItemHovered())
+                    ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+
+                if (clicked)
+                    open = !open;
+            }
+        }
+
+        /// <summary>
+        /// <see cref="SectionHeaderAlwaysEnabled"/> 的 <c>ImGui.CollapsingHeader</c> 版；展開狀態照舊存在 ImGui 自己的 storage。
+        /// </summary>
+        internal static bool CollapsingHeaderAlwaysEnabled(string label, ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags.None)
+        {
+            using (ImRaii.Enabled())
+                return ImGui.CollapsingHeader(label, flags);
         }
     }
 }

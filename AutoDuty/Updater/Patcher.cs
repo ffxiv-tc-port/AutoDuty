@@ -52,7 +52,8 @@ namespace AutoDuty.Updater
 
                 foreach (var file in downloadList)
                 {
-                    var result = await GitHubHelper.DownloadFileAsync($"https://raw.githubusercontent.com/ffxivcode/AutoDuty/refs/heads/master/AutoDuty/Paths/{file.Key}",$"{Plugin.PathsDirectory.FullName}/{file.Key}");
+                    // 來源與 md5s.json 必須是同一個 repo/分支,否則雜湊永遠對不上、每次都重下載。
+                    var result = await GitHubHelper.DownloadFileAsync($"{GitHubHelper.PathRepoBaseUrl}AutoDuty/Paths/{file.Key}",$"{Plugin.PathsDirectory.FullName}/{file.Key}");
                     var logger = result ? $"Succesfully downloaded: {file.Key}" : $"Failed to download: {file.Key}";
                     Svc.Log.Info(logger);
                 }

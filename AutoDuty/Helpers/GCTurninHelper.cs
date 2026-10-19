@@ -23,9 +23,14 @@ namespace AutoDuty.Helpers
         internal override void Start()
         {
             if (!AutoRetainer_IPCSubscriber.IsEnabled)
-                Svc.Log.Info("GC Turnin Requires AutoRetainer plugin. Get @ https://love.puni.sh/ment.json");
+                Svc.Log.Info("GC Turnin Requires AutoRetainer plugin. Get @ https://raw.githubusercontent.com/ffxiv-tc-port/DalamudPluginsTC/main/repo.json");
             else
+            {
+                // 要使用者回報的診斷:寫 Information。
+                // 這是「接下來會自動移動角色，而且 AutoRetainer 會先花掉軍票」的唯一事前告知。
+                Svc.Log.Information("[GCTurninHelper] 前往大國防聯軍駐地執行籌備稀有品繳交，由 AutoRetainer 接手。注意：AutoRetainer 會先找補給負責人，把軍票拿去購買探險幣，之後才開始繳交；要保留軍票請在 AutoRetainer 的兌換計畫設定 Seals to keep。不會切換角色。");
                 base.Start();
+            }
         }
 
         internal override void Stop() 
@@ -39,7 +44,7 @@ namespace AutoDuty.Helpers
 
         private IGameObject? _personnelOfficerGameObject => ObjectHelper.GetObjectByDataId(_personnelOfficerDataId);
         private static uint _personnelOfficerDataId => PlayerHelper.GetGrandCompany() == 1 ? 1002388u : (PlayerHelper.GetGrandCompany() == 2 ? 1002394u : 1002391u);
-        private static uint _aetheryteTicketId = PlayerHelper.GetGrandCompany() == 1 ? 21069u : (PlayerHelper.GetGrandCompany() == 2 ? 21070u : 21071u);
+        private static uint _aetheryteTicketId => PlayerHelper.GetGrandCompany() == 1 ? 21069u : (PlayerHelper.GetGrandCompany() == 2 ? 21070u : 21071u);
         private bool _turninStarted = false;
 
         protected override unsafe void HelperStopUpdate(IFramework framework)

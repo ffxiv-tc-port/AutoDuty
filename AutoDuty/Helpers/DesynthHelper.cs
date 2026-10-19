@@ -34,6 +34,10 @@ namespace AutoDuty.Helpers
             if (!EzThrottler.Throttle("Desynth", 250))
                 return;
 
+            // Conditions / ActionManager / InventoryManager 三者的 Instance() 都是 isPointer:false 的 [StaticAddress]:
+            // 只有兩種結局,回非 null 或丟 InvalidOperationException(特徵碼失配),**永遠不會回 null**,所以這裡不判空。
+            // ⚠️ 這個結論**只對 isPointer:false 成立**:isPointer:true 的版本回傳的是再解參考一次的值,真的會回 null,
+            //    判空不可刪。刪任何 Instance() 判空之前都要回去讀該型別的宣告確認是哪一種。
             if (Conditions.Instance()->Mounted)
             {
                 ActionManager.Instance()->UseAction(ActionType.GeneralAction, 23);
@@ -42,7 +46,11 @@ namespace AutoDuty.Helpers
 
             Plugin.Action = "Desynthing Inventory";
 
-            if (InventoryManager.Instance()->GetEmptySlotsInBag() < 1)
+            // 取進區域變數是為了底下拆解道具時的 GetInventorySlot 重用同一個實例
+            // (同一幀內,不跨幀保存),不是為了判空 —— 理由同上。
+            InventoryManager* inventoryManager = InventoryManager.Instance();
+
+            if (inventoryManager->GetEmptySlotsInBag() < 1)
             {
                 Stop();
                 return;
@@ -53,8 +61,13 @@ namespace AutoDuty.Helpers
 
             if (GenericHelpers.TryGetAddonByName("SalvageResult", out AtkUnitBase* addonSalvageResult) && GenericHelpers.IsAddonReady(addonSalvageResult))
             {
-                DebugLog("Closing SalvageResult");
-                addonSalvageResult->Close(true);
+                // 每 250 毫秒重跑到它消失為止;Close(true) 會送 callback,關閉中的那幾幀 IsAddonReady 三關全過,
+                // 再關一次就是攔不到的存取違規 —— 過守衛,被擋就這一輪不動(照原本的路徑 return)。
+                if (AddonPressGuard.TryBeginClose("SalvageResult", addonSalvageResult))
+                {
+                    DebugLog("Closing SalvageResult");
+                    addonSalvageResult->Close(true);
+                }
                 return;
             }
             else if (GenericHelpers.TryGetAddonByName("SalvageDialog", out AtkUnitBase* addonSalvageDialog) && GenericHelpers.IsAddonReady(addonSalvageDialog))
@@ -64,16 +77,24 @@ namespace AutoDuty.Helpers
                 return;
             }
             
+            // 🔴 這一個和上面那三個**不是同一種形狀,判空不可刪**:AgentSalvage 標的是 [Agent(AgentId.Salvage)],
+            // Instance() 經 AgentModule.Instance() 取得,而那支是手寫的 `uiModule == null ? null : uiModule->GetAgentModule()`
+            // —— UIModule 尚未建立(登入畫面／跳圖載入中)時整條就是 null。
+            // 底下兩個分支都要用到,所以在分岔前取一次、判空後同幀即用。
+            AgentSalvage* agentSalvage = AgentSalvage.Instance();
+            if (agentSalvage == null)
+                return;
+
             if (!GenericHelpers.TryGetAddonByName<AddonSalvageItemSelector>("SalvageItemSelector", out var addonSalvageItemSelector))
             {
-                AgentSalvage.Instance()->AgentInterface.Show();
+                agentSalvage->AgentInterface.Show();
                 EzThrottler.Throttle("Desynth", 2000, true);
                 return;
             }
             else if (GenericHelpers.IsAddonReady((AtkUnitBase*)addonSalvageItemSelector) && addonSalvageItemSelector->IsReady)
             {
-                AgentSalvage.Instance()->ItemListRefresh(true);
-                if (AgentSalvage.Instance()->SelectedCategory != AgentSalvage.SalvageItemCategory.InventoryEquipment)
+                agentSalvage->ItemListRefresh(true);
+                if (agentSalvage->SelectedCategory != AgentSalvage.SalvageItemCategory.InventoryEquipment)
                 {
                     DebugLog("Switching Category");
                     AddonHelper.FireCallBack((AtkUnitBase*)addonSalvageItemSelector, true, 11, 0);
@@ -81,12 +102,24 @@ namespace AutoDuty.Helpers
                 }
                 else if (addonSalvageItemSelector->ItemCount > 0)
                 {
+                    // ItemList 是裸指標陣列(AgentSalvage +0x38),清單還沒建好時是 null,而
+                    // ItemCount 是獨立欄位、擋不住它。沒有長度欄位可驗,只能以 ItemCount 為界,
+                    // 所以先擋掉 null 再進迴圈(失敗形式=這一 tick 不動作,下次節流放行再試)。
+                    AgentSalvage.SalvageListItem* itemList = agentSalvage->ItemList;
+                    if (itemList == null)
+                        return;
+
                     var foundOne = false;
-                    for (int i = 0; i < AgentSalvage.Instance()->ItemCount; i++)
+                    for (int i = 0; i < agentSalvage->ItemCount; i++)
                     {
-                        var item = AgentSalvage.Instance()->ItemList[i];
-                        var itemId = InventoryManager.Instance()->GetInventorySlot(item.InventoryType, (int)item.InventorySlot)->ItemId;
-                            
+                        var item = itemList[i];
+                        // GetInventorySlot 對不存在的容器/格號會回 null:
+                        // 拆開判空,取不到就跳過這一件(沿用同迴圈既有的 continue 慣例)。
+                        InventoryItem* inventorySlot = inventoryManager->GetInventorySlot(item.InventoryType, (int)item.InventorySlot);
+                        if (inventorySlot == null) continue;
+
+                        var itemId = inventorySlot->ItemId;
+
                         if (itemId == 10146) continue;
 
                         var itemSheetRow = Svc.Data.Excel.GetSheet<Item>()?.GetRow(itemId);
@@ -106,14 +139,18 @@ namespace AutoDuty.Helpers
 
                     if (!foundOne)
                     {
-                        addonSalvageItemSelector->Close(true);
+                        // 上面那幾發 (true, 12, i) 才剛對同一扇窗送過;Close(true) 也會送 callback。
+                        // 守衛擋下就不關 —— Stop() 之後 HelperStopUpdate 會用 AddonsToClose 補關(那邊也過守衛)。
+                        if (AddonPressGuard.TryBeginClose("SalvageItemSelector", (AtkUnitBase*)addonSalvageItemSelector))
+                            addonSalvageItemSelector->Close(true);
                         DebugLog("Desynth Finished");
                         Stop();
                     }
                 }
                 else
                 {
-                    addonSalvageItemSelector->Close(true);
+                    if (AddonPressGuard.TryBeginClose("SalvageItemSelector", (AtkUnitBase*)addonSalvageItemSelector))
+                        addonSalvageItemSelector->Close(true);
                     DebugLog("Desynth Finished");
                     Stop();
                 }

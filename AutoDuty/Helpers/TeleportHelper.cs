@@ -38,29 +38,38 @@ namespace AutoDuty.Helpers
             }
         }
 
-        internal static MapMarkerData FCEstateMapMarkerData => AgentHUD.Instance()->MapMarkers.ToList().FirstOrDefault(x => x.IconId.EqualsAny((uint[])Enum.GetValuesAsUnderlyingType<FCHousingMarker>()));
+        // AgentHUD.Instance() 是產生器產出的取得子,UIModule/代理人尚未建立時會回 null。
+        // 取不到就回 default:消費端的 *WardCenterVector3 本來就拿 Vector3.Zero 當「沒有這個標記」,
+        // 與 FirstOrDefault 找不到時的結果完全一致,不需要再多一條處理路徑。
+        private static MapMarkerData FindHousingMapMarker(uint[] iconIds)
+        {
+            AgentHUD* agentHud = AgentHUD.Instance();
+            return agentHud == null ? default : agentHud->MapMarkers.ToList().FirstOrDefault(x => x.IconId.EqualsAny(iconIds));
+        }
 
-        internal static Vector3 FCEstateWardCenterVector3 => new(FCEstateMapMarkerData.X, FCEstateMapMarkerData.Y, FCEstateMapMarkerData.Z);
+        internal static MapMarkerData FCEstateMapMarkerData => FindHousingMapMarker((uint[])Enum.GetValuesAsUnderlyingType<FCHousingMarker>());
+
+        internal static Vector3 FCEstateWardCenterVector3 => new(FCEstateMapMarkerData.Position.X, FCEstateMapMarkerData.Position.Y, FCEstateMapMarkerData.Position.Z);
 
         internal static uint FCEstateTeleportId => Svc.AetheryteList.FirstOrDefault(x => x is { IsApartment: false, IsSharedHouse: false } && x.AetheryteId.EqualsAny<uint>(56, 57, 58, 96, 164))?.AetheryteId ?? 0;
 
-        internal static IGameObject? FCEstateEntranceGameObject => FCEstateWardCenterVector3 != Vector3.Zero ? ObjectHelper.GetObjectsByObjectKind(ObjectKind.EventObj)?.OrderBy(x => Vector3.Distance(x.Position, FCEstateWardCenterVector3)).FirstOrDefault(x => x.DataId == 2002737) : null;
+        internal static IGameObject? FCEstateEntranceGameObject => FCEstateWardCenterVector3 != Vector3.Zero ? ObjectHelper.GetObjectsByObjectKind(ObjectKind.EventObj)?.OrderBy(x => Vector3.Distance(x.Position, FCEstateWardCenterVector3)).FirstOrDefault(x => x.BaseId == 2002737) : null;
 
-        internal static MapMarkerData PersonalHomeMapMarkerData => AgentHUD.Instance()->MapMarkers.ToList().FirstOrDefault(x => x.IconId.EqualsAny((uint[])Enum.GetValuesAsUnderlyingType<PrivateHousingMarker>()));
+        internal static MapMarkerData PersonalHomeMapMarkerData => FindHousingMapMarker((uint[])Enum.GetValuesAsUnderlyingType<PrivateHousingMarker>());
 
-        internal static Vector3 PersonalHomeWardCenterVector3 => new(PersonalHomeMapMarkerData.X, PersonalHomeMapMarkerData.Y, PersonalHomeMapMarkerData.Z);
+        internal static Vector3 PersonalHomeWardCenterVector3 => new(PersonalHomeMapMarkerData.Position.X, PersonalHomeMapMarkerData.Position.Y, PersonalHomeMapMarkerData.Position.Z);
 
         internal static uint PersonalHomeTeleportId => Svc.AetheryteList.FirstOrDefault(x => x is { IsApartment: false, IsSharedHouse: false } && x.AetheryteId.EqualsAny<uint>(59, 60, 61, 97, 165))?.AetheryteId ?? 0;
 
-        internal static IGameObject? PersonalHomeEntranceGameObject => PersonalHomeWardCenterVector3 != Vector3.Zero ? ObjectHelper.GetObjectsByObjectKind(ObjectKind.EventObj)?.OrderBy(x => Vector3.Distance(x.Position, PersonalHomeWardCenterVector3)).FirstOrDefault(x => x.DataId == 2002737) : null;
+        internal static IGameObject? PersonalHomeEntranceGameObject => PersonalHomeWardCenterVector3 != Vector3.Zero ? ObjectHelper.GetObjectsByObjectKind(ObjectKind.EventObj)?.OrderBy(x => Vector3.Distance(x.Position, PersonalHomeWardCenterVector3)).FirstOrDefault(x => x.BaseId == 2002737) : null;
 
-        internal static MapMarkerData ApartmentMapMarkerData => AgentHUD.Instance()->MapMarkers.ToList().FirstOrDefault(x => x.IconId.EqualsAny((uint[])Enum.GetValuesAsUnderlyingType<ApartmentHousingMarker>()));
+        internal static MapMarkerData ApartmentMapMarkerData => FindHousingMapMarker((uint[])Enum.GetValuesAsUnderlyingType<ApartmentHousingMarker>());
 
-        internal static Vector3 ApartmentWardCenterVector3 => new(ApartmentMapMarkerData.X, ApartmentMapMarkerData.Y, ApartmentMapMarkerData.Z);
+        internal static Vector3 ApartmentWardCenterVector3 => new(ApartmentMapMarkerData.Position.X, ApartmentMapMarkerData.Position.Y, ApartmentMapMarkerData.Position.Z);
 
         internal static uint ApartmentTeleportId => Svc.AetheryteList.FirstOrDefault(x => x is { IsApartment: true, IsSharedHouse: false } && x.AetheryteId.EqualsAny<uint>(59, 60, 61, 97, 165))?.AetheryteId ?? 0;
 
-        internal static IGameObject? ApartmentEntranceGameObject => ApartmentWardCenterVector3 != Vector3.Zero ? ObjectHelper.GetObjectsByObjectKind(ObjectKind.EventObj)?.OrderBy(x => Vector3.Distance(x.Position, ApartmentWardCenterVector3)).FirstOrDefault(x => x.DataId == 2007402) : null;
+        internal static IGameObject? ApartmentEntranceGameObject => ApartmentWardCenterVector3 != Vector3.Zero ? ObjectHelper.GetObjectsByObjectKind(ObjectKind.EventObj)?.OrderBy(x => Vector3.Distance(x.Position, ApartmentWardCenterVector3)).FirstOrDefault(x => x.BaseId == 2007402) : null;
 
         internal static bool TeleportGCCity()
         {
@@ -108,11 +117,24 @@ namespace AutoDuty.Helpers
                 if ((addon = ObjectHelper.InteractWithObjectUntilAddon(gameObject, "SelectString")) == null)
                     return false;
 
-                Callback.Fire(addon, true, 0);
+                // 走 AddonHelper 才吃得到 AddonPressGuard。
+                AddonHelper.FireCallBack(addon, true, 0);
+
+                // 🔴 這裡一定要收手:上面那一發是對 **SelectString** 送的,它會關掉選單並開出 TelepotTown;
+                //    (true, 11, …) 是要給 TelepotTown 的,同一次呼叫裡接著送就是對著<b>正在關閉的 SelectString</b> 送出去
+                //    (EzThrottler 第一次必定放行,擋不住),而且 GetAethernetCallback 此時取不到 TelepotTown、只會回 0。
+                //    下一次進來時上面的 TelepotTown 分支就會接手。
+                //    ⚠️ 呼叫端(GotoHelper)忽略回傳值、每個 tick 重跑。
+                return false;
             }
 
             if (EzThrottler.Throttle("TeleportAethernet", 250))
-                Callback.Fire(addon, true, 11, GetAethernetCallback(aethernetName));
+            {
+                // 目的地是靠讀 TelepotTown 的文字比對出來的;讀到 U+FFFD 就是窗記憶體變動中,這一輪不送。
+                uint callback = GetAethernetCallback(aethernetName, out bool textUnreadable);
+                if (!textUnreadable)
+                    AddonHelper.FireCallBack(addon, true, 11, callback);
+            }
 
             return false;
         }
@@ -124,14 +146,27 @@ namespace AutoDuty.Helpers
             return Telepo.Instance()->Teleport(aetheryteId, subindex);
         }
 
-        internal static uint GetAethernetCallback(string aethernetName)
+        /// <param name="textUnreadable">
+        /// 任何一筆目的地名稱含 U+FFFD ⇒ <see langword="true"/>:窗記憶體正在變動,呼叫端這一輪不要送 callback。
+        /// 找不到時回 0。
+        /// </param>
+        internal static uint GetAethernetCallback(string aethernetName, out bool textUnreadable)
         {
+            textUnreadable = false;
+
             if (GenericHelpers.TryGetAddonByName("TelepotTown", out AtkUnitBase* addon) && GenericHelpers.IsAddonReady(addon))
             {
                 var readerTelepotTown = new ReaderTelepotTown(addon);
                 for (int i = 0; i < readerTelepotTown.DestinationData.Count; i++)
                 {
-                    if (aethernetName == readerTelepotTown.DestinationName[i].Name)
+                    string name = readerTelepotTown.DestinationName[i].Name;
+                    if (AddonPressGuard.IsTextCorrupt("TelepotTown", name))
+                    {
+                        textUnreadable = true;
+                        return 0;
+                    }
+
+                    if (aethernetName == name)
                         return readerTelepotTown.DestinationData[i].CallbackData;
                 }
             }
@@ -148,7 +183,13 @@ namespace AutoDuty.Helpers
 
         internal unsafe class Names(nint UnitBasePtr, int BeginOffset = 0) : AtkReader(UnitBasePtr, BeginOffset)
         {
-            internal string Name => ReadSeString(0).GetText();
+            /// <remarks>
+            /// 🔴 這裡<b>不能</b>用 ECommons 的 <c>GetText()</c>:另一端是 Lumina
+            /// (<c>GotoHelper</c> 傳進來的是 <c>AethernetName…Name.ToString()</c>),
+            /// 而 <c>GetText()</c> 會把地名裡的連字符 payload(<c>02 1F 01 03</c>)整個丟掉
+            /// ⇒ 「烏爾達哈 - 納爾階」這類名字<b>永遠比不中</b>,失敗形式是靜默回 0。
+            /// </remarks>
+            internal string Name => SeStringTextExtractor.ExtractLuminaText(ReadSeString(0));
         }
 
         internal unsafe class Data(nint UnitBasePtr, int BeginOffset = 0) : AtkReader(UnitBasePtr, BeginOffset)

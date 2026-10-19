@@ -71,7 +71,7 @@ namespace AutoDuty.Helpers
 
             EzThrottler.Throttle("GotoInn", 50);
 
-            if (Svc.ClientState.LocalPlayer == null)
+            if (Svc.Objects.LocalPlayer == null)
             {
                 Svc.Log.Debug($"Our player is null");
                 return;
@@ -89,7 +89,7 @@ namespace AutoDuty.Helpers
                 return;
             }
 
-            if (Svc.ClientState.TerritoryType != PlayerHelper.GetGrandCompanyTerritoryType(_whichGrandCompany) || _innKeepGameObject == null || Vector3.Distance(Svc.ClientState.LocalPlayer.Position, _innKeepGameObject.Position) > 7f)
+            if (Svc.ClientState.TerritoryType != PlayerHelper.GetGrandCompanyTerritoryType(_whichGrandCompany) || _innKeepGameObject == null || Vector3.Distance(Svc.Objects.LocalPlayer.Position, _innKeepGameObject.Position) > 7f)
             {
                 Svc.Log.Debug($"We are not in the correct TT or our innkeepGO is null or out innkeepPosition is > 7f, moving there");
                 GotoHelper.Invoke(PlayerHelper.GetGrandCompanyTerritoryType(_whichGrandCompany), _innKeepLocation, 0.25f, 5f, false);

@@ -65,8 +65,15 @@ namespace AutoDuty.Helpers
 
             if (GenericHelpers.TryGetAddonByName("MaterializeDialog", out AtkUnitBase* addonMaterializeDialog) && GenericHelpers.IsAddonReady(addonMaterializeDialog))
             {
-                Svc.Log.Debug("AutoExtract - Confirming MaterializeDialog");
-                new AddonMaster.MaterializeDialog(addonMaterializeDialog).Materialize();
+                // 🔴 這條路徑不經 AddonHelper,所以要自己過守衛。上面那道 250 毫秒節流不是防護:
+                //    它記的是時刻不是「這扇窗按過了」,而確認框「關閉中」的那幾幀
+                //    TryGetAddonByName 與 IsAddonReady 三關全過 —— 再按一次就是攔不到的存取違規。
+                if (AddonPressGuard.TryBeginPress("MaterializeDialog", addonMaterializeDialog, "Materialize"))
+                {
+                    Svc.Log.Debug("AutoExtract - Confirming MaterializeDialog");
+                    new AddonMaster.MaterializeDialog(addonMaterializeDialog).Materialize();
+                }
+
                 return;
             }
 
@@ -76,12 +83,47 @@ namespace AutoDuty.Helpers
             {
                 if (_currentCategory <= _stoppingCategory)
                 {
-                    var list = addonMaterialize->GetNodeById(12)->GetAsAtkComponentList();
+                    // 🔴 逐層判空:GetNodeById 找不到節點就回 null,
+                    // GetAsAtkXxx / GetComponent / GetTextNodeById 全是遊戲原生函式,對 null 的
+                    // this 直接解參考 —— 而 AVE 是 corrupted-state exception,try/catch 攔不到。
+                    // 另外 NodeList 是**裸指標陣列**,索引前必須自己驗 NodeListCount:
+                    // 它沒有任何邊界檢查,超界讀到的是相鄰記憶體而不是例外。
+                    var listNode = addonMaterialize->GetNodeById(12);
+                    if (listNode == null) return;
+
+                    var list = listNode->GetAsAtkComponentList();
 
                     if (list == null) return;
 
-                    var spiritbondTextNode = list->UldManager.NodeList[2]->GetComponent()->GetTextNodeById(5)->GetAsAtkTextNode();
-                    var categoryTextNode = addonMaterialize->GetNodeById(4)->GetAsAtkComponentDropdownList()->UldManager.NodeList[1]->GetAsAtkComponentCheckBox()->GetTextNodeById(3)->GetAsAtkTextNode();
+                    if (list->UldManager.NodeList == null || list->UldManager.NodeListCount <= 2) return;
+                    var spiritbondItemNode = list->UldManager.NodeList[2];
+                    if (spiritbondItemNode == null) return;
+
+                    var spiritbondComponent = spiritbondItemNode->GetComponent();
+                    if (spiritbondComponent == null) return;
+
+                    // GetTextNodeById 回傳的已經是 AtkTextNode*;多接的那次 GetAsAtkTextNode() 等於一道型別斷言,
+                    // 保留那道斷言,只是先判空再呼叫。
+                    AtkTextNode* spiritbondTextNode = null;
+                    var spiritbondText = spiritbondComponent->GetTextNodeById(5);
+                    if (spiritbondText != null) spiritbondTextNode = spiritbondText->GetAsAtkTextNode();
+
+                    var dropdownNode = addonMaterialize->GetNodeById(4);
+                    if (dropdownNode == null) return;
+
+                    var dropdown = dropdownNode->GetAsAtkComponentDropdownList();
+                    if (dropdown == null) return;
+
+                    if (dropdown->UldManager.NodeList == null || dropdown->UldManager.NodeListCount <= 1) return;
+                    var categoryItemNode = dropdown->UldManager.NodeList[1];
+                    if (categoryItemNode == null) return;
+
+                    var categoryCheckBox = categoryItemNode->GetAsAtkComponentCheckBox();
+                    if (categoryCheckBox == null) return;
+
+                    AtkTextNode* categoryTextNode = null;
+                    var categoryText = categoryCheckBox->GetTextNodeById(3);
+                    if (categoryText != null) categoryTextNode = categoryText->GetAsAtkTextNode();
 
                     if (spiritbondTextNode == null || categoryTextNode == null) return;
 
@@ -94,7 +136,19 @@ namespace AutoDuty.Helpers
                         return;
                     }
 
-                    if (spiritbondTextNode->NodeText.ToString().Replace(" ", string.Empty) == "100%")
+                    // 讀到 U+FFFD ＝ 視窗記憶體正在變動,這一幀不碰:既不按也不切分類(切分類是不可逆的狀態推進)。
+                    // 🔴 文字要用 GetText() 讀(底下是 MemoryHelper.ReadSeString，只保留 TextPayload);ToString() 不剝 SeString payload,
+                    //    含 payload 的文字必定解出 U+FFFD ⇒ 下面那道守衛永遠成立、精製永遠不動作。
+                    // ⚠️ StringPtr 為 null 而 Length 還留著殘值時，AsSpan() 會建出指向位址 0 的 Span ⇒ 攔不到的存取違規。判空後這一幀
+                    //    什麼都不做，**不可以**往下走 else 去 _currentCategory++（那是不可逆的推進）。
+                    if (!spiritbondTextNode->NodeText.StringPtr.HasValue)
+                        return;
+
+                    string spiritbondValue = spiritbondTextNode->NodeText.GetText();
+                    if (AddonPressGuard.IsTextCorrupt("Materialize", spiritbondValue))
+                        return;
+
+                    if (spiritbondValue.Replace(" ", string.Empty) == "100%")
                     {
                         Svc.Log.Debug($"AutoExtract - Extracting Materia");
                         AddonHelper.FireCallBack(addonMaterialize, true, 2, 0);
@@ -108,7 +162,9 @@ namespace AutoDuty.Helpers
                 }
                 else
                 {
-                    addonMaterialize->Close(true);
+                    // Close(true) 也會送 callback;守衛擋下就不關,Stop() 之後 HelperStopUpdate 會用 AddonsToClose 補關。
+                    if (AddonPressGuard.TryBeginClose("Materialize", addonMaterialize))
+                        addonMaterialize->Close(true);
                     Svc.Log.Info("Extract Materia Finished");
                     Stop();
                 }

@@ -15,10 +15,6 @@
       {
         "Track": "AOE",
         "Option": "AOE"
-      },
-      {
-        "Track": "Buffs",
-        "Option": "Auto"
       }
     ],
     "BossMod.Autorotation.xan.PCT": [
@@ -32,7 +28,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.xan.RDM": [
@@ -46,7 +42,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.xan.SMN": [
@@ -60,7 +56,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.xan.AST": [
@@ -74,7 +70,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.xan.SCH": [
@@ -88,7 +84,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.xan.SGE": [
@@ -102,7 +98,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.xan.WHM": [
@@ -116,7 +112,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.xan.DRG": [
@@ -130,7 +126,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.xan.MNK": [
@@ -154,7 +150,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.xan.RPR": [
@@ -168,7 +164,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.xan.SAM": [
@@ -182,7 +178,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.xan.VPR": [
@@ -196,7 +192,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.xan.BRD": [
@@ -210,7 +206,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.xan.DNC": [
@@ -224,7 +220,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.xan.MCH": [
@@ -238,7 +234,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.xan.DRK": [
@@ -252,7 +248,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.xan.GNB": [
@@ -266,7 +262,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.xan.PLD": [
@@ -280,7 +276,7 @@
       },
       {
         "Track": "Buffs",
-        "Option": "Auto"
+        "Option": "Automatic"
       }
     ],
     "BossMod.Autorotation.VeynWAR": [
@@ -325,15 +321,16 @@
         "Option": "Automatic"
       }
     ],
+    "BossMod.Autorotation.MiscAI.StayCloseToPartyRole": [],
     "BossMod.Autorotation.MiscAI.StayCloseToTarget": [],
     "BossMod.Autorotation.xan.HealerAI": [
       {
         "Track": "Raise",
-        "Option": "Raise using Swiftcast only"
+        "Option": "Swiftcast"
       },
       {
         "Track": "RaiseTargets",
-        "Option": "Alliance raid members"
+        "Option": "Alliance"
       },
       {
         "Track": "Heal",

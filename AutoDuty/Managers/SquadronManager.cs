@@ -37,7 +37,7 @@ namespace AutoDuty.Managers
             }
 
             //Defining the GUI for the squadron duty finder
-            _taskManager.Enqueue(() => addon = (AtkUnitBase*)Svc.GameGui.GetAddonByName("GcArmyCapture"), "RegisterSquadron");
+            _taskManager.Enqueue(() => GenericHelpers.TryGetAddonByName("GcArmyCapture", out addon), "RegisterSquadron");
             
             // Run logic to open the squadron duty finder
             _taskManager.Enqueue(() => OpenSquadron(addon), "RegisterSquadron");
@@ -46,18 +46,48 @@ namespace AutoDuty.Managers
             _taskManager.Enqueue(() => GenericHelpers.TryGetAddonByName("GcArmyCapture", out addon) && GenericHelpers.IsAddonReady(addon), "RegisterSquadron");
             
             // Select Mission
-            _taskManager.Enqueue(() => AddonHelper.FireCallBack(addon, true, 11, content.GCArmyIndex), "RegisterSquadron");
+            // 🔴 這一組(選任務 / 按 OK / 確認框)都要回傳 TryFireCallBack 的結果(綁 Func<bool?> 多載),不可以用 Enqueue(Action):
+            //    Action 多載一律算「做完」,AddonPressGuard 擋下時的 false 被吞掉,而下面那一步是 int.MaxValue 的無限等待 ⇒ 佇列永遠卡在那裡。
+            //    擋下就回 false、下一幀再來;守衛最多擋 AddonPressGuard.DefaultEscapeFrames(90 幀),遠早於這一步的 10 秒逾時。
+            //    🔴 回 false 不可能變成回 null —— null 才會讓 TaskManager.Abort() 清掉整條佇列。
+            //    🔴 每一幀自己重新取窗,不沿用上一步(上一幀)抓到的 addon:FireCallBackCore 第一件事就是 ResolveAddonName(addon) 解參。
+            _taskManager.Enqueue(() =>
+                                 {
+                                     if (!GenericHelpers.TryGetAddonByName("GcArmyCapture", out AtkUnitBase* addonCapture)
+                                         || !GenericHelpers.IsAddonReady(addonCapture))
+                                         return true; // 窗根本不在:維持原本「做一次就過」的語意,不要製造新的卡點
+                                     return AddonHelper.TryFireCallBack(addonCapture, true, 11, content.GCArmyIndex);
+                                 }, "RegisterSquadron-SelectMission");
 
-            // click ok
-            _taskManager.Enqueue(() => AddonHelper.FireCallBack(addon, true, 13), "RegisterSquadron");
+            // click ok(同上:回傳守衛結果 + 每一幀自己重新取窗)
+            _taskManager.Enqueue(() =>
+                                 {
+                                     if (!GenericHelpers.TryGetAddonByName("GcArmyCapture", out AtkUnitBase* addonCapture)
+                                         || !GenericHelpers.IsAddonReady(addonCapture))
+                                         return true;
+                                     return AddonHelper.TryFireCallBack(addonCapture, true, 13);
+                                 }, "RegisterSquadron-ClickOk");
             
             // retrieve the ContentsFinderConfirm addon
             _taskManager.Enqueue(() => GenericHelpers.TryGetAddonByName("ContentsFinderConfirm", out addon) && GenericHelpers.IsAddonReady(addon), "RegisterSquadron");
 
             // Confirm Duty
-            _taskManager.Enqueue(() => AddonHelper.FireCallBack(addon, true, 8), "RegisterSquadron");
+            // 🔴 發射的那一幀重新取窗,不沿用上一步(上一幀)抓到的指標:TaskManager 每一步各在不同的幀
+            //    執行,而確認框「關閉中」的那幾幀 TryGetAddonByName 與 IsAddonReady 三關全過 ——
+            //    對它送 callback 就是攔不到的 AccessViolation。
+            // 🔴 這一步同樣要把守衛結果回傳出去(理由見上面「Select Mission」那段):
+            //    它後面緊接著就是 int.MaxValue 的無限等待。
+            _taskManager.Enqueue(() =>
+                                 {
+                                     if (!GenericHelpers.TryGetAddonByName("ContentsFinderConfirm", out AtkUnitBase* addonConfirm)
+                                         || !GenericHelpers.IsAddonReady(addonConfirm))
+                                         return true;
+                                     return AddonHelper.TryFireCallBack(addonConfirm, true, 8);
+                                 }, "RegisterSquadron-ConfirmDuty");
 
             // Check if we're in a valid map for the dungeon / paths
+            // ⚠️ int.MaxValue ＝無限等待,而且等的正是上面那三發 callback 的下游結果 ——
+            //    上面任何一發被守衛擋下又被吞掉,佇列就永遠停在這一行,而且不會自己恢復。
             _taskManager.Enqueue(() => Svc.ClientState.TerritoryType == content.TerritoryType, int.MaxValue, "RegisterSquadron");
 
             _taskManager.Enqueue(() => {
@@ -126,11 +156,10 @@ namespace AutoDuty.Managers
             }
 
             // Check if the SelectString addon is open (List Menu for "Command Missions", "Squadron Missions", etc.)
-            if (GenericHelpers.TryGetAddonByName("SelectString", out AtkUnitBase* _))
+            if (GenericHelpers.TryGetAddonByName("SelectString", out sergeantListMenu))
             {
                 // Successfully interacted with the Sergeant
                 InteractedWithSergeant = true;
-                sergeantListMenu = (AtkUnitBase*)Svc.GameGui.GetAddonByName("SelectString");
                 AddonHelper.FireCallBack(sergeantListMenu, true, 0);
                 AddonHelper.ClickSelectString(0);
                 OpeningMissions = true; // Set the opened missions state to true

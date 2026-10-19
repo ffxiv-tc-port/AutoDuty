@@ -11,6 +11,7 @@ using System;
 namespace AutoDuty.Helpers
 {
     using System.Numerics;
+    using global::AutoDuty.Multibox;
 
     internal static class DeathHelper
     {
@@ -20,6 +21,12 @@ namespace AutoDuty.Helpers
             get => _deathState;
             set
             {
+                // 🔴 這行必須在下面那個 DutyMode 早退之前:MultiboxUtility.Set() 會把
+                // DutyModeEnum 設成 Regular,若擺在早退之後,多開模式下(非 Unsynced)
+                // 死亡同步永遠不會送出。內部自帶 Config.MultiBox 閘門,沒開就是 no-op。
+                if (_deathState != value)
+                    MultiboxUtility.IsDead(value == PlayerLifeState.Dead);
+
                 if (Plugin.Configuration.DutyModeEnum.EqualsAny(DutyMode.Regular, DutyMode.Trial, DutyMode.Raid) && !Plugin.Configuration.Unsynced)
                     return;
                 else if (value == PlayerLifeState.Dead)
@@ -27,7 +34,8 @@ namespace AutoDuty.Helpers
                     if (value != _deathState)
                     {
                         Svc.Log.Debug("DeathHelper - Player is Dead changing state to Dead");
-                        SchedulerHelper.ScheduleAction("OnDeath", OnDeath, 500, false); 
+                        int generation = Plugin.StopGeneration;
+                        SchedulerHelper.ScheduleAction("OnDeath", () => OnDeath(generation), 500, false);
                     }
                 }
                 else if (value == PlayerLifeState.Revived)
@@ -36,14 +44,37 @@ namespace AutoDuty.Helpers
                     Svc.Log.Debug("DeathHelper - Player is Revived changing state to Revived");
                     _oldIndex = Plugin.Indexer;
                     _findShortcutStartTime = Environment.TickCount;
-                    FindShortcut();
+                    FindShortcut(Plugin.StopGeneration);
                 }
                 _deathState = value;
             }
         }
 
-        private static unsafe void OnDeath()
+        /// <summary>
+        /// 停止路徑（StopAndResetALL，在 <c>StopGeneration++</c> 之後）呼叫：移除 OnDeath，停在 Dead 的死亡狀態歸回 Alive。
+        /// </summary>
+        /// <remarks>
+        /// 只動自己的排程與欄位，不按任何視窗、不送多開訊息；執行中復活那一支（Revived）的取消照舊。
+        /// 歸回 Alive：否則下一輪第一次死亡時 setter 看到 Dead→Dead，不會排 OnDeath 也不會回報多開。
+        /// 本類別所有延遲回呼（OnDeath、FindShortcut、OnRevive）都帶著排程當下的 StopGeneration，對不上就不動作。
+        /// </remarks>
+        internal static void OnAutomationStopped()
         {
+            SchedulerHelper.DescheduleAction("OnDeath");
+            if (_deathState == PlayerLifeState.Dead)
+                _deathState = PlayerLifeState.Alive;
+        }
+
+        private static unsafe void OnDeath(int generation)
+        {
+            // 停下之前排的：只移除自己、什麼都不做。上面的 DescheduleAction 若和排程落在同一幀會被後處理的新增蓋掉，
+            // 靠這裡補；回呼正在跑＝它就在排程表裡，這個移除在同一輪 ScheduleInvoker 結尾生效。
+            if (generation != Plugin.StopGeneration)
+            {
+                SchedulerHelper.DescheduleAction("OnDeath");
+                return;
+            }
+
             if (Plugin.Configuration.DutyModeEnum.EqualsAny(DutyMode.Regular, DutyMode.Trial, DutyMode.Raid) && !Plugin.Configuration.Unsynced)
                 return;
 
@@ -97,7 +128,21 @@ namespace AutoDuty.Helpers
 
             if (Plugin.Indexer != -1)
             {
-                bool revivalFound = ContentPathsManager.DictionaryPaths[Plugin.CurrentTerritoryType].Paths[Plugin.CurrentPath].RevivalFound;
+                // 🔴 防禦性查表：死亡重生的當下，CurrentTerritoryType 可能不在 DictionaryPaths 裡（這個副本本來就沒有
+                //    路徑資料），或 CurrentPath 指到一個已經不存在／被移除的路徑（越界或 -1）。
+                //    OnRevive 是 Framework.Update 的 handler，例外逃出去會讓後面的 Stop() 永遠執行不到、
+                //    訂閱解不掉，之後每一幀重丟一次例外洗版。查不到就當作「沒有復生點資料」處理。
+                bool revivalFound = false;
+                if (ContentPathsManager.DictionaryPaths.TryGetValue(Plugin.CurrentTerritoryType, out ContentPathsManager.ContentPathContainer? container)
+                    && Plugin.CurrentPath >= 0 && Plugin.CurrentPath < container.Paths.Count)
+                {
+                    revivalFound = container.Paths[Plugin.CurrentPath].RevivalFound;
+                }
+                else
+                {
+                    Svc.Log.Information($"[DeathHelper] 查不到 TerritoryType {Plugin.CurrentTerritoryType}、路徑索引 {Plugin.CurrentPath} 的 RevivalFound，" +
+                                        "當作沒有復生點處理。");
+                }
 
                 bool isBoss = Plugin.Actions[Plugin.Indexer].Name.Equals("Boss");
                 if (!revivalFound)
@@ -126,12 +171,23 @@ namespace AutoDuty.Helpers
             return 0;
         }
 
-        private static void FindShortcut()
+        /// <summary>OnRevive 目前這次訂閱屬於哪一次停止之前（見 <see cref="OnAutomationStopped"/>）。只在框架執行緒讀寫。</summary>
+        private static int _onReviveGeneration;
+
+        private static void FindShortcut(int generation)
         {
+            // 復活後這段最多會自己重排 5 秒；中途 AutoDuty 停過（即使又重新開始）就不要再掛 OnRevive，
+            // 否則它收尾時把 Stage 設回 Reading_Path，等於停了又自己跑起來，或改掉新一輪的 Indexer。
+            if (generation != Plugin.StopGeneration)
+            {
+                Svc.Log.Information("[DeathHelper] AutoDuty 在復活後停過，放棄這次復活的捷徑搜尋。");
+                return;
+            }
+
             if (_gameObject == null && Environment.TickCount <= (_findShortcutStartTime + 5000))
             {
                 Svc.Log.Debug($"OnRevive: Searching for shortcut");
-                SchedulerHelper.ScheduleAction("FindShortcut", FindShortcut, 500);
+                SchedulerHelper.ScheduleAction("FindShortcut", () => FindShortcut(generation), 500);
                 return;
             }
             
@@ -143,6 +199,7 @@ namespace AutoDuty.Helpers
                 //return;
             } else
                 Svc.Log.Debug("OnRevive: Found shortcut");
+            _onReviveGeneration = generation;
             Svc.Framework.Update += OnRevive;
         }
 
@@ -159,6 +216,13 @@ namespace AutoDuty.Helpers
 
         private static unsafe void OnRevive(IFramework _)
         {
+            // 同上：停過就只解除訂閱，不走 Stop()（它會把 Stage 設回 Reading_Path）。
+            if (_onReviveGeneration != Plugin.StopGeneration)
+            {
+                Svc.Framework.Update -= OnRevive;
+                return;
+            }
+
             if (!EzThrottler.Throttle("OnRevive", 500) || (!PlayerHelper.IsReady && !Conditions.Instance()->OccupiedInQuestEvent) || PlayerHelper.IsCasting) return;
 
             float distanceToPlayer;

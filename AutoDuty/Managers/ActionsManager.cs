@@ -23,8 +23,12 @@ namespace AutoDuty.Managers
 {
     using System.Xml;
 
-    internal class ActionsManager(AutoDuty _plugin, Chat _chat, TaskManager _taskManager)
+    internal class ActionsManager(AutoDuty _plugin, TaskManager _taskManager)
     {
+        /// <summary>「先 Throttle 起算、再 Check 到期」的逾時餘裕(毫秒)。AbortAt 只比 throttle 到期晚一幀,
+        /// 不留餘裕的話一次卡頓就會讓準時完成的任務被記成逾時;餘裕本身不會延長等待。</summary>
+        internal const int ThrottleTimeoutMarginMs = 1000;
+
         public readonly List<(string, string, string)> ActionsList =
         [
             ("<-- Comment -->","comment?","Adds a Comment to the path; AutoDuty will do nothing but display them.\nExample: <-- Trash Pack #1 -->"),
@@ -50,7 +54,12 @@ namespace AutoDuty.Managers
             ("CameraFacing", "Face which Coords?", "Adds a CameraFacing step to the path; after moving to the position, AutoDuty will face the coordinates specified.\nExample: CameraFacing|720.66, 57.24, 9.18|722.05, 62.47, 15.55"),
             ("ClickTalk", "false", "Adds a ClickTalk step to the path; after moving to the position, AutoDuty will click the talk addon."),
             ("ConditionAction","condition;args,action;args", "Adds a ConditionAction step to the path; after moving to the position, AutoDuty will check the condition specified and invoke Action."),
-            ("ModifyIndex", "what number (0-based)", "Adds a ModifyIndex step to the path; after moving to the position, AutoDuty will modify the index to the number specified.")
+            ("ModifyIndex", "which step (+/- for relative)", "Adds a ModifyIndex step to the path; after moving to the position, AutoDuty will modify the index. A leading + or - makes it relative to this step (-1 redoes the previous step); otherwise it is an absolute 0-based index.\nExample: ModifyIndex|0, 0, 0|-1"),
+            ("KillInRange", "Range", "Adds a KillInRange step to the path; AutoDuty will target and kill every hostile battle NPC within the specified range of the step position, then move on.\nExample: KillInRange|-12.12, 18.76, -148.05|15"),
+            ("SelectJournalResult", "accept? (true/false)", "Adds a SelectJournalResult step to the path; after moving to the position, AutoDuty will accept (or decline) the JournalResult window.\nExample: SelectJournalResult|0, 0, 0|true"),
+            ("JumpTo", "jump where? | how long before jump?", "Adds a JumpTo step to the path; AutoDuty will move towards the point without using the navmesh and then jump.\nExample: JumpTo|0, 0, 0|-12.12, 18.76, -148.05;500"),
+            ("Action", "ActionType | Action ID", "Adds an Action step to the path; after moving to the position, AutoDuty will wait until the action is ready and then use it.\nExample: Action|0, 0, 0|Action;23282"),
+            ("BLULoad", "enable? | which spell (Blue Magic Spellbook No.)", "Adds a BLULoad step to the path; when playing Blue Mage, AutoDuty will slot the specified spell in or out of the current loadout.\nExample: BLULoad|0, 0, 0|true;11")
         ];
 
         public void InvokeAction(PathAction action)
@@ -60,7 +69,7 @@ namespace AutoDuty.Managers
                 if (action != null)
                 {
                     var thisType = GetType();
-                    var actionTask = thisType.GetMethod(action.Name);
+                    var actionTask = thisType.GetMethod(action.Name) ?? ResolveActionIgnoreCase(thisType, action.Name);
                     _taskManager.Enqueue(() => actionTask?.Invoke(this, [action]), $"InvokeAction-{actionTask?.Name}");
                 }
                 else
@@ -70,6 +79,28 @@ namespace AutoDuty.Managers
             {
                 Svc.Log.Error(ex.ToString());
             }
+        }
+
+        /// <summary>
+        /// 動作名稱大小寫不符時的退路。上游的路徑檔裡確實有寫成 <c>Bossmod</c>(小寫 m)的步驟,
+        /// 而反射查方法是大小寫敏感的 ⇒ 那些步驟在上游與我方都是靜默地什麼都不做。
+        /// 這裡只在精確比對失敗時才啟用,並且要求方法簽章正好是 (PathAction),
+        /// 免得誤中 object 繼承來的 ToString/Equals 之類。
+        /// </summary>
+        private static System.Reflection.MethodInfo? ResolveActionIgnoreCase(Type thisType, string name)
+        {
+            if (name.IsNullOrEmpty())
+                return null;
+
+            System.Reflection.MethodInfo? candidate = thisType
+                                                      .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly)
+                                                      .FirstOrDefault(m => m.Name.Equals(name, StringComparison.OrdinalIgnoreCase) &&
+                                                                           m.GetParameters() is [{ } p] && p.ParameterType == typeof(PathAction));
+
+            if (candidate != null)
+                Svc.Log.Information($"路徑動作「{name}」大小寫與實作不符,已改用「{candidate.Name}」執行。");
+
+            return candidate;
         }
 
         public void Follow(PathAction action) => FollowHelper.SetFollow(GetObjectByName(action.Arguments[0]));
@@ -184,10 +215,36 @@ namespace AutoDuty.Managers
             BossMod_IPCSubscriber.SetMovement(action.Arguments[0].Equals("on", StringComparison.InvariantCultureIgnoreCase));
         }
 
+        /// <summary>
+        /// 路徑檔的 ModifyIndex 步驟。引數開頭是 <c>+</c> 或 <c>-</c> 時是<b>相對</b>位移,
+        /// 否則才是絕對索引(0 起算)。這是上游語意,路徑檔裡的用法全部是相對語意。
+        /// 🔴 一律當成絕對索引的失敗形式是<b>靜默跳到錯的步驟</b>而不是例外(<c>int.TryParse("-1")</c> / <c>TryParse("+3")</c>
+        ///    都會成功);`-1` 更會把 Indexer 設成 -1,
+        ///    使 <c>StageReadingPath()</c> 開頭的 <c>Indexer == -1</c> 前置檢查每幀直接 return ⇒ 整條路徑停住。
+        /// </summary>
         public void ModifyIndex(PathAction action)
         {
             if (!int.TryParse(action.Arguments[0], out int _index)) return;
-            Plugin.Indexer = _index;
+            ModifyIndex(_index, action.Arguments[0][0] is '+' or '-');
+        }
+
+        /// <summary>
+        /// 相對位移的基準點是「ModifyIndex 這一步自己的索引」。時序:
+        /// 本方法是以 TaskManager 任務的身分執行的,而從 <c>Stage.Action</c> 被設定(setter 裡呼叫
+        /// <c>ActionInvoke()</c> 把任務排進佇列)到任務真的執行為止,沒有任何地方動過 <c>Plugin.Indexer</c>
+        /// —— <c>StageAction()</c> 的 <c>Indexer++</c> 要 <c>!TaskManager.IsBusy</c> 才會跑,此刻佇列還沒空。
+        /// 而本方法結尾把 Stage 改回 <c>Reading_Path</c>,之後 <c>StageAction()</c> 再也不會被派送到
+        /// ⇒ 那個 <c>Indexer++</c> 不會補套上來。所以 <c>-1</c> 就是「退回前一步重做」。與上游行為一致。
+        /// </summary>
+        private void ModifyIndex(int index, bool modify)
+        {
+            int before = Plugin.Indexer;
+            if (modify)
+                Plugin.Indexer += index;
+            else
+                Plugin.Indexer = index;
+            // 要使用者回報的診斷。ModifyIndex 步驟很少,不會洗版。
+            Svc.Log.Information($"ModifyIndex: {before} -> {Plugin.Indexer} (arg={index}, relative={modify})");
             Plugin.Stage = Stage.Reading_Path;
         }
 
@@ -225,15 +282,346 @@ namespace AutoDuty.Managers
                 this.Wait(new PathAction {Arguments = ["500"]});
         }
 
+        /// <summary>
+        /// ForceAttack 期間被暫時關掉的 BossMod「自動攻擊管理」原值;null = 目前沒有暫停中。
+        /// </summary>
+        private bool? _bossModAutoAutosSuspendedFrom;
+
+        /// <summary>ForceAttack 後備目標的搜尋半徑(公尺),只在遊戲的切換敵人指令沒鎖到目標時才會用到。</summary>
+        private const float ForceAttackFallbackRadius = 30f;
+
+        /// <summary>
+        /// ForceAttack:停在定點主動打掉擋路的敵人,進入戰鬥後才往下走。
+        /// </summary>
+        /// <remarks>
+        /// 🔴 這一步靠「一般動作 1(自動攻擊)」起手,但 BossModReborn 的「自動攻擊管理」
+        /// (<c>ActionTweaksConfig.AutoAutos</c>)在「不在戰鬥中而且沒有倒數」時一律否決啟動自動攻擊
+        /// (BossModReborn 會 log <c>[AMEx] Prevented starting autoattacks</c>)。ForceAttack 的前提正好就是「不在戰鬥中」,
+        /// 不處理的話自動攻擊永遠送不出去,整步就退化成純粹等 tot 毫秒。所以:
+        /// (1) 這一步期間暫時把 BossMod 的 AutoAutos 關掉,做完立刻還原;
+        /// (2) 遊戲的切換敵人指令沒鎖到目標時,自己掃物件表補一個最近的可攻擊敵人。
+        /// </remarks>
         public unsafe void ForceAttack(PathAction action)
         {
             var tot = action.Arguments[0].IsNullOrEmpty() ? 10000 : int.TryParse(action.Arguments[0], out int time) ? time : 0;
             if (action.Arguments[0].IsNullOrEmpty())
                 action.Arguments[0] = "10000";
+
+            _taskManager.Enqueue(() => SuspendBossModAutoAutos(), "ForceAttack-SuspendAutoAutos");
             _taskManager.Enqueue(() => ActionManager.Instance()->UseAction(ActionType.GeneralAction, 16), "ForceAttack-GA16");
-            _taskManager.Enqueue(() => Svc.Targets.Target != null, 500, "ForceAttack-GA1");
+            _taskManager.Enqueue(() => Svc.Targets.Target != null, 500, "ForceAttack-WaitForTarget");
+            _taskManager.Enqueue(() => ForceAttackAcquireTarget(), "ForceAttack-AcquireTarget");
             _taskManager.Enqueue(() => ActionManager.Instance()->UseAction(ActionType.GeneralAction, 1), "ForceAttack-GA1");
             _taskManager.Enqueue(() => InCombat, tot, "ForceAttack-WaitForCombat");
+            _taskManager.Enqueue(() => ForceAttackFinish(tot), "ForceAttack-Finish");
+        }
+
+        /// <summary>
+        /// 讀 BossMod 的「自動攻擊管理」開關。讀不到(BossMod 沒載入、欄位改名、IPC 失敗)一律回 null,
+        /// 呼叫端就當作「不要動它」。
+        /// 🔑 這裡刻意拿「只有真的解析得出 bool 才算數」當校準閘門 —— BossMod 的 ConsoleCommand 在
+        /// 找不到設定型別或欄位時回傳的是多行說明文字,Count != 1 就會被這個條件擋掉,
+        /// 不會把「查不到」誤讀成「值是 false」。
+        /// </summary>
+        private static bool? GetBossModAutoAutos()
+        {
+            if (!BossMod_IPCSubscriber.IsEnabled)
+                return null;
+
+            List<string>? result = BossMod_IPCSubscriber.Configuration(["ActionTweaks", "AutoAutos"], false);
+
+            return result is { Count: 1 } && bool.TryParse(result[0], out bool value) ? value : null;
+        }
+
+        /// <summary>設定 BossMod 的「自動攻擊管理」,並回報有沒有真的改成功。</summary>
+        private static bool SetBossModAutoAutos(bool value)
+        {
+            if (!BossMod_IPCSubscriber.IsEnabled)
+                return false;
+
+            // 第二個參數 save 傳 false:只改 BossMod 記憶體裡的欄位、不觸發它把設定寫回磁碟。
+            // 這樣即使 AutoDuty 中途被強制關掉來不及還原,使用者設定檔裡的值仍然是原本的,
+            // BossMod 下次重載就會自己回到原狀。
+            BossMod_IPCSubscriber.Configuration(["ActionTweaks", "AutoAutos", value ? "true" : "false"], false);
+
+            return GetBossModAutoAutos() == value;
+        }
+
+        /// <summary>ForceAttack 起手前暫時關掉 BossMod 的「自動攻擊管理」(理由見 ForceAttack 的註解)。</summary>
+        private bool SuspendBossModAutoAutos()
+        {
+            // 上一輪如果因為中止而沒還原,這裡不要拿現值去覆蓋掉記下來的原值。
+            if (_bossModAutoAutosSuspendedFrom != null)
+                return true;
+
+            bool? current = GetBossModAutoAutos();
+
+            if (current == null)
+            {
+                Svc.Log.Information("[ForceAttack] 讀不到 BossMod 的「自動攻擊管理」設定(BossMod 未載入或 IPC 失敗),不動它。");
+                return true;
+            }
+
+            if (current == false)
+                return true;
+
+            if (SetBossModAutoAutos(false))
+            {
+                _bossModAutoAutosSuspendedFrom = true;
+                Svc.Log.Information("[ForceAttack] 已暫時關閉 BossMod 的「自動攻擊管理」(它會否決非戰鬥中啟動自動攻擊),這一步做完立刻還原。");
+            }
+            else
+                Svc.Log.Information("[ForceAttack] 想暫時關閉 BossMod 的「自動攻擊管理」但沒有成功,ForceAttack 很可能仍然只會等時間。");
+
+            return true;
+        }
+
+        /// <summary>
+        /// 還原先前被 ForceAttack 暫時關掉的 BossMod「自動攻擊管理」。
+        /// 沒有暫停中就什麼都不做,所以可以安全地重複呼叫(收工路徑上也會叫一次當保險)。
+        /// </summary>
+        internal void RestoreBossModAutoAutos()
+        {
+            if (_bossModAutoAutosSuspendedFrom is not bool original)
+                return;
+
+            _bossModAutoAutosSuspendedFrom = null;
+
+            if (SetBossModAutoAutos(original))
+                Svc.Log.Information("[ForceAttack] 已還原 BossMod 的「自動攻擊管理」= " + original + "。");
+            else
+                Svc.Log.Information("[ForceAttack] 還原 BossMod 的「自動攻擊管理」失敗(想還原成 " + original + ");BossMod 重載後會回到設定檔裡的值。");
+        }
+
+        /// <summary>
+        /// 確保 ForceAttack 有目標:遊戲的「從左至右切換敵人」沒鎖到人時,自己掃物件表挑最近的可攻擊敵人。
+        /// </summary>
+        /// <remarks>
+        /// 🔴 全程在同一幀內做完 —— 掃描、挑選、設定目標之後就不再持有任何 IGameObject,
+        /// 不會把原生指標留到下一幀(排隊中的任務是在後面的幀才執行的)。
+        /// 判敵意刻意只用 Dalamud 自己的 <c>BattleNpcKind</c>/<c>IsTargetable</c>/<c>IsDead</c>,
+        /// 不走 ECommons 那個吃寫死特徵碼的 IsHostile(),免得特徵碼在台服失效時靜默失準。
+        /// </remarks>
+        private bool ForceAttackAcquireTarget()
+        {
+            if (Svc.Targets.Target is { } existing)
+            {
+                Svc.Log.Information("[ForceAttack] 目標:" + existing.Name.TextValue + " (BaseId=" + existing.BaseId + ", 距離 " + GetDistanceToPlayer(existing).ToString("F1") + "m)");
+                return true;
+            }
+
+            int         scanned  = 0;
+            int         hostiles = 0;
+            IGameObject? nearest = null;
+            float       nearestDistance = float.MaxValue;
+
+            foreach (IGameObject obj in Svc.Objects)
+            {
+                scanned++;
+
+                if (obj is not IBattleNpc battleNpc
+                    || battleNpc.BattleNpcKind != Dalamud.Game.ClientState.Objects.Enums.BattleNpcSubKind.Enemy
+                    || !obj.IsTargetable
+                    || obj.IsDead)
+                    continue;
+
+                hostiles++;
+
+                float distance = GetDistanceToPlayer(obj);
+
+                if (distance > ForceAttackFallbackRadius || distance >= nearestDistance)
+                    continue;
+
+                nearest         = obj;
+                nearestDistance = distance;
+            }
+
+            if (nearest == null)
+            {
+                Svc.Log.Information("[ForceAttack] 沒有鎖定到目標:掃了 " + scanned + " 個物件,其中 " + hostiles + " 個是可攻擊的敵人,但都不在 " + ForceAttackFallbackRadius.ToString("F0") + "m 內。");
+                return true;
+            }
+
+            Svc.Log.Information("[ForceAttack] 遊戲的切換敵人指令沒鎖到目標,改鎖最近的可攻擊敵人:" + nearest.Name.TextValue + " (BaseId=" + nearest.BaseId + ", 距離 " + nearestDistance.ToString("F1") + "m)");
+            Svc.Targets.Target = nearest;
+
+            return true;
+        }
+
+        /// <summary>ForceAttack 收尾:回報這一步到底有沒有把人打起來,並還原 BossMod 的設定。</summary>
+        private bool ForceAttackFinish(int timeoutMs)
+        {
+            if (InCombat)
+                Svc.Log.Information("[ForceAttack] 已進入戰鬥。");
+            else
+                Svc.Log.Information("[ForceAttack] 等了 " + timeoutMs + " 毫秒仍未進入戰鬥,放棄這一步繼續往下走。");
+
+            RestoreBossModAutoAutos();
+
+            return true;
+        }
+
+        /// <summary>
+        /// 往指定座標「不走導航網格」直線推進一段時間後起跳,再繼續推進到定點。
+        /// 用在有 mesh 斷開的跳躍捷徑上(例如落雷之獄的中段出口)。
+        /// </summary>
+        public unsafe void JumpTo(PathAction action)
+        {
+            if (action.Arguments.Count == 0)
+                return;
+
+            if (!action.Arguments[0].TryGetVector3(out Vector3 position))
+                return;
+
+            Plugin.Action = $"Jumping To {action.Arguments[0]}";
+
+            int wait = 100;
+            if (action.Arguments.Count > 1 && int.TryParse(action.Arguments[1], out int parsedWait) && parsedWait > 0)
+                wait = parsedWait;
+
+            _taskManager.Enqueue(() => VNavmesh_IPCSubscriber.Path_MoveTo([position], false), "Start-JumpTo-Move");
+
+            _taskManager.Enqueue(() => EzThrottler.Throttle("JumpTo", wait), "JumpTo-Wait");
+            _taskManager.Enqueue(() => EzThrottler.Check("JumpTo"), wait + ThrottleTimeoutMarginMs, "JumpTo-Wait");
+
+            _taskManager.Enqueue(() => ActionManager.Instance()->UseAction(ActionType.GeneralAction, 2), "JumpTo-Jump");
+            _taskManager.Enqueue(() => MovementHelper.Move(position, useMesh: false), "Finish-JumpTo-Move");
+            _taskManager.Enqueue(() => Plugin.Action = "");
+        }
+
+        /// <summary>
+        /// 等指定技能可用後施放一次。參數為 [ActionType, 技能 ID]。
+        /// 狀態碼 573 代表「這個職業沒有這個技能」,直接跳過不等。
+        /// </summary>
+        public unsafe void Action(PathAction action)
+        {
+            if (action.Arguments.Count < 2)
+                return;
+
+            if (!Enum.TryParse(action.Arguments[0], out ActionType type))
+                return;
+
+            if (!uint.TryParse(action.Arguments[1], out uint id))
+                return;
+
+            Svc.Log.Debug($"Action: {type} {id}");
+
+            if (ActionManager.Instance()->GetActionStatus(type, id) == 573)
+                return;
+
+            Plugin.Action = $"Action: {type} {id}";
+            _taskManager.Enqueue(() => ActionManager.Instance()->GetActionStatus(type, id) == 0, "Action-WaitTillReady");
+            _taskManager.Enqueue(() => ActionManager.Instance()->UseAction(type, id), "Action-UsingAction");
+            _taskManager.Enqueue(() => Plugin.Action = "");
+        }
+
+        /// <summary>
+        /// 青魔道士專用:把某個青魔法書編號的魔法換進/換出當前配置。
+        /// 參數為 [true/false 是否放入, 青魔法書編號]。非青魔時整步不做事。
+        /// </summary>
+        public void BLULoad(PathAction action)
+        {
+            if (action.Arguments.Count < 2)
+                return;
+
+            if (GetJob() != ECommons.ExcelServices.Job.BLU)
+                return;
+
+            if (!bool.TryParse(action.Arguments[0], out bool enable))
+                return;
+
+            if (!byte.TryParse(action.Arguments[1], out byte spell))
+                return;
+
+            Plugin.Action = $"BLULoad: {(enable ? "+" : "-")}{spell}";
+            _taskManager.Enqueue(() => !Svc.Condition.Any(ConditionFlag.InCombat, ConditionFlag.Casting), "BLULoad-WaitOOC");
+
+            if (enable)
+                _taskManager.Enqueue(() => BLUHelper.SpellLoadoutIn(spell), "BLULoad-In");
+            else
+                _taskManager.Enqueue(() => BLUHelper.SpellLoadoutOut(spell), "BLULoad-Out");
+
+            _taskManager.Enqueue(() => Plugin.Action = "");
+        }
+
+        /// <summary>
+        /// 只給 <see cref="KillInRange"/> 用的鎖定判定。
+        /// 📌 與下面的 <see cref="TargetCheck"/> 判斷式相同,刻意分成兩支是為了各自持有
+        /// 獨立的 <see cref="EzThrottler"/> 鍵 —— 共用同一個鍵會讓兩個呼叫點互相節流。
+        /// 回傳 true＝「這個目標不用再處理了」(不可鎖定/已經是當前目標),false＝還在鎖定中。
+        /// </summary>
+        private bool AcquireTargetCheck(IGameObject? gameObject)
+        {
+            if (gameObject is not { IsTargetable: true } || !gameObject.IsValid() || (Svc.Targets.Target?.Equals(gameObject) ?? false))
+                return true;
+
+            if (EzThrottler.Check("AcquireTargetCheck"))
+            {
+                EzThrottler.Throttle("AcquireTargetCheck", 25);
+                Svc.Targets.Target = gameObject;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 把步驟座標周圍指定半徑內的敵對戰鬥 NPC 逐一鎖定並打完,清空之後才往下一步。
+        /// 施放什麼技能由使用者自己的循環外掛決定,這裡只負責選目標與靠近。
+        /// </summary>
+        public void KillInRange(PathAction action)
+        {
+            if (action.Arguments.Count < 1)
+                return;
+
+            if (!uint.TryParse(action.Arguments[0], out uint range))
+                return;
+
+            Plugin.Action = $"Killing in {range}y";
+
+            // 只捕獲純量:半徑與步驟座標,不捕獲任何 IGameObject。
+            Vector3 center = action.Position;
+
+            _taskManager.Enqueue(() => BossMod_IPCSubscriber.SetMovement(true), "KillInRange-StopForCombat");
+
+            _taskManager.Enqueue(() =>
+                                 {
+                                     if (!EzThrottler.Throttle("KillInRange"))
+                                         return false;
+
+                                     // 每次檢查都重新列舉物件表,不跨幀保存任何原生指標。
+                                     List<IGameObject> gameObjects = Svc.Objects.Where(igo => igo is { ObjectKind: Dalamud.Game.ClientState.Objects.Enums.ObjectKind.BattleNpc, IsTargetable: true } &&
+                                                                                              igo.IsHostile() &&
+                                                                                              BelowDistanceToPoint(igo.Position, center, range, range / 2f))
+                                                                                .ToList();
+
+                                     if (gameObjects.Count == 0)
+                                         return true;
+
+                                     IGameObject? current = Svc.Targets.Target;
+                                     if (current != null && gameObjects.Contains(current))
+                                     {
+                                         if (GetDistanceToPlayer(current) < 30)
+                                             VNavmesh_IPCSubscriber.Path_Stop();
+                                         return false;
+                                     }
+
+                                     IGameObject target = gameObjects.OrderBy(GetDistanceToPlayer).First();
+
+                                     if (AcquireTargetCheck(target) && GetDistanceToPlayer(target) < 30)
+                                         VNavmesh_IPCSubscriber.Path_Stop();
+                                     else
+                                         VNavmesh_IPCSubscriber.SimpleMove_PathfindAndMoveTo(target.Position, false);
+
+                                     return false;
+                                 }, int.MaxValue, "KillInRange-Main");
+
+            _taskManager.Enqueue(() =>
+                                 {
+                                     // 副本本身不是「戰鬥時停下」模式的話,把 BossMod 的移動控制還回去。
+                                     if (!Plugin.StopForCombat)
+                                         BossMod_IPCSubscriber.SetMovement(false);
+                                 }, "KillInRange-RestoreMovement");
+            _taskManager.Enqueue(() => Plugin.Action = "");
         }
 
         public unsafe void Jump(PathAction action)
@@ -242,9 +630,9 @@ namespace AutoDuty.Managers
 
             if (int.TryParse(action.Arguments[0], out int wait) && wait > 0)
             {
-                _taskManager.Enqueue(() => _chat.ExecuteCommand("/automove on"), "Jump");
+                _taskManager.Enqueue(() => Chat.ExecuteCommand("/automove on"), "Jump");
                 _taskManager.Enqueue(() => EzThrottler.Throttle("AutoMove", Convert.ToInt32(wait)), "Jump");
-                _taskManager.Enqueue(() => EzThrottler.Check("AutoMove"), Convert.ToInt32(wait), "Jump");
+                _taskManager.Enqueue(() => EzThrottler.Check("AutoMove"), Convert.ToInt32(wait) + ThrottleTimeoutMarginMs, "Jump");
             }
 
             _taskManager.Enqueue(() => ActionManager.Instance()->UseAction(ActionType.GeneralAction, 2), "Jump");
@@ -253,7 +641,7 @@ namespace AutoDuty.Managers
             {
                 _taskManager.Enqueue(() => EzThrottler.Throttle("AutoMove", Convert.ToInt32(100)), "Jump");
                 _taskManager.Enqueue(() => EzThrottler.Check("AutoMove"), Convert.ToInt32(100), "AutoMove");
-                _taskManager.Enqueue(() => _chat.ExecuteCommand("/automove off"), "Jump");
+                _taskManager.Enqueue(() => Chat.ExecuteCommand("/automove off"), "Jump");
             }
         }
 
@@ -262,7 +650,11 @@ namespace AutoDuty.Managers
             if (!Player.Available)
                 return;
             Plugin.Action = $"ChatCommand: {action.Arguments[0]}";
-            _taskManager.Enqueue(() => _chat.ExecuteCommand(action.Arguments[0]), "ChatCommand");
+            _taskManager.Enqueue(() =>
+            {
+                BossMod_IPCSubscriber.NoteBmrAICommand(action.Arguments[0], Svc.ClientState.TerritoryType);
+                Chat.ExecuteCommand(action.Arguments[0]);
+            }, "ChatCommand");
             _taskManager.Enqueue(() => Plugin.Action = "");
         }
 
@@ -273,30 +665,57 @@ namespace AutoDuty.Managers
             Plugin.Action = $"AutoMove For {action.Arguments[0]}";
             var movementMode = Svc.GameConfig.UiControl.TryGetUInt("MoveMode", out var mode) ? mode : 0;
             _taskManager.Enqueue(() => { if (movementMode == 1) Svc.GameConfig.UiControl.Set("MoveMode", 0); }, "AutoMove-MoveMode");
-            _taskManager.Enqueue(() => _chat.ExecuteCommand("/automove on"), "AutoMove-On");
+            _taskManager.Enqueue(() => Chat.ExecuteCommand("/automove on"), "AutoMove-On");
             _taskManager.Enqueue(() => EzThrottler.Throttle("AutoMove", Convert.ToInt32(action.Arguments[0])), "AutoMove-Throttle");
             _taskManager.Enqueue(() => EzThrottler.Check("AutoMove") || !IsReady, Convert.ToInt32(action.Arguments[0]), "AutoMove-CheckThrottleOrNotReady");
             _taskManager.Enqueue(() => { if (movementMode == 1) Svc.GameConfig.UiControl.Set("MoveMode", 1); }, "AutoMove-MoveMode2");
             _taskManager.Enqueue(() => IsReady, int.MaxValue, "AutoMove-WaitIsReady");
-            _taskManager.Enqueue(() => _chat.ExecuteCommand("/automove off"), "AutoMove-Off");
+            _taskManager.Enqueue(() => Chat.ExecuteCommand("/automove off"), "AutoMove-Off");
         }
 
+        /// <summary>
+        /// 等待 N 毫秒。
+        /// </summary>
+        /// <remarks>
+        /// 「跳過目前步驟」要把已經等掉的時間寫回路徑檔,所以這裡記下自己的一組計時
+        /// (<c>Plugin.WaitStepEndTick</c> / <c>Plugin.WaitStepDurationMs</c>)。
+        /// 🔴 不可以只靠 <c>EzThrottler.GetRemainingTime("Wait")</c> 反推:EzThrottler 的 key 是全域且永久的,
+        /// 上一次的等待被中止時那個尚未到期的殘值會留下來,下一次 Wait 一開始就會量到「已經等了一段時間」的假象。
+        /// 我們自己的計時只在 throttle 真的重新起算的那一刻寫入,所以不會有殘留。
+        /// ⚠️ StopForCombat 開著時前後各有一個「等脫戰」任務,那段時間不算等待時間。
+        /// </remarks>
         public unsafe void Wait(PathAction action)
         {
             Plugin.Action = $"Wait: {action.Arguments[0]}";
+            int waitMs = Convert.ToInt32(action.Arguments[0]);
             if (Plugin.StopForCombat)
                 _taskManager.Enqueue(() => !Player.Character->InCombat, int.MaxValue, "Wait");
-            _taskManager.Enqueue(() => EzThrottler.Throttle("Wait", Convert.ToInt32(action.Arguments[0])), "Wait");
-            _taskManager.Enqueue(() => EzThrottler.Check("Wait"), Convert.ToInt32(action.Arguments[0]), "Wait");
+            _taskManager.Enqueue(() => StartWaitThrottle(waitMs), "Wait");
+            _taskManager.Enqueue(() => EzThrottler.Check("Wait"), waitMs + ThrottleTimeoutMarginMs, "Wait");
             if (Plugin.StopForCombat)
                 _taskManager.Enqueue(() => !Player.Character->InCombat, int.MaxValue, "Wait");
-            _taskManager.Enqueue(() => Plugin.Action = "");
+            _taskManager.Enqueue(() => { Plugin.ClearWaitStepTiming(); Plugin.Action = ""; });
+        }
+
+        /// <summary>
+        /// 起算 Wait 的 throttle。只有在 throttle 真的重新起算(回 true)時才記下計時,
+        /// 這樣「已等時間」永遠對應目前這一次等待,不會沿用上一次的殘值。
+        /// </summary>
+        private static bool StartWaitThrottle(int waitMs)
+        {
+            if (!EzThrottler.Throttle("Wait", waitMs))
+                return false;
+
+            Plugin.WaitStepDurationMs = waitMs;
+            Plugin.WaitStepEndTick    = Environment.TickCount64 + waitMs;
+            return true;
         }
 
         public unsafe void WaitFor(PathAction action)
         {
             Plugin.Action = $"WaitFor: {action.Arguments[0]}";
             var waitForWhats = action.Arguments[0].Split(';');
+            // 下面幾個 -500 刻意不改用 SoftWait:它們真的會等到狀態翻轉,逾時也可能代表預期的轉場沒發生。
             switch (waitForWhats[0])
             {
                 case "Combat":
@@ -377,15 +796,32 @@ namespace AutoDuty.Managers
             _taskManager.Enqueue(() => Plugin.Action = "");
         }
 
+        /// <summary>接受(或拒絕)JournalResult 視窗。新人訓練所那批路徑檔用它結算每一課。</summary>
+        public void SelectJournalResult(PathAction action)
+        {
+            if (action.Arguments.Count == 0)
+                return;
+
+            bool accept = bool.TryParse(action.Arguments[0], out bool parsed) && parsed;
+
+            _taskManager.Enqueue(() => Plugin.Action = $"JournalResult: {action.Arguments[0]}, {action.Note}", "JournalResult");
+            _taskManager.Enqueue(() => AddonHelper.SelectJournalResult(accept), "JournalResult");
+            _taskManager.DelayNext("JournalResult", 500);
+            _taskManager.Enqueue(() => !IsCasting, "JournalResult");
+            _taskManager.Enqueue(() => Plugin.Action = "");
+        }
+
         public unsafe void MoveToObject(PathAction action)
         {
             if (!TryGetObjectIdRegex(action.Arguments[0], out var objectDataId)) return;
 
-            IGameObject? gameObject = null;
+            // 閉包只捕獲 GameObjectId:下面的 Move 是 int.MaxValue 重試,會跨數百幀
+            // 反覆解參考。目標在這期間消失就是攔不到的 AccessViolation。
+            ulong? objectId = null;
             Plugin.Action = $"MoveToObject: {objectDataId}";
 
-            _taskManager.Enqueue(() => TryGetObjectByDataId(uint.Parse(objectDataId), out gameObject), "MoveToObject-GetGameObject");
-            _taskManager.Enqueue(() => MovementHelper.Move(gameObject), int.MaxValue, "MoveToObject-Move");
+            _taskManager.Enqueue(() => TryGetObjectIdByDataId(uint.Parse(objectDataId), out objectId), "MoveToObject-GetGameObject");
+            _taskManager.Enqueue(() => MovementHelper.Move(ResolveObject(objectId)), int.MaxValue, "MoveToObject-Move");
             _taskManager.Enqueue(() => Plugin.Action = "");
         }
 
@@ -396,7 +832,7 @@ namespace AutoDuty.Managers
 
         private bool TargetCheck(IGameObject? gameObject)
         {
-            if (gameObject == null || gameObject.IsTargetable || gameObject.IsValid() || Svc.Targets.Target == gameObject)
+            if (gameObject is not { IsTargetable: true } || !gameObject.IsValid() || (Svc.Targets.Target?.Equals(gameObject) ?? false))
                 return true;
 
             if (EzThrottler.Check("TargetCheck"))
@@ -411,11 +847,13 @@ namespace AutoDuty.Managers
         {
             if (!TryGetObjectIdRegex(action.Arguments[0], out var objectDataId)) return;
 
-            IGameObject? gameObject = null;
+            // 閉包只捕獲 GameObjectId;TargetCheck 會反覆重跑直到成功,
+            // 期間目標消失時不可以解參考已釋放的位址,更不可以把它交給 Svc.Targets.Target。
+            ulong? objectId = null;
             Plugin.Action = $"Target: {objectDataId}";
 
-            _taskManager.Enqueue(() => TryGetObjectByDataId(uint.Parse(objectDataId), out gameObject), "Target-GetGameObject");
-            _taskManager.Enqueue(() => TargetCheck(gameObject), "Target-Check");
+            _taskManager.Enqueue(() => TryGetObjectIdByDataId(uint.Parse(objectDataId), out objectId), "Target-GetGameObject");
+            _taskManager.Enqueue(() => TargetCheck(ResolveObject(objectId)), "Target-Check");
             _taskManager.Enqueue(() => Plugin.Action = "");
         }
 
@@ -424,7 +862,10 @@ namespace AutoDuty.Managers
         private unsafe bool InteractableCheck(IGameObject? gameObject)
         {
             if (Conditions.Instance()->Mounted || Conditions.Instance()->RidingPillion)
+            {
+                Svc.Log.Debug("InteractableCheck: giving up, Mounted/RidingPillion");
                 return true;
+            }
 
             if (Player.Available && IsCasting)
                 return false;
@@ -432,41 +873,85 @@ namespace AutoDuty.Managers
             if (GenericHelpers.TryGetAddonByName("SelectYesno", out AtkUnitBase* addonSelectYesno) && GenericHelpers.IsAddonReady(addonSelectYesno) && !AddonHelper.ClickSelectYesno(true))
                 return false;
             else if (AddonHelper.ClickSelectYesno(true))
+            {
+                Svc.Log.Debug("InteractableCheck: giving up, clicked SelectYesno(true)");
                 return true;
+            }
 
             if (GenericHelpers.TryGetAddonByName("SelectString", out AtkUnitBase* addonSelectString) && GenericHelpers.IsAddonReady(addonSelectString))
+            {
+                Svc.Log.Debug("InteractableCheck: giving up, SelectString addon is open");
                 return true;
+            }
 
             if (GenericHelpers.TryGetAddonByName("Talk", out AtkUnitBase* addonTalk) && GenericHelpers.IsAddonReady(addonTalk) && !AddonHelper.ClickTalk())
                 return false;
             else if (AddonHelper.ClickTalk())
-                return true;
-
-            if (gameObject == null || !gameObject.IsTargetable || !gameObject.IsValid() || !IsValid)
-                return true;
-
-            if (EzThrottler.Throttle("Interactable", 1000))
             {
-                if (!TryGetObjectByDataId(gameObject?.DataId ?? 0, out gameObject)) return true;
+                Svc.Log.Debug("InteractableCheck: giving up, clicked Talk");
+                return true;
+            }
 
-                if (GetBattleDistanceToPlayer(gameObject!) > 2f)
-                    MovementHelper.Move(gameObject, 0.25f, 2f, false);
-                else
-                {
-                    Svc.Log.Debug($"InteractableCheck: Interacting with {gameObject!.Name} at {gameObject.Position} which is {GetDistanceToPlayer(gameObject)} away, because game object is not null: {gameObject != null} and IsTargetable: {gameObject!.IsTargetable} and IsValid: {gameObject.IsValid()}");
-                    if (VNavmesh_IPCSubscriber.Path_IsRunning())
-                        VNavmesh_IPCSubscriber.Path_Stop();
-                    InteractWithObject(gameObject);
-                };
+            if (gameObject == null || !IsValid)
+            {
+                Svc.Log.Debug($"InteractableCheck: giving up, gameObject is {(gameObject == null ? "null" : "non-null")}, IsValid={IsValid}");
+                return true;
+            }
+
+            // 只快取 DataId 這個純量。傳進來的 gameObject 是呼叫端每幀用 ResolveObject
+            // (依 GameObjectId 查表)重解出來的,所以此刻讀它的欄位是安全的;但不能把物件
+            // 本身留到後續的幀——包裝是共用的、位址會被就地改寫。
+            var targetDataId = gameObject.BaseId;
+
+            // TryGetObjectByDataId 是「找最近的同 DataId 物件」,要對整個物件表做距離排序。
+            // 把它連同所有解參考一起放進節流視窗,每秒一次而不是每幀一次。
+            // 代價:目標消失時的中止判斷最多延遲 1 秒——但那一秒內只是不動作,
+            // 不會去解參考任何舊指標,所以延遲是安全的方向。
+            if (!EzThrottler.Throttle("Interactable", 1000))
+                return false;
+
+            if (!TryGetObjectByDataId(targetDataId, out var target) || target == null)
+            {
+                Svc.Log.Debug($"InteractableCheck: giving up, no object found for dataId {targetDataId}");
+                return true;
+            }
+
+            if (!target.IsTargetable || !target.IsValid())
+            {
+                Svc.Log.Debug($"InteractableCheck: giving up on {target.Name} <{target.GameObjectId:X}> at {target.Position}, IsTargetable={target.IsTargetable}, IsValid={target.IsValid()}");
+                return true;
+            }
+
+            if (GetBattleDistanceToPlayer(target) > 2f)
+                MovementHelper.Move(target, 0.25f, 2f, false);
+            else
+            {
+                Svc.Log.Debug($"InteractableCheck: Interacting with {target.Name} at {target.Position} which is {GetDistanceToPlayer(target)} away, IsTargetable: {target.IsTargetable}");
+                if (VNavmesh_IPCSubscriber.Path_IsRunning())
+                    VNavmesh_IPCSubscriber.Path_Stop();
+                InteractWithObject(target);
             }
 
             return false;
         }
-        private unsafe void Interactable(IGameObject? gameObject)
+        // 參數收 GameObjectId 而不是 IGameObject:下面每個任務都在後續的幀執行,
+        // 捕獲 IGameObject 等於跨幀持有一根原生指標。
+        private unsafe void Interactable(ulong? objectId)
         {
             _taskManager.Enqueue(() => BossMod_IPCSubscriber.SetMovement(false));
-            _taskManager.Enqueue(() => InteractableCheck(gameObject), "Interactable-InteractableCheck");
-            _taskManager.Enqueue(() => IsCasting, 500, "Interactable-WaitIsCasting");
+            // InteractableCheck 回 true ＝ 放棄。放棄時一定要清空
+            // Action:CheckFinishing 只認 Action 是不是空字串來判斷「這步做完了沒」,漏清空
+            // 會讓它白等一輪 60 秒逃生口才退本。這是唯一呼叫點,在這裡清等同於逐個分支清。
+            _taskManager.Enqueue(() =>
+                                 {
+                                     if (!InteractableCheck(ResolveObject(objectId)))
+                                         return false;
+
+                                     Plugin.Action = "";
+                                     return true;
+                                 }, "Interactable-InteractableCheck");
+            // 施法本來就在 InteractableCheck 裡等完了;這裡只接「點完對話框才起跑」的施法,沒等到是常態。
+            _taskManager.Enqueue(SoftWait.Until(() => IsCasting, 500), "Interactable-WaitIsCasting");
             _taskManager.Enqueue(() => !IsCasting, "Interactable-WaitNotIsCasting");
             _taskManager.Enqueue(() => BossMod_IPCSubscriber.SetMovement(true));
             _taskManager.DelayNext("Interactable-DelayNext100", 100);
@@ -477,6 +962,9 @@ namespace AutoDuty.Managers
                 var boolAddonSelectString = GenericHelpers.TryGetAddonByName("SelectString", out AtkUnitBase* addonSelectString) && GenericHelpers.IsAddonReady(addonSelectString);
 
                 var boolAddonTalk = GenericHelpers.TryGetAddonByName("Talk", out AtkUnitBase* addonTalk) && GenericHelpers.IsAddonReady(addonTalk);
+
+                // 這個任務在後續的幀才執行,所以在這裡重查一次物件表。
+                var gameObject = ResolveObject(objectId);
 
                 if (!boolAddonSelectYesno && !boolAddonTalk && (!(gameObject?.IsTargetable ?? false) ||
                 Conditions.Instance()->Mounted ||
@@ -499,10 +987,14 @@ namespace AutoDuty.Managers
                 }
                 else
                 {
-                    if (TryGetObjectByDataId(gameObject?.DataId ?? 0, out gameObject))
+                    if (TryGetObjectIdByDataId(gameObject?.BaseId ?? 0, out var nextObjectId))
                     {
-                        Svc.Log.Debug($"Interactable - Looping because {gameObject?.Name} is still Targetable: {gameObject?.IsTargetable} and we did not change conditions,  Position: {gameObject?.Position} Distance: {GetDistanceToPlayer(gameObject!.Position)}");
-                        Interactable(gameObject);
+                        var next = ResolveObject(nextObjectId);
+                        if (next != null)
+                        {
+                            Svc.Log.Debug($"Interactable - Looping because {next.Name} is still Targetable: {next.IsTargetable} and we did not change conditions,  Position: {next.Position} Distance: {GetDistanceToPlayer(next.Position)}");
+                            Interactable(nextObjectId);
+                        }
                     }
                 }
             }, "Interactable-LoopCheck");
@@ -517,12 +1009,24 @@ namespace AutoDuty.Managers
             else
                 dataIds.Add(TryGetObjectIdRegex(action.Arguments[0], out objectDataId) ? (uint.TryParse(objectDataId, out var dataId) ? dataId : 0) : 0);
 
-            if (dataIds.All(x => x.Equals("0"))) return;
+            // 契約:TryGetObjectIdRegex 解析不出數字時退回 0。全部都是 0 ⇒ 這一步的 Arguments
+            // 整個填錯(例如誤填物件顯示名稱),硬跑下去只會對 BaseId=0 的物件死等到逾時。
+            if (dataIds.All(x => x == 0))
+            {
+                Svc.Log.Warning($"Interactable: Arguments 解析不出任何 DataId,跳過這一步。"
+                              + $"Arguments=[{string.Join(", ", action.Arguments)}]");
+                return;
+            }
 
-            IGameObject? gameObject = null;
+            // 閉包只捕獲 GameObjectId,每個任務執行時才重查物件表。
+            ulong? objectId = null;
             Plugin.Action = $"Interactable";
-            _taskManager.Enqueue(() => Player.Character->InCombat || (gameObject = Svc.Objects.Where(x => x.DataId.EqualsAny(dataIds) && x.IsTargetable).OrderBy(GetDistanceToPlayer).FirstOrDefault()) != null, "Interactable-GetGameObjectUnlessInCombat");
-            _taskManager.Enqueue(() => { Plugin.Action = $"Interactable: {gameObject?.DataId}"; }, "Interactable-SetActionVar");
+            // 極火龍殲滅戰打完後的個人化剝取物件（每個玩家各自一份、同 DataId 同座標）實測要等到
+            // 快 40 幾秒才會變成 IsTargetable（推測是伺服器依序處理每個玩家的領取）。TaskManager 的
+            // 預設逾時只有 10 秒（TimeLimitMS），而 AutoDuty 的實例是 AbortOnTimeout=false ⇒ 逾時會
+            // 直接放行往下跑、objectId 還是 null，接著整個互動被放棄，材料永遠拿不到。拉長到 90 秒。
+            _taskManager.Enqueue(() => Player.Character->InCombat || (objectId = Svc.Objects.Where(x => dataIds.Contains(x.BaseId) && x.IsTargetable).OrderBy(GetDistanceToPlayer).FirstOrDefault()?.GameObjectId) != null, 90000, "Interactable-GetGameObjectUnlessInCombat");
+            _taskManager.Enqueue(() => { Plugin.Action = $"Interactable: {ResolveObject(objectId)?.BaseId}"; }, "Interactable-SetActionVar");
             _taskManager.Enqueue(() =>
             {
                 if (Player.Character->InCombat)
@@ -531,11 +1035,18 @@ namespace AutoDuty.Managers
                     _taskManager.Enqueue(() => !Player.Character->InCombat, int.MaxValue, "Interactable-InCombatWait");
                     Interactable(action);
                 }
-                else if (gameObject == null)
+                else if (objectId == null)
+                {
+                    // 等不到可互動目標，放棄並中止任務鏈 —— 但中止之前一定要把 Action 清空，
+                    // 不然它會停在上一行設的 "Interactable: "（objectId 是 null，冒號後面印出來是空的，
+                    // 但字串本身不是空字串）。CheckFinishing 只認 Action 是不是空字串來判斷「這步
+                    // 真的做完了沒」，漏清空的話它會誤以為還在忙，平白多等一輪逃生口的時間才退本。
+                    Plugin.Action = "";
                     _taskManager.Abort();
+                }
                 }, "Interactable-InCombatCheck");
-            _taskManager.Enqueue(() => gameObject?.IsTargetable ?? true, "Interactable-WaitGameObjectTargetable");
-            _taskManager.Enqueue(() => Interactable(gameObject), "Interactable-InteractableLoop");
+            _taskManager.Enqueue(() => ResolveObject(objectId)?.IsTargetable ?? true, "Interactable-WaitGameObjectTargetable");
+            _taskManager.Enqueue(() => Interactable(objectId), "Interactable-InteractableLoop");
         }
 
         private bool TryGetObjectIdRegex(string input, out string output) => (RegexHelper.ObjectIdRegex().Match(input).Success ? output = RegexHelper.ObjectIdRegex().Match(input).Captures.First().Value : output = string.Empty) != string.Empty;
@@ -552,57 +1063,154 @@ namespace AutoDuty.Managers
             return false;
         }
 
-        private unsafe bool BossMoveCheck(Vector3 bossV3)
+        // MovementHelper.Move 的預設最後一點容許值;Boss-MoveCheck 一直是用預設值呼叫它。
+        private const float BossArriveDistance = 0.25f;
+
+        private unsafe bool BossMoveCheck(Vector3 bossV3, ApproachRetry approach)
         {
             if (Plugin.BossObject != null && Plugin.BossObject.Struct()->InCombat)
             {
                 VNavmesh_IPCSubscriber.Path_Stop();
                 return true;
             }
-            return MovementHelper.Move(bossV3);
+
+            // 走不到王點時不再每幀重排,但這一步照舊等到王開戰或時限到才結束:提早結束會讓後面的等開戰提早逾時。
+            float dist = Vector3.Distance(bossV3, Player.Position);
+            if (bossV3 != Vector3.Zero && dist > BossArriveDistance && approach.ShouldHold(NavIdleAndReady(), dist, Environment.TickCount64))
+            {
+                if (!approach.HoldAnnounced)
+                {
+                    approach.HoldAnnounced = true;
+                    Svc.Log.Information($"[Boss] 往王點 {bossV3} 的路徑連續 {approach.Failures} 次結束卻沒更接近(還差 {dist:F1} 米),"
+                                        + $"改成每 {ApproachRetry.RetryIntervalMs / 1000} 秒才重排一次,直到王開戰或這一步時限到。");
+                }
+                return false;
+            }
+            return MovementHelper.Move(bossV3, 0.25f, BossArriveDistance);
         }
 
-        private void BossLoot(List<IGameObject>? gameObjects, int index)
+        // vnavmesh 閒著(沒在找路也沒有路徑點)、玩家與導航都就緒:此刻呼叫 MovementHelper.Move 會真的排一條新路徑。
+        private static bool NavIdleAndReady() => !VNavmesh_IPCSubscriber.SimpleMove_PathfindInProgress() && VNavmesh_IPCSubscriber.Path_NumWaypoints() == 0
+                                                 && IsReady && VNavmesh_IPCSubscriber.Nav_IsReady();
+
+        // 收 GameObjectId 而不是 IGameObject:清單是在前一幀建的,IObjectTable 的包裝是
+        // 每格共用、存取時就地改寫 Address ⇒ 跨幀持有會靜默換人或懸空。id 在建清單那一幀抄走。
+        private void BossLoot(List<ulong>? objectIds, int index)
         {
-            if (gameObjects == null || gameObjects.Count < 1)
+            if (objectIds == null || objectIds.Count < 1)
             {
                 _taskManager.DelayNext("BossLoot-WaitASecToLootChest", 1000);
                 return;
             }
 
-            _taskManager.Enqueue(() => MovementHelper.Move(gameObjects[index], 0.25f, 1f), "BossLoot-MoveToChest");
-            this.Wait(new PathAction() { Arguments = ["250"] });
-            
+            ulong chestId = objectIds[index];
+            var approach = new BossLootLogic.ChestApproach();
+
+            _taskManager.Enqueue(() => MoveToChest(chestId, approach), "BossLoot-MoveToChest");
+            // 開不開要等走完才知道,所以後面的任務在這一步執行時才排進佇列。
             _taskManager.Enqueue(() =>
             {
-                index++;
-                if (gameObjects.Count > index)
-                    BossLoot(gameObjects, index);
+                if (approach.Arrived)
+                {
+                    this.Wait(new PathAction() { Arguments = ["250"] });
+
+                    // 走到寶箱旁邊不會自動開啟它,要自己呼叫互動。
+                    Interactable(chestId);
+                }
                 else
-                    _taskManager.DelayNext("BossLoot-WaitASecToLootChest", 1000);
-            }, "BossLoot-LoopOrDelay");
+                {
+                    if (VNavmesh_IPCSubscriber.Path_IsRunning())
+                        VNavmesh_IPCSubscriber.Path_Stop();
+                    Svc.Log.Information($"[BossLoot] 寶箱 {chestId:X} {(approach.GaveUp ? "走不過去" : "移動逾時還沒走到")},不開它、直接往下走。");
+                }
+
+                _taskManager.Enqueue(() =>
+                {
+                    index++;
+                    if (objectIds.Count > index)
+                        BossLoot(objectIds, index);
+                    else
+                        _taskManager.DelayNext("BossLoot-WaitASecToLootChest", 1000);
+                }, "BossLoot-LoopOrDelay");
+            }, "BossLoot-OpenChest");
+        }
+
+        private bool MoveToChest(ulong chestId, BossLootLogic.ChestApproach approach)
+        {
+            var chest = ResolveObject(chestId);
+            if (chest == null)
+            {
+                approach.Arrived = true;
+                return true;
+            }
+
+            switch (BossLootLogic.Judge(approach, NavIdleAndReady(), Vector3.Distance(chest.Position, Player.Position), GetBattleDistanceToPlayer(chest)))
+            {
+                case BossLootLogic.ChestStep.InReach:
+                    approach.Arrived = true;
+                    return true;
+                case BossLootLogic.ChestStep.GiveUp:
+                    approach.GaveUp = true;
+                    return true;
+            }
+
+            if (!MovementHelper.Move(chest, 0.25f, BossLootLogic.ArriveDistance))
+                return false;
+            approach.Arrived = true;
+            return true;
         }
 
         public void Boss(PathAction action)
         {
             Svc.Log.Info($"Starting Action Boss: {Plugin.BossObject?.Name.TextValue ?? "null"}");
             int index = 0;
-            List<IGameObject>? treasureCofferObjects = null;
+            List<ulong>? treasureCofferObjects = null;
+            HashSet<ulong>? preFightCoffers = null;
             Plugin.SkipTreasureCoffer = false;
             StopForCombat(new PathAction() { Arguments = ["true", "noWait"] });
-            _taskManager.Enqueue(() => BossMoveCheck(action.Position),                           "Boss-MoveCheck");
+            var approach = new ApproachRetry();
+            _taskManager.Enqueue(() => BossMoveCheck(action.Position, approach), "Boss-MoveCheck");
             if (Plugin.BossObject == null)
                 _taskManager.Enqueue(() => (Plugin.BossObject = GetBossObject()) != null, "Boss-GetBossObject");
             _taskManager.Enqueue(() => Plugin.Action = $"Boss: {Plugin.BossObject?.Name.TextValue ?? ""}", "Boss-SetActionVar");
             _taskManager.Enqueue(() => Svc.Targets.Target = Plugin.BossObject, "Boss-SetTarget");
-            _taskManager.Enqueue(() => Svc.Condition[ConditionFlag.InCombat], "Boss-WaitInCombat");
+            _taskManager.Enqueue(() =>
+            {
+                if (!Svc.Condition[ConditionFlag.InCombat])
+                    return false;
+                // 只撿王的寶箱:王還活著時就在場的寶箱不會是這隻王的。確認不了王還活著就不記,照舊全撿。
+                if (Plugin.Configuration.LootTreasure && Plugin.Configuration.LootBossTreasureOnly && GetBossObject() is { IsDead: false })
+                    preFightCoffers = GetObjectsByObjectKind(Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Treasure)?.Select(x => x.GameObjectId).ToHashSet();
+                return true;
+            }, "Boss-WaitInCombat");
             _taskManager.Enqueue(() => BossCheck(), int.MaxValue, "Boss-BossCheck");
             _taskManager.Enqueue(() => { Plugin.BossObject = null; }, "Boss-ClearBossObject");
 
             if (Plugin.Configuration.LootTreasure)
             {
+                // 撿寶點(上游語意):第一個參數帶座標時只撿那個點附近的寶箱,找不到也不退回玩家周圍的掃描。
+                bool hasLootPoint = BossLootLogic.TryParseLootPoint(action.Arguments, out Vector3 lootPoint, out float lootRange, out string? lootProblem);
+                if (lootProblem != null)
+                    Svc.Log.Information($"[BossLoot] 王步驟「{action.Note}」的撿寶點參數[{string.Join(", ", action.Arguments)}]{lootProblem}"
+                                        + (hasLootPoint ? "。" : ",照舊撿玩家 50 米內的寶箱。"));
+
                 _taskManager.DelayNext("Boss-TreasureDelay", 1000);
-                _taskManager.Enqueue(() => treasureCofferObjects = GetObjectsByObjectKind(Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Treasure)?.Where(x => BelowDistanceToPlayer(x.Position, 50, 10)).ToList(), "Boss-GetTreasureChests");
+                _taskManager.Enqueue(() =>
+                {
+                    if (hasLootPoint)
+                    {
+                        List<IGameObject>? treasures = GetObjectsByObjectKind(Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Treasure);
+                        treasureCofferObjects = treasures?.Where(x => BelowDistanceToPoint(x.Position, lootPoint, lootRange, BossLootLogic.LootHeightRange)).Select(x => x.GameObjectId).ToList();
+                        int nearPlayer = treasures?.Count(x => BelowDistanceToPlayer(x.Position, BossLootLogic.NearPlayerRange, BossLootLogic.LootHeightRange)) ?? 0;
+                        Svc.Log.Information($"[BossLoot] 王步驟「{action.Note}」有撿寶點 {lootPoint}:{lootRange} 米內找到 {treasureCofferObjects?.Count ?? 0} 個寶箱"
+                                            + $"(沒有撿寶點時會撿的玩家 50 米內有 {nearPlayer} 個)。");
+                    }
+                    else
+                        treasureCofferObjects = GetObjectsByObjectKind(Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Treasure)?.Where(x => BelowDistanceToPlayer(x.Position, 50, 10)).Select(x => x.GameObjectId).ToList();
+                    int excluded = treasureCofferObjects == null ? 0 : BossLootLogic.ExcludePreFight(treasureCofferObjects, preFightCoffers);
+                    if (excluded > 0)
+                        Svc.Log.Information($"[BossLoot] 只撿王的寶箱:略過王戰開始時就在場的 {excluded} 個寶箱。");
+                }, "Boss-GetTreasureChests");
                 _taskManager.Enqueue(() => BossLoot(treasureCofferObjects, index), "Boss-LootCheck");
             }
         }
@@ -651,7 +1259,7 @@ namespace AutoDuty.Managers
 
             if (objects != null)
             {
-                var protoArmOrDoor = objects.FirstOrDefault(x => x.IsTargetable && x.DataId is 14566 or 14616 && GetDistanceToPlayer(x) <= 25);
+                var protoArmOrDoor = objects.FirstOrDefault(x => x.IsTargetable && x.BaseId is 14566 or 14616 && GetDistanceToPlayer(x) <= 25);
                 if (protoArmOrDoor != null)
                     Svc.Targets.Target = protoArmOrDoor;
             }
@@ -672,20 +1280,72 @@ namespace AutoDuty.Managers
         private static readonly uint[] praeGaiusIds = [9020u, 14453u, 14455u];
         private void PraeFrameworkUpdateGaius(IFramework _)
         {
-            if (!EzThrottler.Throttle("PraeUpdate", 50) || !IsReady || Svc.Targets.Target != null && praeGaiusIds.Contains(Svc.Targets.Target.DataId))
+            if (!EzThrottler.Throttle("PraeUpdate", 50) || !IsReady || Svc.Targets.Target != null && praeGaiusIds.Contains(Svc.Targets.Target.BaseId))
                 return;
 
             List<IGameObject>? objects = GetObjectsByObjectKind(Dalamud.Game.ClientState.Objects.Enums.ObjectKind.BattleNpc);
 
-            IGameObject? gaius = objects?.FirstOrDefault(x => x.IsTargetable && praeGaiusIds.Contains(x.DataId));
+            IGameObject? gaius = objects?.FirstOrDefault(x => x.IsTargetable && praeGaiusIds.Contains(x.BaseId));
             if (gaius != null)
                 Svc.Targets.Target = gaius;
         }
 
+        private const int DutySpecificInteractTimeoutMs = 10_000;
+        private const int MaxStepRedo                   = 2;
+        private int _redoIndexer = -1;
+        private int _redoCount;
+
+        /// <summary>
+        /// 互動到指定視窗出現才算按到。逾時就丟掉這一步剩下的任務、從頭重做這一步,
+        /// 同一步最多重做 <see cref="MaxStepRedo"/> 次,之後寫 Information 並照原路徑往下。
+        /// </summary>
+        private unsafe void EnqueueInteractUntilAddon(Func<ulong?> objectId, string addonName, string what)
+        {
+            long? since = null;
+            _taskManager.Enqueue(() =>
+            {
+                since ??= Environment.TickCount64;
+                if (InteractWithObjectUntilAddon(ResolveObject(objectId()), addonName) != null)
+                {
+                    _redoIndexer = -1;
+                    return true;
+                }
+
+                if (Environment.TickCount64 - since.Value < DutySpecificInteractTimeoutMs)
+                    return false;
+
+                RedoStepOrGiveUp($"{what}({DutySpecificInteractTimeoutMs / 1000} 秒內沒等到 {addonName})");
+                return true;
+            }, DutySpecificInteractTimeoutMs + 5_000, $"DutySpecificCode-InteractUntil{addonName}");
+        }
+
+        private void RedoStepOrGiveUp(string what)
+        {
+            if (_redoIndexer != Plugin.Indexer)
+            {
+                _redoIndexer = Plugin.Indexer;
+                _redoCount   = 0;
+            }
+
+            _taskManager.Abort();
+            Plugin.Action = "";
+            if (_redoCount < MaxStepRedo)
+            {
+                _redoCount++;
+                Svc.Log.Information($"[步驟重做] {what}:丟掉這一步剩下的動作,從頭重做第 {Plugin.Indexer} 步(第 {_redoCount}/{MaxStepRedo} 次)。");
+                Plugin.Stage = Stage.Reading_Path;
+                return;
+            }
+
+            _redoIndexer = -1;
+            Svc.Log.Information($"[步驟重做] {what}:第 {Plugin.Indexer} 步已重做 {MaxStepRedo} 次仍沒生效,照原路徑往下。");
+        }
 
         public unsafe void DutySpecificCode(PathAction action)
         {
-            IGameObject? gameObject = null;
+            // 閉包只捕獲 GameObjectId,每個任務執行時才重查物件表。
+            // 這些任務都是在後續的幀執行的,捕獲 IGameObject 等於跨幀持有原生指標。
+            ulong? objectId = null;
             switch (Svc.ClientState.TerritoryType)
             {
                 //Prae
@@ -712,12 +1372,13 @@ namespace AutoDuty.Managers
                     switch (action.Arguments[0])
                     {
                         case "1":
-                            _taskManager.Enqueue(() => (gameObject = GetObjectsByObjectKind(Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventObj)?.FirstOrDefault(a => a.IsTargetable && (OID)a.DataId is OID.Blue or OID.Red or OID.Green)) != null, "DutySpecificCode");
+                            _taskManager.Enqueue(() => (objectId = GetObjectsByObjectKind(Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventObj)?.FirstOrDefault(a => a.IsTargetable && (OID)a.BaseId is OID.Blue or OID.Red or OID.Green)?.GameObjectId) != null, "DutySpecificCode");
                             _taskManager.Enqueue(() =>
                             {
+                                var gameObject = ResolveObject(objectId);
                                 if (gameObject != null)
                                 {
-                                    switch ((OID)gameObject.DataId)
+                                    switch ((OID)gameObject.BaseId)
                                     {
                                         case OID.Blue:
                                             GlobalStringStore = "2000213";
@@ -736,10 +1397,11 @@ namespace AutoDuty.Managers
                             _taskManager.Enqueue(() => Interactable(new PathAction() { Arguments = [GlobalStringStore ?? ""] }), "DutySpecificCode");
                             break;
                         case "3":
-                            _taskManager.Enqueue(() => (gameObject = GetObjectByDataId(2000216)) != null, "DutySpecificCode");
-                            _taskManager.Enqueue(() => MovementHelper.Move(gameObject, 0.25f, 2.5f), "DutySpecificCode");
+                            _taskManager.Enqueue(() => (objectId = GetObjectIdByDataId(2000216)) != null, "DutySpecificCode");
+                            _taskManager.Enqueue(() => MovementHelper.Move(ResolveObject(objectId), 0.25f, 2.5f), "DutySpecificCode");
                             _taskManager.DelayNext("DutySpecificCode", 1000);
-                            _taskManager.Enqueue(() => InteractWithObject(gameObject), "DutySpecificCode");
+                            // 互動到開關變成不可選取(或跳出對話)為止,與路徑檔裡同一個開關的 Interactable 步驟同一套確認。
+                            _taskManager.Enqueue(() => Interactable(objectId), "DutySpecificCode");
                             break;
                         default: break;
                     }
@@ -749,52 +1411,52 @@ namespace AutoDuty.Managers
                     switch (action.Arguments[0])
                     {
                         case "5":
-                            _taskManager.Enqueue(() => (gameObject = GetObjectByDataId(16140)) != null, "DutySpecificCode");
-                            _taskManager.Enqueue(() => MovementHelper.Move(gameObject, 0.25f, 2.5f), "DutySpecificCode");
+                            _taskManager.Enqueue(() => (objectId = GetObjectIdByDataId(16140)) != null, "DutySpecificCode");
+                            _taskManager.Enqueue(() => MovementHelper.Move(ResolveObject(objectId), 0.25f, 2.5f), "DutySpecificCode");
                             _taskManager.DelayNext("DutySpecificCode", 1000);
-                            _taskManager.Enqueue(() => InteractWithObject(gameObject), "DutySpecificCode");
+                            _taskManager.Enqueue(() => InteractWithObject(ResolveObject(objectId)), "DutySpecificCode");
                             if (IsValid)
                             {
-                                _taskManager.Enqueue(() => InteractWithObject(gameObject), "DutySpecificCode");
+                                EnqueueInteractUntilAddon(() => objectId, "SelectString", "六根山:對 16140 互動後沒出現選單");
                                 _taskManager.Enqueue(() => AddonHelper.ClickSelectString(0));
                             }
                             break;
                         case "6":
-                            _taskManager.Enqueue(() => (gameObject = GetObjectByDataId(16140)) != null, "DutySpecificCode");
-                            _taskManager.Enqueue(() => MovementHelper.Move(gameObject, 0.25f, 2.5f), "DutySpecificCode");
+                            _taskManager.Enqueue(() => (objectId = GetObjectIdByDataId(16140)) != null, "DutySpecificCode");
+                            _taskManager.Enqueue(() => MovementHelper.Move(ResolveObject(objectId), 0.25f, 2.5f), "DutySpecificCode");
                             _taskManager.DelayNext("DutySpecificCode", 1000);
                             if (IsValid)
                             {
-                                _taskManager.Enqueue(() => InteractWithObject(gameObject), "DutySpecificCode");
+                                EnqueueInteractUntilAddon(() => objectId, "SelectString", "六根山:對 16140 互動後沒出現選單");
                                 _taskManager.Enqueue(() => AddonHelper.ClickSelectString(1));
                             }
                             break;
                         case "12":
-                            _taskManager.Enqueue(() => _chat.ExecuteCommand("/rotation Settings AoEType Off"), "DutySpecificCode");
+                            _taskManager.Enqueue(() => Chat.ExecuteCommand("/rotation Settings AoEType Off"), "DutySpecificCode");
                             _taskManager.Enqueue(() => ActionManager.Instance()->UseAction(ActionType.GeneralAction, 16), "DutySpecificCode");
                             _taskManager.Enqueue(() => EzThrottler.Throttle("DutySpecificCode", Convert.ToInt32(500)));
                             _taskManager.Enqueue(() => EzThrottler.Check("DutySpecificCode"), Convert.ToInt32(500), "DutySpecificCode");
-                            _taskManager.Enqueue(() => _chat.ExecuteCommand("/mk ignore1"), "DutySpecificCode");
+                            _taskManager.Enqueue(() => Chat.ExecuteCommand("/mk ignore1"), "DutySpecificCode");
                             _taskManager.Enqueue(() => EzThrottler.Throttle("DutySpecificCode", Convert.ToInt32(100)));
                             _taskManager.Enqueue(() => EzThrottler.Check("DutySpecificCode"), Convert.ToInt32(100), "DutySpecificCode");
 
                             _taskManager.Enqueue(() => ActionManager.Instance()->UseAction(ActionType.GeneralAction, 16), "DutySpecificCode");
                             _taskManager.Enqueue(() => EzThrottler.Throttle("DutySpecificCode", Convert.ToInt32(500)));
                             _taskManager.Enqueue(() => EzThrottler.Check("DutySpecificCode"), Convert.ToInt32(500), "DutySpecificCode");
-                            _taskManager.Enqueue(() => _chat.ExecuteCommand("/mk ignore2"), "DutySpecificCode");
+                            _taskManager.Enqueue(() => Chat.ExecuteCommand("/mk ignore2"), "DutySpecificCode");
                             _taskManager.Enqueue(() => EzThrottler.Throttle("DutySpecificCode", Convert.ToInt32(100)));
                             _taskManager.Enqueue(() => EzThrottler.Check("DutySpecificCode"), Convert.ToInt32(100), "DutySpecificCode");
 
                             _taskManager.Enqueue(() => ActionManager.Instance()->UseAction(ActionType.GeneralAction, 16), "DutySpecificCode");
                             _taskManager.Enqueue(() => EzThrottler.Throttle("DutySpecificCode", Convert.ToInt32(500)));
                             _taskManager.Enqueue(() => EzThrottler.Check("DutySpecificCode"), Convert.ToInt32(500), "DutySpecificCode");
-                            _taskManager.Enqueue(() => _chat.ExecuteCommand("/mk attack1"), "DutySpecificCode");
+                            _taskManager.Enqueue(() => Chat.ExecuteCommand("/mk attack1"), "DutySpecificCode");
                             break;
                         case "13":
                             _taskManager.Enqueue(() => ActionManager.Instance()->UseAction(ActionType.GeneralAction, 16), "DutySpecificCode");
                             _taskManager.Enqueue(() => EzThrottler.Throttle("DutySpecificCode", Convert.ToInt32(500)));
                             _taskManager.Enqueue(() => EzThrottler.Check("DutySpecificCode"), Convert.ToInt32(500), "DutySpecificCode");
-                            _taskManager.Enqueue(() => _chat.ExecuteCommand("/mk attack1"), "DutySpecificCode");
+                            _taskManager.Enqueue(() => Chat.ExecuteCommand("/mk attack1"), "DutySpecificCode");
                             break;
 
                         default: break;
@@ -805,7 +1467,7 @@ namespace AutoDuty.Managers
                     switch (action.Arguments[0])
                     {
                         case "1":
-                            _taskManager.Enqueue(() => TryGetObjectByDataId(2007400, out gameObject), "DutySpecificCode");
+                            _taskManager.Enqueue(() => TryGetObjectIdByDataId(2007400, out objectId), "DutySpecificCode");
                             _taskManager.Enqueue(() =>
                                 {
                                     if (!EzThrottler.Throttle("DSC", 500) || Player.Character->IsCasting) return false;
@@ -815,6 +1477,8 @@ namespace AutoDuty.Managers
                                     else if (AddonHelper.ClickSelectYesno(true))
                                         return true;
 
+                                    // 這個檢查式會反覆重跑很多幀,每次都要重查物件表。
+                                    var gameObject = ResolveObject(objectId);
                                     if (gameObject == null) return true;
 
                                     if (GetBattleDistanceToPlayer(gameObject) > 2.5f)
@@ -829,7 +1493,7 @@ namespace AutoDuty.Managers
                                 }, "DSC-Xelphatol-ClickTailWind");
                             break;
                         case "2":
-                            _taskManager.Enqueue(() => TryGetObjectByDataId(2007401, out gameObject), "DutySpecificCode");
+                            _taskManager.Enqueue(() => TryGetObjectIdByDataId(2007401, out objectId), "DutySpecificCode");
                             _taskManager.Enqueue(() =>
                             {
                                 if (!EzThrottler.Throttle("DSC", 500) || Player.Character->IsCasting) return false;
@@ -839,6 +1503,8 @@ namespace AutoDuty.Managers
                                 else if (AddonHelper.ClickSelectYesno(true))
                                     return true;
 
+                                // 這個檢查式會反覆重跑很多幀,每次都要重查物件表。
+                                var gameObject = ResolveObject(objectId);
                                 if (gameObject == null) return true;
 
                                 if (GetBattleDistanceToPlayer(gameObject) > 2.5f)

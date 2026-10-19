@@ -1,20 +1,33 @@
 {
-  "actions": [
+  "Actions": [
     {
-      "tag": "None",
-      "name": "MoveTo",
-      "position": {
-        "X": 100.06962,
-        "Y": 0,
-        "Z": 100.73334
+      "Tag": "None",
+      "Name": "Boss",
+      "Position": {
+        "X": 100.0,
+        "Y": -6.0573E-16,
+        "Z": 95.0
       },
-      "arguments": [],
-      "note": ""
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "Note": "",
+      "Flags": "None"
     }
   ],
-  "meta": {
-    "createdAt": 221,
-    "changelog": [],
-    "notes": []
+  "Meta": {
+    "CreatedAt": 221,
+    "Changelog": [
+      {
+        "Version": 304,
+        "Change": "Version update"
+      },
+      {
+        "Version": 378,
+        "Change": "Replaced with Boss Step"
+      }
+    ],
+    "Notes": []
   }
 }

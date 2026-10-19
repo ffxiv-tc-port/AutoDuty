@@ -36,8 +36,8 @@ namespace AutoDuty.Helpers
             var enpcBaseSheet = Svc.Data.GetExcelSheet<ENpcBase>();
             var levelSheet = Svc.Data.GetExcelSheet<Level>();
             // todo: use IDs instead of english string
-            var menderENpcResidents = enpcResidentsSheet?.ToList().Where(x => x.RowId != 1025308 && (x.Singular.ToString().Contains("mender", StringComparison.InvariantCultureIgnoreCase) || x.Title.ToString().Contains("mender", StringComparison.InvariantCultureIgnoreCase) || x.Title.ToString().Contains("Repairman", StringComparison.InvariantCultureIgnoreCase)));
-            var menderENpcBases = enpcBaseSheet?.ToList();
+            // 這個 Where 只拿來判 null、從來沒被列舉（修理 NPC 是依 ENpcData 找的），所以不先把整張表 ToList。
+            var menderENpcResidents = enpcResidentsSheet?.Where(x => x.RowId != 1025308 && (x.Singular.ToString().Contains("mender", StringComparison.InvariantCultureIgnoreCase) || x.Title.ToString().Contains("mender", StringComparison.InvariantCultureIgnoreCase) || x.Title.ToString().Contains("Repairman", StringComparison.InvariantCultureIgnoreCase)));
 
             var cityAreaTerritoryTypes = Svc.Data.GetExcelSheet<TerritoryType>().ToList().Where(x => x.TerritoryIntendedUse.Value.RowId == 0);
 
@@ -46,52 +46,92 @@ namespace AutoDuty.Helpers
 
             BuildEnpcFromLgbFile(cityAreaTerritoryTypes);
 
-            foreach (ENpcBase npcBase in menderENpcBases)
+            List<(ENpcBase NpcBase, int RepairIndex)> repairNpcBases = [];
+            foreach (ENpcBase npcBase in enpcBaseSheet)
             {
-                int repairIndex = npcBase.ENpcData.IndexOf(x => x.RowId == 720915);
+                int repairIndex = RepairHandlerIndex(npcBase);
                 if (repairIndex >= 0)
+                    repairNpcBases.Add((npcBase, repairIndex));
+            }
+
+            Dictionary<uint, Level> firstLevelByObject = FirstLevelByObject(levelSheet, repairNpcBases);
+
+            foreach ((ENpcBase npcBase, int repairIndex) in repairNpcBases)
+            {
+                firstLevelByObject.TryGetValue(npcBase.RowId, out Level level);
+                Vector3 position      = Vector3.Zero;
+                uint    territoryType = 0;
+
+                if (level.RowId != default)
                 {
-                    Level   level         = levelSheet.FirstOrDefault(y => y.Object.RowId == npcBase.RowId);
-                    Vector3 position      = Vector3.Zero;
-                    uint    territoryType = 0;
-
-                    if (level.RowId != default)
+                    if (level.Territory.Value.RowId != 0 || level.Territory.Value.TerritoryIntendedUse.RowId != 0)
                     {
-                        if (level.Territory.Value.RowId != 0 || level.Territory.Value.TerritoryIntendedUse.RowId != 0)
-                        {
-                            var npc = cityENpcResidents.FirstOrDefault(x => x.DataId == npcBase.RowId);
-                            if (npc == null) 
-                                continue;
+                        var npc = cityENpcResidents.FirstOrDefault(x => x.DataId == npcBase.RowId);
+                        if (npc == null) 
+                            continue;
 
-                            RepairNPCs.Add(new RepairNpcData
-                                           {
-                                               DataId        = npc.DataId,
-                                               Name          = npc.Name,
-                                               Position      = npc.Position,
-                                               TerritoryType = npc.TerritoryType,
-                                               RepairIndex   = repairIndex
-                                           });
-                        }
-                        else
-                        {
-                            var npc = enpcResidentsSheet.GetRow(npcBase.RowId);
-                            position      = new Vector3(level.X, level.Y, level.Z);
-                            territoryType = level.Territory.Value.RowId;
-                            RepairNPCs.Add(new RepairNpcData
-                                           {
-                                               DataId        = npcBase.RowId,
-                                               Name          = npc.Singular.ToString(),
-                                               Position      = position,
-                                               TerritoryType = territoryType,
-                                               RepairIndex   = repairIndex
-                                           });
-                        }
+                        RepairNPCs.Add(new RepairNpcData
+                                       {
+                                           DataId        = npc.DataId,
+                                           Name          = npc.Name,
+                                           Position      = npc.Position,
+                                           TerritoryType = npc.TerritoryType,
+                                           RepairIndex   = repairIndex
+                                       });
+                    }
+                    else
+                    {
+                        var npc = enpcResidentsSheet.GetRow(npcBase.RowId);
+                        position      = new Vector3(level.X, level.Y, level.Z);
+                        territoryType = level.Territory.Value.RowId;
+                        RepairNPCs.Add(new RepairNpcData
+                                       {
+                                           DataId        = npcBase.RowId,
+                                           Name          = npc.Singular.ToString(),
+                                           Position      = position,
+                                           TerritoryType = territoryType,
+                                           RepairIndex   = repairIndex
+                                       });
                     }
                 }
             }
 
             RepairNPCs.Sort((first, second) => first.TerritoryType.CompareTo(second.TerritoryType));
             cityENpcResidents = [];
+        }
+
+        /// <summary>ENpcData 裡第一個修理事件（720915）的位置，沒有回 -1。用索引走 Collection，不經 IEnumerable 裝箱。</summary>
+        private static int RepairHandlerIndex(ENpcBase npcBase)
+        {
+            var data = npcBase.ENpcData;
+            for (int i = 0; i < data.Count; i++)
+                if (data[i].RowId == 720915)
+                    return i;
+            return -1;
+        }
+
+        /// <summary>
+        /// 每個 NPC 在 Level 表裡第一筆 Object 指向它的列（等同逐一 FirstOrDefault）；沒有的不放進字典，查不到＝default(Level)。
+        /// 整張 Level 表只走一遍，取代每個修理 NPC 各掃一遍。
+        /// </summary>
+        private static Dictionary<uint, Level> FirstLevelByObject(IEnumerable<Level> levelSheet, List<(ENpcBase NpcBase, int RepairIndex)> npcBases)
+        {
+            HashSet<uint> wanted = [];
+            foreach (var entry in npcBases)
+                wanted.Add(entry.NpcBase.RowId);
+
+            Dictionary<uint, Level> result = new(wanted.Count);
+            if (wanted.Count == 0)
+                return result;
+
+            foreach (Level level in levelSheet)
+            {
+                uint objectId = level.Object.RowId;
+                if (wanted.Contains(objectId) && result.TryAdd(objectId, level) && result.Count == wanted.Count)
+                    break;
+            }
+
+            return result;
         }
 
         private static void BuildEnpcFromLgbFile(IEnumerable<TerritoryType> territoryTypes)

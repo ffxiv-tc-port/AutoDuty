@@ -97,6 +97,12 @@ namespace AutoDuty.Helpers
             }
             else if (ObjectHelper.GetDistanceToPlayer(TripleTriadCardVendorLocation) <= 4 && VNavmesh_IPCSubscriber.Path_NumWaypoints() == 0)
             {
+                // ⚠️ 每個 tick 先無條件重新解析,再做 IsAddonReady:addonExchange 是 static 且 Stop() 不歸零,
+                // 舊指標會跨 session、跨換區、跨副本存活,先解參考它就是對已關閉的 addon 解參考 → 攔不到的 AccessViolation。
+                // TryGetAddonByName 找不到時會把 out 參數設成 null(ECommons AddonHelpers),所以指標會自動歸零。
+                if (!GenericHelpers.TryGetAddonByName("TripleTriadCoinExchange", out addonExchange))
+                    addonExchange = null;
+
                 if (addonExchange == null || !GenericHelpers.IsAddonReady(addonExchange))
                 {
                     readerExchange = null;
@@ -105,7 +111,7 @@ namespace AutoDuty.Helpers
                         Svc.Log.Debug($"Clicking SelectIconString");
                         AddonHelper.ClickSelectIconString(1);
                     }
-                    else if (!GenericHelpers.TryGetAddonByName("TripleTriadCoinExchange", out addonExchange) && tripleTriadVendorGameObject != null)
+                    else if (addonExchange == null && tripleTriadVendorGameObject != null)
                     {
                         Svc.Log.Debug("Interacting with TTT");
                         ObjectHelper.InteractWithObject(tripleTriadVendorGameObject);
@@ -113,7 +119,9 @@ namespace AutoDuty.Helpers
                 }
                 else
                 {
-                    readerExchange ??= new ReaderTripleTriadCoinExchange(addonExchange);
+                    // 不用 ??=:reader 會把 addon 指標存進自己的欄位跨 tick 持有。
+                    // addonExchange 現在每 tick 重新解析,reader 也必須跟著重建。
+                    readerExchange = new ReaderTripleTriadCoinExchange(addonExchange);
 
                     if (readerExchange.Entries.Count <= 0)
                     {
@@ -126,7 +134,12 @@ namespace AutoDuty.Helpers
                         AddonHelper.FireCallBack(shopCardDialog, true, 0, readerExchange.Entries.First().Count);
                         return;
                     }
-                    AddonHelper.FireCallBack(addonExchange, true, 0, 0u);
+                    // 📌 這一發是「點清單上的第一張卡」,按下去之後開的是 ShopCardDialog(上面那一段)。
+                    //    TripleTriadCoinExchange 是「持久窗」:賣卡全程不關也不重建,賣掉一張之後下一張卡又遞補成 entry 0、參數組完全一樣,
+                    //    對守衛來說每一張卡都長得像「重按」,每張卡都要等滿逃生口。
+                    // 🔴 解法刻意「不」是把逃生口縮短(那要押注「送 (true,0,0u) 不會把這扇窗關掉」,而那件事只有實機才證明得了):
+                    //    宣告這一發會開出 ShopCardDialog,那扇子視窗「出現過又收掉」守衛才解除這一筆;子視窗沒出現時防護原封不動。
+                    AddonHelper.TryFireCallBackOpeningDialog(addonExchange, "ShopCardDialog", true, 0, 0u);
                 }
             }
         }

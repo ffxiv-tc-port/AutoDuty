@@ -1,7 +1,8 @@
 using Dalamud.Interface.Utility.Raii;
 using ECommons.DalamudServices;
 using ECommons;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
+using System.Text;
 using System.Text.Json;
 using System;
 using System.Numerics;
@@ -12,6 +13,7 @@ using AutoDuty.Helpers;
 using Dalamud.Game.ClientState.Objects.Types;
 using static AutoDuty.Managers.ContentPathsManager;
 using ECommons.ImGuiMethods;
+using ECommons.LanguageHelpers;
 using Dalamud.Interface.Components;
 using AutoDuty.Data;
 using static AutoDuty.Windows.MainWindow;
@@ -41,7 +43,7 @@ namespace AutoDuty.Windows
         private static          bool                     _showAddActionUI    = false;
         private static          (string, string, string) _dropdownSelected   = (string.Empty, string.Empty, string.Empty);
         private static          int                      _buildListSelected  = -1;
-        private static          string                   _addActionButton    = "Add";
+        private static          string                   _addActionButton    = "Add".Loc();
         private static          bool                     _dragDrop           = false;
         private static          bool                     _noArgument         = false;
         private static          bool                     _comment            = false;
@@ -80,7 +82,7 @@ namespace AutoDuty.Windows
         private static void DrawPathElements()
         {
             using var d = ImRaii.Disabled(!Plugin.InDungeon || Plugin.Stage > 0 || !Player.Available);
-            ImGui.Text($"Build Path: ({Svc.ClientState.TerritoryType}) {(ContentHelper.DictionaryContent.TryGetValue(Svc.ClientState.TerritoryType, out var content) ? content.Name : TerritoryName.GetTerritoryName(Svc.ClientState.TerritoryType))}");
+            ImGui.Text("Build Path: (??) ??".Loc(Svc.ClientState.TerritoryType, ContentHelper.DictionaryContent.TryGetValue(Svc.ClientState.TerritoryType, out var content) ? content.Name : TerritoryName.GetTerritoryName(Svc.ClientState.TerritoryType)));
 
             string idText = $"({Svc.ClientState.TerritoryType}) ";
             ImGui.Text(idText);
@@ -95,7 +97,7 @@ namespace AutoDuty.Windows
 
             ImGui.SameLine();
             ImGui.Text($".json");
-            ImGui.Text("Changelog:");
+            ImGui.Text("Changelog:".Loc());
             ImGui.SameLine();
             ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
             ImGui.InputText("##Changelog", ref _changelog, 200);
@@ -103,20 +105,20 @@ namespace AutoDuty.Windows
 
         private static void DrawButtons()
         {
-            if (ImGui.Button("Add POS"))
+            if (ImGui.Button("Add POS".Loc()))
             {
                 _scrollBottom = true;
                 Plugin.Actions.Add(new PathAction { Name = "MoveTo", Position = Player.Position });
             }
             ImGui.SameLine(0, 5);
-            ImGuiComponents.HelpMarker("Adds a MoveTo step to the path, AutoDuty will Move to the specified position");
-            if (ImGuiEx.ButtonWrapped("Add Action"))
+            ImGuiHelper.HelpMarkerAllowWhenDisabled("Adds a MoveTo step to the path, AutoDuty will Move to the specified position".Loc());
+            if (ImGuiEx.ButtonWrapped("Add Action".Loc()))
             {
                 if (_showAddActionUI)
                     ClearAll();
                 ImGui.OpenPopup("AddActionPopup");
             }
-            ImGuiComponents.HelpMarker("Opens the Add Action popup menu to add action steps to the path");
+            ImGuiHelper.HelpMarkerAllowWhenDisabled("Opens the Add Action popup menu to add action steps to the path".Loc());
             if (ImGui.BeginPopup("AddActionPopup"))
             {
                 if (ActionsList == null)
@@ -128,10 +130,11 @@ namespace AutoDuty.Windows
                     {
                         _dropdownSelected = item;
                         _buildListSelected = -1;
-                        _argumentHint = item.Item2.Equals("false", StringComparison.InvariantCultureIgnoreCase) ? string.Empty : item.Item2;
+                        // Item2 is localized only for display; "false" is a sentinel and must stay untranslated.
+                        _argumentHint = item.Item2.Equals("false", StringComparison.InvariantCultureIgnoreCase) ? string.Empty : item.Item2.Loc();
                         _actionText = item.Item1;
                         _noArgument = item.Item2.Equals("false", StringComparison.InvariantCultureIgnoreCase);
-                        _addActionButton = "Add";
+                        _addActionButton = "Add".Loc();
                         _comment = item.Item1.Equals("<-- Comment -->", StringComparison.InvariantCultureIgnoreCase);
                         _position = Player.Available ? Player.Position : Vector3.Zero;
                         _actionTag = ActionTag.None;
@@ -159,7 +162,7 @@ namespace AutoDuty.Windows
                             case "Target":
                                 IGameObject? targetObject = Player.Object.TargetObject;
                                 IGameObject? gameObject = (targetObject ?? null) ?? ClosestObject;
-                                _arguments = [gameObject != null ? $"{gameObject.DataId}" : string.Empty];
+                                _arguments = [gameObject != null ? $"{gameObject.BaseId}" : string.Empty];
                                 _note = gameObject != null ? gameObject.Name.ExtractText() : string.Empty;
                                 break;
                             default:
@@ -168,30 +171,31 @@ namespace AutoDuty.Windows
                         _action = new() { Name = _actionText, Position = _position, Arguments = _arguments, Note = _note, Tag = _actionTag };
                         _showAddActionUI = true;
                     }
-                    ImGuiComponents.HelpMarker(item.Item3);
+                    ImGuiHelper.HelpMarkerAllowWhenDisabled(item.Item3.Loc());
                 }
                 ImGui.EndPopup();
             }
-            if (_showAddActionUI && !ImGui.IsPopupOpen($"Add Action: ({_action?.Name})###AddActionUI"))
+            string addActionUiPopupId = "Add Action: (??)".Loc(_action?.Name ?? string.Empty) + "###AddActionUI";
+            if (_showAddActionUI && !ImGui.IsPopupOpen(addActionUiPopupId))
             {
                 ImGui.SetNextWindowSize(new Vector2(ImGui.CalcTextSize("X").X * 55, ImGui.GetTextLineHeight() * 7), ImGuiCond.FirstUseEver);
                 ImGui.SetNextWindowPos(ImGui.GetMainViewport().GetCenter(), ImGuiCond.FirstUseEver, new(0.5f, 0.5f));
-                ImGui.OpenPopup($"Add Action: ({_action?.Name})###AddActionUI");
+                ImGui.OpenPopup(addActionUiPopupId);
             }
-            if (ImGui.BeginPopupModal($"Add Action: ({_action?.Name})###AddActionUI", ref _showAddActionUI))
+            if (ImGui.BeginPopupModal(addActionUiPopupId, ref _showAddActionUI))
             {
                 DrawAddActionUIPopup();
                 ImGui.EndPopup();
             }
             ImGui.SameLine(0, 5);
-            if (ImGuiEx.ButtonWrapped("Clear Path"))
+            if (ImGuiEx.ButtonWrapped("Clear Path".Loc()))
             {
                 Plugin.Actions.Clear();
                 ClearAll();
             }
-            ImGuiComponents.HelpMarker("Clears the entire path, NOTE: there is no confirmation");
+            ImGuiHelper.HelpMarkerAllowWhenDisabled("Clears the entire path, NOTE: there is no confirmation".Loc());
             ImGui.SameLine(0, 5);
-            if (ImGuiEx.ButtonWrapped("Save Path"))
+            if (ImGuiEx.ButtonWrapped("Save Path".Loc()))
             {
                 try
                 {
@@ -226,7 +230,23 @@ namespace AutoDuty.Windows
 
                     pathFile.Actions = [.. Plugin.Actions];
                     string json = JsonSerializer.Serialize(pathFile, jsonSerializerOptions);
-                    File.WriteAllText(Plugin.PathFile, json);
+
+                    // 原子寫入:直接覆寫目標檔的話,寫到一半崩潰/斷電就留下被截斷的 path json(載入端判成 invalid ⇒ 路徑「消失」)。
+                    // 先寫同目錄的暫存檔 → 讀回來逐字驗過 → File.Move(overwrite) 換上去。
+                    // 🔴 暫存檔必須與目標同一個磁碟機(這裡刻意用同一個目錄):跨磁碟機的 File.Move 在 Windows 會失敗。
+                    // ⚠️ 副檔名刻意不是 .json:FileHelper 的 FileSystemWatcher 與目錄列舉都用
+                    //    "*.json" 過濾,.tmp 不會被當成路徑檔載入,也不會觸發重建。
+                    string tempPath = Plugin.PathFile + ".tmp";
+                    File.WriteAllText(tempPath, json);
+
+                    string verify;
+                    using (StreamReader verifyReader = new(tempPath, Encoding.UTF8))
+                        verify = verifyReader.ReadToEnd();
+
+                    if (!string.Equals(verify, json, StringComparison.Ordinal))
+                        throw new IOException($"寫入暫存檔後讀回的內容與序列化結果不符,原路徑檔保持不變:{tempPath}");
+
+                    File.Move(tempPath, Plugin.PathFile, true);
                     Plugin.CurrentPath = 0;
                 }
                 catch (Exception e)
@@ -235,18 +255,18 @@ namespace AutoDuty.Windows
                     //throw;
                 }
             }
-            ImGuiComponents.HelpMarker("Saves the path to the path file specified or the default");
+            ImGuiHelper.HelpMarkerAllowWhenDisabled("Saves the path to the path file specified or the default".Loc());
             ImGui.SameLine(0, 5);
-            if (ImGuiEx.ButtonWrapped("Load Path"))
+            if (ImGuiEx.ButtonWrapped("Load Path".Loc()))
             {
                 Plugin.LoadPath();
                 ClearAll();
             }
-            ImGuiComponents.HelpMarker("Loads the path");
+            ImGuiHelper.HelpMarkerAllowWhenDisabled("Loads the path".Loc());
             ImGui.SameLine(0, 5);
             using (ImRaii.Disabled(Plugin.PathFile.IsNullOrEmpty()))
             {
-                if (ImGuiEx.ButtonWrapped("Open File"))
+                if (ImGuiEx.ButtonWrapped("Open File".Loc()))
                     Process.Start("explorer",  Plugin.PathFile ?? string.Empty);
             }
         }
@@ -269,7 +289,7 @@ namespace AutoDuty.Windows
                         if (uint.TryParse(_arguments[0], out var dataId))
                             AddAction();
                         else
-                            ShowPopup("Error", $"{_action.Name}'s must be uint's corresponding to the objects DataId", true);
+                            ShowPopup("Error".Loc(), "??'s must be uint's corresponding to the objects DataId".Loc(_action.Name), true);
                     }
                     else
                     {
@@ -278,11 +298,11 @@ namespace AutoDuty.Windows
                 }
             }
             ImGui.SameLine();
-            ImGuiEx.CheckboxWrapped("Dont Move", ref _dontMove);
+            ImGuiEx.CheckboxWrapped("Dont Move".Loc(), ref _dontMove);
             ImGui.SameLine();
             using (ImRaii.Disabled(_buildListSelected < 0))
             {
-                if (ImGuiEx.ButtonWrapped("Delete"))
+                if (ImGuiEx.ButtonWrapped("Delete".Loc()))
                 {
                     _deleteItem = true;
                     _deleteItemIndex = _buildListSelected;
@@ -290,14 +310,14 @@ namespace AutoDuty.Windows
                 }
 
                 ImGui.SameLine();
-                if (ImGuiEx.ButtonWrapped("Copy to Clipboard"))
+                if (ImGuiEx.ButtonWrapped("Copy to Clipboard".Loc()))
                     ImGui.SetClipboardText(_action?.ToCustomString());
                 if (Plugin.isDev)
                 {
                     ImGui.SameLine();
                     using (ImRaii.Disabled(!Player.Available || _action == null))
                     {
-                        if (ImGuiEx.ButtonWrapped("Teleport To"))
+                        if (ImGuiEx.ButtonWrapped("Teleport To".Loc()))
                             Player.GameObject->SetPosition(_action!.Position.X, _action.Position.Y, _action.Position.Z);
                     }
                 }
@@ -305,7 +325,7 @@ namespace AutoDuty.Windows
             if (!(_noArgument || _comment))
             {
                 ImGui.AlignTextToFramePadding();
-                ImGui.TextColored(_argumentTextColor, "Arguments:");
+                ImGui.TextColored(_argumentTextColor, "Arguments:".Loc());
                 ImGui.SameLine();
                 ImGui.TextColored(_argumentTextColor, _argumentHint);
                 ImGui.SameLine();
@@ -360,7 +380,7 @@ namespace AutoDuty.Windows
 
             if (!_comment)
             {
-                if (ImGui.Button("Position:"))
+                if (ImGui.Button("Position:".Loc()))
                     _position = (_position - Player.Position).LengthSquared() <= 0.1f ? Vector3.Zero : Player.Position;
 
                 ImGui.SameLine();
@@ -375,14 +395,14 @@ namespace AutoDuty.Windows
 
             }
             ImGui.AlignTextToFramePadding();
-            ImGui.Text("Note:");
+            ImGui.Text("Note:".Loc());
             ImGui.SameLine();
             ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
             ImGui.InputText("##Note", ref _note, 200);
             using (ImRaii.Disabled(_action == null || _action.Tag.HasAnyFlag(ActionTag.Comment, ActionTag.Revival, ActionTag.Treasure)))
             {
                 ImGui.AlignTextToFramePadding();
-                ImGui.Text("Tag:");
+                ImGui.Text("Tag:".Loc());
                 ImGui.SameLine();
                 ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
                 if (ImGui.BeginCombo("##TagSelection", _actionTag.HasAnyFlag(ActionTag.None, ActionTag.Synced, ActionTag.Unsynced) ? _actionTag.ToCustomString() : ActionTag.None.ToCustomString()))
@@ -398,6 +418,21 @@ namespace AutoDuty.Windows
                     }
                     ImGui.EndCombo();
                 }
+            }
+
+            if (_action != null && !_comment)
+            {
+                // _action 在「修改既有步驟」時就是清單裡那個物件,所以直接改它的旗標即可;
+                // 新增步驟時 _action 是 DrawAddActionUIPopup 之前就建好的實例,同樣有效。
+                bool noPartyCoherency = _action.Flags.HasFlag(PathActionFlags.NoPartyCoherency);
+                if (ImGui.Checkbox("Disable Party Coherency".Loc(), ref noPartyCoherency))
+                {
+                    if (noPartyCoherency)
+                        _action.Flags |= PathActionFlags.NoPartyCoherency;
+                    else
+                        _action.Flags &= ~PathActionFlags.NoPartyCoherency;
+                }
+                ImGuiHelper.HelpMarkerAllowWhenDisabled("This step will not ask BossMod AI to stay close to the tank.".Loc());
             }
         }
 
@@ -441,7 +476,7 @@ namespace AutoDuty.Windows
                                 _buildListSelected = item.Index;
                                 _showAddActionUI   = true;
                                 _dropdownSelected  = ("", "", "");
-                                _addActionButton   = "Modify";
+                                _addActionButton   = "Modify".Loc();
                                 _action            = item.Value;
                                 _actionTag         = item.Value.Tag;
                             }
@@ -464,7 +499,7 @@ namespace AutoDuty.Windows
 
                         if (_buildListSelected == item.Index && ImGui.IsMouseDown(ImGuiMouseButton.Left) && !_showAddActionUI)
                         {
-                            float mouseYDelta = ImGui.GetMouseDragDelta(0).Y;
+                            float mouseYDelta = ImGui.GetMouseDragDelta(ImGuiMouseButton.Left).Y;
 
                             if (MathF.Abs(mouseYDelta) > ImGui.GetTextLineHeight())
                             {
@@ -508,7 +543,7 @@ namespace AutoDuty.Windows
                     }
                 }
                 else
-                    ImGuiEx.TextWrapped(new Vector4(0, 1, 0, 1), "You must enter a dungeon to Build a Path");
+                    ImGuiEx.TextWrapped(new Vector4(0, 1, 0, 1), "You must enter a dungeon to Build a Path".Loc());
             }
             catch (Exception ex) { Svc.Log.Error(ex.ToString()); }
             if (_scrollBottom)
@@ -530,7 +565,7 @@ namespace AutoDuty.Windows
             _dontMove = false;
             _showAddActionUI = false;
             _noArgument = false;
-            _addActionButton = "Add";
+            _addActionButton = "Add".Loc();
             _buildListSelected = -1;
             _action = null;
             _comment = false;
@@ -557,9 +592,12 @@ namespace AutoDuty.Windows
             ClearAll();
         }
 
+        /// <summary>這一幀 <see cref="DrawHelper"/> 會不會畫東西（新增步驟的彈窗開著、而且已經有位置）。</summary>
+        internal static bool DrawHelperWanted => _showAddActionUI && _position.LengthSquared() > 0.1f;
+
         public static void DrawHelper(PctDrawList drawList)
         {
-            if (_showAddActionUI && _position.LengthSquared() > 0.1f)
+            if (DrawHelperWanted)
             {
                 drawList.AddCircle(_position, 1.25f, 0xFFFFFFFF, thickness: 2);
                 drawList.AddText(_position + Vector3.UnitZ * 1.1f, 0xFFFFFFFF, "+Z", 5f);
@@ -574,7 +612,7 @@ namespace AutoDuty.Windows
                     float ydiff = (_position.Y - playerY);
                     if (MathF.Abs(ydiff) > 0.1f)
                     {
-                        drawList.AddText(_position + Vector3.UnitY * MathF.Sign(ydiff), 0xFFFFFFFF, "Y-Diff: " + ydiff.ToString("F3", CultureInfo.CurrentCulture), 5f);
+                        drawList.AddText(_position + Vector3.UnitY * MathF.Sign(ydiff), 0xFFFFFFFF, "Y-Diff: ??".Loc(ydiff.ToString("F3", CultureInfo.CurrentCulture)), 5f);
                         
                         drawList.PathLineTo(_position);
                         drawList.PathLineTo(_position.WithY(playerY));

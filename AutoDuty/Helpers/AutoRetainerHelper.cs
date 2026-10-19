@@ -3,6 +3,7 @@ using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using ECommons;
+using ECommons.Automation;
 using ECommons.DalamudServices;
 using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Component.GUI;
@@ -25,7 +26,7 @@ namespace AutoDuty.Helpers
                 return;
             DebugLog("AutoRetainerHelper.Invoke");
             if (!AutoRetainer_IPCSubscriber.IsEnabled)
-                Svc.Log.Info("AutoRetainer requires a plugin, visit https://puni.sh/plugin/AutoRetainer for more info");
+                Svc.Log.Info("AutoRetainer requires a plugin, visit https://raw.githubusercontent.com/ffxiv-tc-port/DalamudPluginsTC/main/repo.json for more info");
             else if (State != ActionState.Running) 
                 base.Start();
         }
@@ -40,12 +41,12 @@ namespace AutoDuty.Helpers
 
             if (AutoRetainer_IPCSubscriber.IsBusy())
                 AutoRetainer_IPCSubscriber.AbortAllTasks();
-            Plugin.Chat.ExecuteCommand("/autoretainer d");
+            Chat.ExecuteCommand("/autoretainer d");
         }
 
         private bool         _autoRetainerStarted = false;
         private bool         _autoRetainerStopped = false;
-        private IGameObject? SummoningBellGameObject => Svc.Objects.FirstOrDefault(x => x.DataId == SummoningBellHelper.SummoningBellDataIds((uint)Plugin.Configuration.PreferredSummoningBellEnum));
+        private IGameObject? SummoningBellGameObject => Svc.Objects.FirstOrDefault(x => x.BaseId == SummoningBellHelper.SummoningBellDataIds((uint)Plugin.Configuration.PreferredSummoningBellEnum));
 
         protected override unsafe void HelperStopUpdate(IFramework framework)
         {
@@ -113,7 +114,7 @@ namespace AutoDuty.Helpers
                     if (VNavmesh_IPCSubscriber.Path_IsRunning())
                         VNavmesh_IPCSubscriber.Path_Stop();
                     DebugLog("Waiting for AutoRetainer to Start");
-                    Plugin.Chat.ExecuteCommand("/autoretainer e");
+                    Chat.ExecuteCommand("/autoretainer e");
                 }
                 else
                     DebugLog("Interacting with SummoningBell");

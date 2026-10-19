@@ -139,8 +139,24 @@ namespace AutoDuty.Data
             [JsonPropertyName("arguments")]
             public List<string> Arguments { get; set; } = [];
 
+            /// <summary>
+            /// 這個步驟的執行條件。空集合＝無條件執行(與加入本欄位之前的行為完全相同)。
+            /// 全部成立才執行,任何一個不成立就整步跳過。
+            /// </summary>
+            [JsonPropertyName("conditions")]
+            public List<PathActionCondition> Conditions { get; set; } = [];
+
             [JsonPropertyName("note")]
             public string Note { get; set; } = string.Empty;
+
+            /// <summary>
+            /// 這個步驟的旗標。預設 <see cref="PathActionFlags.None"/>(＝加入本欄位之前的行為)。
+            /// 上游把原本寫在 <see cref="Note"/> 裡的 <c>!TankClose</c> 慣例換成了這個欄位,
+            /// 所以少了它,取回上游路徑檔時整個標記會被靜默丟掉(System.Text.Json 預設忽略未對應成員)。
+            /// </summary>
+            [JsonConverter(typeof(JsonStringEnumConverter))]
+            [JsonPropertyName("flags")]
+            public PathActionFlags Flags { get; set; } = PathActionFlags.None;
         }
 
         public class PathFileMetaData

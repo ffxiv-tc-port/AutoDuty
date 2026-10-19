@@ -58,6 +58,11 @@ namespace AutoDuty.Helpers
                 return true;
             }
 
+            // 使用者在操作移動時不重送路徑跟他搶;Tick 一幀只算一次,在這裡先呼叫才看得到被取消的那一幀。
+            ManualMoveYield.Tick();
+            if (ManualMoveYield.Yielding)
+                return false;
+
             if (PlayerHelper.IsMoving)
             {
                 //sprint
@@ -70,7 +75,7 @@ namespace AutoDuty.Helpers
             }
 
             if (VNavmesh_IPCSubscriber.Path_NumWaypoints() == 1)
-                VNavmesh_IPCSubscriber.Path_SetTolerance(lastPointTollerance);
+                VNavmesh_IPCSubscriber.Path_RequestTolerance(lastPointTollerance);
 
             if (!useMesh)
             {
@@ -89,7 +94,7 @@ namespace AutoDuty.Helpers
             if (!VNavmesh_IPCSubscriber.SimpleMove_PathfindInProgress() || VNavmesh_IPCSubscriber.Path_NumWaypoints() == 0)
             {
                 Chat.Instance.ExecuteCommand("/automove off");
-                VNavmesh_IPCSubscriber.Path_SetTolerance(tollerance);
+                VNavmesh_IPCSubscriber.Path_RequestTolerance(tollerance);
                 VNavmesh_IPCSubscriber.SimpleMove_PathfindAndMoveTo(position, fly);
             }
             return false;

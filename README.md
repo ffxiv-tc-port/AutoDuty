@@ -1,73 +1,62 @@
 # AutoDuty
 
-<img align="right" width="150" height="150" src="logo.png">
+[AutoDuty](https://github.com/erdelf/AutoDuty) 的台服移植版。副本路徑自動巡覽插件：讓角色自動沿著預先規劃好的路線通過迷宮挑戰與各類
+即時內容，可用劇情輔助器、親信戰友、冒險者分隊、多變迷宮或一般模式，戰鬥交給其他戰鬥插件執行。
 
-AutoDuty (AD) is a Dalamud plugin for FFXIV that serves as a tool to assist in the creation and following of paths through dungeons and duties. It's designed to enable automatic looping of instanced content with Duty Support, Trusts, or Squadrons.
+## 功能
 
-Support for it can be found in the [this channel](https://discord.com/channels/1001823907193552978/1236757595738476725) of the [Puni.sh Discord server](https://discord.gg/punishxiv).
+- **路徑巡覽**：已支援的副本內建路線，自動移動、開啟寶箱並清怪。
+- **路徑製作**：內建 `Build` 分頁可自行錄製與編輯巡覽路線。
+- **自動升等**：依路徑品質、頭目支援度與等級自動挑選合適的副本循環練等，
+  可搭配自動裝備最佳裝備一路全程放置練等；也可用同樣方式練等劇情輔助器
+  夥伴，並自動挑選練等對象。
+- **排程器**：可排多個副本依序跑，並把目前的排程存成具名播放清單、之後載入重跑。
+- **執行前**：自動移動到旅店／房屋／公會房屋、自行或委託 NPC 修理裝備、
+  執行指令（例如 SND 腳本）、自動使用道具。
+- **執行中**：自動拾取寶箱戰利品（可設定只撿王的寶箱）、依需求切換其他插件的開關狀態；
+  卡住時依序嘗試重排移動、跳躍、側移、跳過本步。
+- **輪次之間**：自動精製魔晶石、自動分解、自動籌備稀有品繳交（大國防聯軍）、觸發
+  AutoRetainer 處理僱員、自動更換最佳裝備。
+- **結束條件**：達到指定等級停止、休息經驗值耗盡停止、持有指定數量道具停止、開啟 AutoRetainer
+  多角色模式、完成後自動關機。
+- **多開同步（Multibox）**：多個遊戲用戶端一起跑時，主機邀請組隊、讓其他用戶端跟著接受任務搜尋器配對並回報死亡；
+  這個開關不會存檔，每次都要在每個用戶端手動勾選。
 
-_Unlicensed code, which follows [default copyright law](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository#choosing-the-right-license)_
+## 指令
 
-# Dungeon Paths
+- `/ad` 或 `/autoduty`：開啟主視窗。
+- `/ad config`：開啟設定。
+- `/ad start`／`stop`／`pause`／`resume`：開始、停止、暫停、繼續目前的路徑。
+- `/ad skipstep`：跳過目前步驟。
+- `/ad run <模式> <TerritoryType 編號> <次數>`：以指定模式跑指定副本（`/ad tt <地名>` 可查編號）。
+- `/ad repair`、`desynth`、`extract`、`turnin`、`equiprec`：單獨執行修理、分解、精製魔晶石、籌備稀有品繳交、裝備推薦裝備。
+- `/ad queue`、`exitduty`：排入任務搜尋器、退出副本。
+- 完整清單見遊戲內 `/xlhelp` 的 `/autoduty` 說明。
 
-<img align="right" height="250" src="Assets/paths.png">
+## 台服版的修改
 
-Each dungeon supported by AutoDuty has a pre-configured path laid out, which should complete the dungeon without any issues. If any issues are encountered, make sure to reach out in the [support Discord](https://discord.gg/punishxiv).
+- 介面繁體中文化。
+- 同一場副本死亡達到設定次數（預設 2 次）時自動停下並在聊天視窗留訊息，不再復活後一直衝回去（「副本設定」可改，0＝不限）。
+- 自己停下來時發出通知；有裝 TataruPraise 時可請塔塔露喊一句（使用者主動按停止不會喊）。
+- 新增「跳過目前步驟」按鈕：跳過等待時會把已等的時間寫回路徑檔。
+- 新增「解限模式：交戰中繼續走到定點」選項（預設關）。
+- 新增大型任務「水晶塔 希爾科斯塔」路徑；佐拉加殲滅戰改成王戰步驟；補齊多個副本的互動步驟並移除殘缺路徑。
+- 停止後不再自己恢復動作（傳送、跳躍、死亡中按停止都會真的停）；自己沒在跑時打完副本，不再關掉你自己開的循環插件與 BMR 預設。
+- 與其他插件共用的開關改成「租用、用完歸還」：YesAlready、vnavmesh 的設定不再被單向蓋掉，使用者刻意關著的 YesAlready／Pandora 功能不會被重新打開。
+- 多開同步當主機時只監聽設定的位址（預設只收同一台電腦的連線）。
+- 灰掉的按鈕與設定，滑鼠移上去也會顯示說明（包括為什麼現在不能用）。
+- 多處降低記憶體用量。
 
-The paths will also run over all loot containers and, when configured, will pick up the loot and do something with it while either in between dungeon runs or after your set amount of runs are over.
+## 需要搭配的插件
 
-Creating paths is also supported and easily accomplished within AutoDuty by using the `Build` tab at the top. For path status, please refer to the [pinned spreadsheet](https://discord.com/channels/1001823907193552978/1236757595738476725/1243059104528994334) in the [AutoDuty channel](https://discord.com/channels/1001823907193552978/1236757595738476725) of the [support Discord](https://discord.gg/punishxiv).
+- 必要：
+  - 導航：[vnavmesh](https://github.com/ffxiv-tc-port/vnavmesh)
+  - 頭目機制應對：[BossModReborn](https://github.com/ffxiv-tc-port/BossmodReborn)
+  - 戰鬥循環（擇一）：[Wrath Combo](https://github.com/ffxiv-tc-port/WrathCombo)、Rotation Solver Reborn，或 BossModReborn 的自動循環
+- 選用：
+  - [AutoRetainer](https://github.com/ffxiv-tc-port/AutoRetainer)：輪次之間處理僱員；自動籌備稀有品繳交也需要它
+  - [Gearsetter](https://github.com/ffxiv-tc-port/Gearsetter)：自動更換最佳裝備時納入兵裝庫以外的道具
+  - DiscardHelper：自動丟棄道具
+  - [TataruPraise](https://github.com/ffxiv-tc-port/TataruPraise)：自動停下時的塔塔露語音
 
-# Automatic Leveling
-
-<img align="right" height="250" src="Assets/leveling.png">
-
-AutoDuty has a leveling feature that will continuously run you through the "correct" dungeon to level through. The dungeon is typically determined by path quality, support for boss fights, and obviously the level of the dungeon.
-
-With AutoDuty, you can level a job from 15 to the max level very quickly and fully AFK, provided you have the correct gear and the option in the AD configuration to automatically equip the best gear.
-
-This plugin can also level trusts for you in the same way it levels your jobs. It can intelligently select trust members and level them all to max, fully AFK.
-
-# Automations
-
-AutoDuty supports a wide range of automations and integrations with other plugins. Below are just some of what AD can offer while automating instanced content:
-
-| Before runs | During the run | Between runs | After the runs |
-| -------- | -------- | -------- | -------- |
-| Move to an inn, house, or FC house <br /> Auto self- or NPC- repair <br /> Execute commands (i.e. SND scripts) <br /> Auto consume items | Loot treasure coffers <br /> Manage plugin states | Auto extract materia <br /> Auto desynth loot <br /> Auto turn in loot to GC <br /> Use AutoRetainer <br /> Auto equip best gear | Stop looping at a level <br /> Stop looping when you run out of rested XP <br /> Turn on AutoRetainer multi mode <br /> Shut down your computer |
-
-<hr />
-
-# Installation
-
-Add `https://puni.sh/api/repository/herc` to your plugin repositories and then search for `AutoDuty` in the Plugin Installer to install AutoDuty.
-
-Settings can be accessed via the Plugin Installer or using the chat command `/ad`.
-
-## Required Plugins
-
-Additionally, the following plugins are required. Right-click the name of the plugin and copy the URL to use it to add to your repositories in-game.
-
-- [vnavmesh](https://puni.sh/api/repository/veyn): Automatic navigation with waypoints
-- [Wrath Combo](https://github.com/PunishXIV/WrathCombo) or [Rotation Solver Reborn](https://raw.githubusercontent.com/FFXIV-CombatReborn/CombatRebornRepo/main/pluginmaster.json): Automatic rotation execution, all jobs supported
-- [Veyn's Boss Mod](https://puni.sh/api/repository/veyn) or [BossmodReborn](https://raw.githubusercontent.com/FFXIV-CombatReborn/CombatRebornRepo/main/pluginmaster.json): Automatic fight execution for bosses
-
-## Optional Plugins
-
-The following plugins are optional. They integrate with AutoDuty well and in some cases can be triggered by AD itself.
-
-- [Deliveroo](https://puni.sh/api/repository/vera): Automatically turns in items to your Grand Company
-- [Gearsetter](https://plugins.carvel.li): Automatically finds equipment upgrades in your inventory
-- [AutoRetainer](https://love.puni.sh/ment.json): Automatically manages your retainers and submersibles as well as sends them out on ventures
- 
-# Getting help
-
-When you've found a bug or think you have an issue with the plugin, please ask in [this channel](https://discord.com/channels/1001823907193552978/1236757595738476725) in the [Puni.sh Discord server](https://discord.gg/punishxiv). It might be a known issue or people might be able to help you quickly. Additionally, sometimes it might be an issue with one of the required plugins. Users in Discord will be able to help triage the issue and send you to the right place.
-
-Best practice is to not say "I died in this dungeon and I don't know why." Please make sure to include as much detail as possible. What boss were you on? Did you get stuck in a specific spot?
-
-For support with Veyn's Boss Mod and vnavmesh, please ask in [this channel](https://discord.com/channels/1001823907193552978/1191076246860349450) in the [Puni.sh Discord server](https://discord.gg/punishxiv),
-or support for Wrath Combo in [this channel](https://discord.com/channels/1001823907193552978/1271175781569003590) in the Puni.sh server. For support with BossModReborn and 
-Rotation Solver Reborn, please ask in the [Combat Reborn Discord server](https://discord.gg/p54TZMPnC9).
-
-Lastly, feel free to create issues with feature requests and bug reports.
+原作者：Herculezz（目前上游維護者：erdelf）

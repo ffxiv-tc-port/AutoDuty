@@ -7,7 +7,7 @@ namespace AutoDuty.Data
     using System.Numerics;
     using Dalamud.Interface.Utility.Raii;
     using ECommons.ExcelServices;
-    using ImGuiNET;
+    using Dalamud.Bindings.ImGui;
 
     public static class Enums
     {
@@ -101,9 +101,12 @@ namespace AutoDuty.Data
             Summoner    = 1 << 18,
             Red_Mage    = 1 << 19,
             Pictomancer = 1 << 20,
-            Casters     = Black_Mage | Summoner | Red_Mage | Pictomancer,
+            // 上游 7.x 才補上的旗標。既有使用者設定裡存的是舊的 Casters/DPS/All 數值,
+            // 不含這個位元 ⇒ 他們的行為不變(青魔一樣不被既有篩選命中),只有新設定吃得到。
+            Blue_Mage   = 1 << 21,
+            Casters     = Black_Mage | Summoner | Red_Mage | Pictomancer | Blue_Mage,
             DPS         = Melee      | Aiming   | Casters,
-            All         = Tanks      | Healers  | DPS 
+            All         = Tanks      | Healers  | DPS
         }
 
         public enum JobRole
@@ -265,7 +268,12 @@ namespace AutoDuty.Data
             PreLoop_Enabled = 8,
             BetweenLoop_Enabled = 16,
             TerminationActions_Enabled = 32,
-            BareMode_Active = 64
+            BareMode_Active = 64,
+            /// <summary>
+            /// 「進導航前對齊鏡頭是關的,被 AutoDuty 打開了」——還原＝關回去。
+            /// 方向與 <see cref="Vnav_Align_Camera_Off"/> 相反(那個是舊政策:本來開著先關掉、結束再開回來)。
+            /// </summary>
+            Vnav_Align_Camera_On = 128
         }
 
         public enum Sounds : byte
@@ -348,6 +356,56 @@ namespace AutoDuty.Data
             LargeBlue = 60781,
         }
 
+        /// <summary>
+        /// 路徑步驟的旗標。值會逐字寫進 path json 的 <c>Flags</c> 欄位(字串,以逗號分隔),
+        /// 改名等於改檔案格式。<see cref="None"/> 是零值,缺欄位時就是它。
+        /// </summary>
+        [Flags]
+        public enum PathActionFlags : int
+        {
+            None = 0,
+
+            /// <summary>
+            /// 這一步不要跟坦克保持隊形(不送 BossMod 的 StayCloseToPartyRole)。
+            /// 只有在設定裡開了「隊形跟隨坦克」時才有意義。
+            /// </summary>
+            NoPartyCoherency = 1 << 0
+        }
+
+        /// <summary>
+        /// 路徑步驟條件的種類。字串值會出現在 path json 的 <c>$type</c> 判別碼裡,
+        /// 名稱必須與 <see cref="PathActionCondition"/> 的子類別對應,改名等於改檔案格式。
+        /// </summary>
+        public enum ConditionType
+        {
+            None,
+            Distance,
+            ItemCount,
+            ObjectData,
+            Job,
+            ActionStatus,
+            VariantPath,
+            ConditionFlag,
+            Collision,
+            ToDo,
+            Not,
+            Or,
+            And
+        }
+
+        public enum ObjectDataProperty
+        {
+            EventState,
+            IsTargetable
+        }
+
+        public enum DistanceLocationTypes
+        {
+            Player,
+            Object,
+            Location
+        }
+
         public static bool HasAnyFlag<T>(this T instance, params T[] parameter) where T : Enum
         {
             return parameter.Any(enu => instance.HasFlag(enu));
@@ -397,6 +455,7 @@ namespace AutoDuty.Data
                 Job.ACN or Job.SMN => JobWithRole.Summoner,
                 Job.RDM => JobWithRole.Red_Mage,
                 Job.PCT => JobWithRole.Pictomancer,
+                Job.BLU => JobWithRole.Blue_Mage,
                 _ => JobWithRole.None
             };
 
@@ -422,7 +481,7 @@ namespace AutoDuty.Data
             ImGui.PushStyleColor(ImGuiCol.Header,        Vector4.Zero);
             ImGui.PushStyleColor(ImGuiCol.HeaderHovered, new Vector4(0.2f));
             ImGui.PushStyleColor(ImGuiCol.HeaderActive,  new Vector4(0.3f));
-            bool collapse = ImGui.CollapsingHeader("##" + category, ImGuiTreeNodeFlags.AllowItemOverlap);
+            bool collapse = Helpers.ImGuiHelper.CollapsingHeaderAlwaysEnabled("##" + category, ImGuiTreeNodeFlags.AllowItemOverlap);
             ImGui.PopStyleColor(3);
             ImGui.SameLine();
             DrawSelectable(category, ref config, allowRemoval);

@@ -7,7 +7,12 @@ namespace AutoDuty.Helpers
         [GeneratedRegex(@"([^<]*)?(?><?([0-9\. ]*\,[0-9\. ]*\,[0-9\. ]*)>([^<]*)<\/>)?", RegexOptions.CultureInvariant)]
         public static partial Regex ColoredTextRegex();
 
-        [GeneratedRegex($@"(\()([0-9]{{3,4}})(\))( {PathIdentifiers.W2W})?(.*)(\.json)", RegexOptions.CultureInvariant)]
+        /// <summary>
+        /// 路徑檔名「(領土ID) 名稱.json」。領土 ID 位數不限,與載入端
+        /// <c>FileHelper.TryGetTerritoryType</c> 的 <c>uint.TryParse</c> 對齊(寫死位數會讓通得過載入端的檔名在這裡比對失敗)。
+        /// 擷取群組編號:2=領土ID、4=W2W、5=名稱,使用端是 ContentPathsManager。
+        /// </summary>
+        [GeneratedRegex($@"(\()([0-9]+)(\))( {PathIdentifiers.W2W})?(.*)(\.json)", RegexOptions.CultureInvariant)]
         public static partial Regex PathFileRegex();
 
         [GeneratedRegex(@"([0-9]{3,})", RegexOptions.CultureInvariant)]
