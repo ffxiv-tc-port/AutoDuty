@@ -209,12 +209,31 @@ namespace AutoDuty.Updater
             }
         }
 
-        private static void OnChanged(object sender, FileSystemEventArgs e) => Update();
+        private static void OnChanged(object sender, FileSystemEventArgs e) => UpdateFromWatcher();
 
-        private static void OnCreated(object sender, FileSystemEventArgs e) => Update();
+        private static void OnCreated(object sender, FileSystemEventArgs e) => UpdateFromWatcher();
 
-        private static void OnDeleted(object sender, FileSystemEventArgs e) => Update();
+        private static void OnDeleted(object sender, FileSystemEventArgs e) => UpdateFromWatcher();
 
-        private static void OnRenamed(object sender, RenamedEventArgs e) => Update();
+        private static void OnRenamed(object sender, RenamedEventArgs e) => UpdateFromWatcher();
+
+        // 0＝還沒報過路徑目錄重掃失敗；只報第一次。
+        private static int _watcherUpdateFailureReported;
+
+        // 跑在執行緒池：處理器擲出的例外沒有人接，會直接結束整個遊戲行程（例如下載路徑時目錄正在變動），所以整段包住。
+        private static void UpdateFromWatcher()
+        {
+            try
+            {
+                Update();
+            }
+            catch (Exception ex)
+            {
+                if (Interlocked.Exchange(ref _watcherUpdateFailureReported, 1) != 0)
+                    return;
+                try { Svc.Log.Warning($"Rescanning the paths folder after a file change failed (further failures are not reported): {ex}"); }
+                catch { }
+            }
+        }
     }
 }
