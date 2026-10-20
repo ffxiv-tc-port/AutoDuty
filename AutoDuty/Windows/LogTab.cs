@@ -6,6 +6,7 @@ using ECommons.LanguageHelpers;
 using ECommons.Throttlers;
 using Dalamud.Bindings.ImGui;
 using Serilog.Events;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -18,12 +19,21 @@ namespace AutoDuty.Windows
 
     internal static class LogTab
     {
-        internal static void Add(LogMessage message) => _logEntriesToAdd.Enqueue(message);
+        // 待加佇列只在記錄分頁畫出時才排乾；上限防分頁長期沒開時無限增長，超量丟最舊的。
+        private const int MaxPendingLogEntries = 5000;
+        private const int MaxLogEntries = 10000;
+
+        // 由 FileSystemWatcher 的執行緒池執行緒呼叫，消費端是框架執行緒的 Draw。
+        internal static void Add(LogMessage message)
+        {
+            _logEntriesToAdd.Enqueue(message);
+            while (_logEntriesToAdd.Count > MaxPendingLogEntries && _logEntriesToAdd.TryDequeue(out _)) { }
+        }
 
         private static Task<UserCode?>? _taskUserCode = null;
         private static Task<PollResponseClass?>? _taskPollResponse = null;
         private static Task<string?>? _taskSubmitIssue = null;
-        private static readonly Queue<LogMessage> _logEntriesToAdd = [];
+        private static readonly ConcurrentQueue<LogMessage> _logEntriesToAdd = new();
         private static string _titleInput = $"[Bug] ";
         private static string _whatHappenedInput = string.Empty;
         private static string _reproStepsInput = string.Empty;
@@ -126,13 +136,15 @@ namespace AutoDuty.Windows
 
             if (EzThrottler.Throttle("AddLogEntries", 25))
             {
-                while (_logEntriesToAdd.Count != 0)
+                while (_logEntriesToAdd.TryDequeue(out var logEntry))
                 {
-                    var logEntry = _logEntriesToAdd.Dequeue();
                     if (logEntry == null)
                         continue;
                     Plugin.DalamudLogEntries.Add(logEntry);
                 }
+                var excess = Plugin.DalamudLogEntries.Count - MaxLogEntries;
+                if (excess > 0)
+                    Plugin.DalamudLogEntries.RemoveRange(0, excess);
             }
             if (Plugin.Configuration.AutoScroll && ImGui.GetScrollY() >= ImGui.GetScrollMaxY())
                 ImGui.SetScrollHereY(1.0f);

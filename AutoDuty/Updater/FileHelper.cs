@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Threading.Tasks;
 using ECommons;
 using ECommons.DalamudServices;
@@ -34,6 +35,8 @@ namespace AutoDuty.Updater
 
         private static readonly object _updateLock = new();
 
+        // 0＝還沒報過讀 log 失敗；只報第一次，之後的失敗安靜略過。
+        private static int _logReadFailureReported;
 
         public static byte[] CalculateMD5(string filename)
         {
@@ -57,33 +60,48 @@ namespace AutoDuty.Updater
             FileWatcher.Filter = filename;
             FileWatcher.NotifyFilter = NotifyFilters.LastWrite;
 
+            // 跑在執行緒池：處理器擲出的例外沒有人接，會直接結束整個遊戲行程，所以整段包住。
             FileWatcher.Changed += (sender, e) =>
             {
-                using FileStream fs = new(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                fs.Seek(lastMaxOffset, SeekOrigin.Begin);
-                using StreamReader sr = new(fs);
-                var x = string.Empty;
-                while ((x = sr.ReadLine()) != null)
+                try
                 {
-                    if (!x.Contains("[AutoDuty]")) continue;
+                    using FileStream fs = new(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                    // 檔案比上次讀到的位置短＝換成了新檔，從頭讀。
+                    if (fs.Length < lastMaxOffset)
+                        lastMaxOffset = 0;
+                    fs.Seek(lastMaxOffset, SeekOrigin.Begin);
+                    using StreamReader sr = new(fs);
+                    var x = string.Empty;
+                    while ((x = sr.ReadLine()) != null)
+                    {
+                        if (!x.Contains("[AutoDuty]")) continue;
 
-                    var logEntry = new LogMessage() { Message = x };
+                        var logEntry = new LogMessage() { Message = x };
 
-                    if (x.Contains("[FTL]"))
-                        logEntry.LogEventLevel = LogEventLevel.Fatal;
-                    else if (x.Contains("[ERR]"))
-                        logEntry.LogEventLevel = LogEventLevel.Error;
-                    else if (x.Contains("[WRN]"))
-                        logEntry.LogEventLevel = LogEventLevel.Warning;
-                    else if (x.Contains("[INF]"))
-                        logEntry.LogEventLevel = LogEventLevel.Information;
-                    else if (x.Contains("[DBG]"))
-                        logEntry.LogEventLevel = LogEventLevel.Debug;
-                    else if (x.Contains("[VRB]"))
-                        logEntry.LogEventLevel = LogEventLevel.Verbose;
-                    LogTab.Add(logEntry);
+                        if (x.Contains("[FTL]"))
+                            logEntry.LogEventLevel = LogEventLevel.Fatal;
+                        else if (x.Contains("[ERR]"))
+                            logEntry.LogEventLevel = LogEventLevel.Error;
+                        else if (x.Contains("[WRN]"))
+                            logEntry.LogEventLevel = LogEventLevel.Warning;
+                        else if (x.Contains("[INF]"))
+                            logEntry.LogEventLevel = LogEventLevel.Information;
+                        else if (x.Contains("[DBG]"))
+                            logEntry.LogEventLevel = LogEventLevel.Debug;
+                        else if (x.Contains("[VRB]"))
+                            logEntry.LogEventLevel = LogEventLevel.Verbose;
+                        LogTab.Add(logEntry);
+                    }
+                    lastMaxOffset = fs.Position;
                 }
-                lastMaxOffset = fs.Position;
+                catch (Exception ex)
+                {
+                    if (Interlocked.Exchange(ref _logReadFailureReported, 1) != 0)
+                        return;
+                    // 卸載途中進來的事件可能碰到已收掉的 log 服務，這裡也不可以往外擲。
+                    try { Svc.Log.Warning($"Reading dalamud.log for the Log tab failed (further failures are not reported): {ex}"); }
+                    catch { }
+                }
             };
             FileWatcher.EnableRaisingEvents = true;
         }
