@@ -130,7 +130,7 @@ namespace AutoDuty.Windows
                 {
                     var logEntry = _logEntriesToAdd.Dequeue();
                     if (logEntry == null)
-                        return;
+                        continue;
                     Plugin.DalamudLogEntries.Add(logEntry);
                 }
             }

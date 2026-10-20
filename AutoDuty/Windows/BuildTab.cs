@@ -122,7 +122,10 @@ namespace AutoDuty.Windows
             if (ImGui.BeginPopup("AddActionPopup"))
             {
                 if (ActionsList == null)
+                {
+                    ImGui.EndPopup();
                     return;
+                }
 
                 foreach (var item in ActionsList)
                 {
