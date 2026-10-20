@@ -33,29 +33,26 @@ namespace AutoDuty.Helpers
             if (!PlayerHelper.IsValid)
                 return false;
 
-            if (fly && !IsFlyingSupported)
-                fly = false;
-
-            if (!Conditions.Instance()->Mounted && IsFlyingSupported)
+            var distance   = Vector3.Distance(position, Player.Position);
+            var conditions = Conditions.Instance();
+            var step = MountMoveLogic.Decide(position == Vector3.Zero, distance - (useMesh ? 0 : 1)/*fix for vnav's diff Distance calc*/, lastPointTollerance, distance,
+                                             IsFlyingSupported, conditions->Mounted, conditions->InFlight, conditions->Diving,
+                                             static () => VNavmesh_IPCSubscriber.Path_IsRunning() || VNavmesh_IPCSubscriber.Path_NumWaypoints() > 0 || VNavmesh_IPCSubscriber.SimpleMove_PathfindInProgress(),
+                                             ref fly);
+            switch (step)
             {
-                if (!PlayerHelper.IsCasting)
-                    ActionManager.Instance()->UseAction(ActionType.GeneralAction, 9);
-                return false;
-            }
-
-            if (fly && !Conditions.Instance()->InFlight)
-            {
-                if (!PlayerHelper.IsCasting)
-                    ActionManager.Instance()->UseAction(ActionType.GeneralAction, 2);
-                return false;
-            }
-
-            if (position == Vector3.Zero || (Vector3.Distance(position, Player.Position) - (useMesh ? 0 : 1)/*fix for vnav's diff Distance calc*/) <= lastPointTollerance)
-            {
-                if (position != Vector3.Zero)
-                    VNavmesh_IPCSubscriber.Path_Stop();
-                
-                return true;
+                case MountMoveLogic.Step.Arrived:
+                    if (position != Vector3.Zero)
+                        VNavmesh_IPCSubscriber.Path_Stop();
+                    return true;
+                case MountMoveLogic.Step.Mount:
+                    if (!PlayerHelper.IsCasting)
+                        ActionManager.Instance()->UseAction(ActionType.GeneralAction, 9);
+                    return false;
+                case MountMoveLogic.Step.TakeOff:
+                    if (!PlayerHelper.IsCasting)
+                        ActionManager.Instance()->UseAction(ActionType.GeneralAction, 2);
+                    return false;
             }
 
             // 使用者在操作移動時不重送路徑跟他搶;Tick 一幀只算一次,在這裡先呼叫才看得到被取消的那一幀。
