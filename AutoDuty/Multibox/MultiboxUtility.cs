@@ -12,6 +12,7 @@ using Windows;
 using ECommons;
 using ECommons.Automation;
 using ECommons.DalamudServices;
+using ECommons.LanguageHelpers;
 using ECommons.PartyFunctions;
 using ECommons.UIHelpers.AddonMasterImplementations;
 using FFXIVClientStructs.FFXIV.Client.System.String;
@@ -194,14 +195,34 @@ public static class MultiboxUtility
             {
                 if (transport != null) return;
 
-                transport = Config.TransportType switch
+                ITransport created = Config.TransportType switch
                 {
                     TransportType.NamedPipe => new NamedPipeTransport(Config.PipeName),
                     TransportType.Tcp       => TcpTransport.ForServer(Config.ServerAddress, Config.ServerPort),
                     _                       => throw new NotImplementedException(Config.TransportType.ToString()),
                 };
 
-                transport.StartServer(MAX_SERVERS);
+                // 綁定成功才指派:transport 非 null 就是 UI 的「主機已啟動」,失敗時留著會畫成綠色卻沒在監聽。
+                try
+                {
+                    created.StartServer(MAX_SERVERS);
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        created.Dispose();
+                    }
+                    catch (Exception disposeEx)
+                    {
+                        DebugLog($"Dispose after failed StartServer: {disposeEx.Message}");
+                    }
+
+                    ReportStartFailure(created, ex);
+                    return;
+                }
+
+                transport = created;
                 serverCts = new CancellationTokenSource();
                 Task.Run(() => AcceptLoop(serverCts.Token), serverCts.Token);
                 Svc.Log.Information($"[Multibox] 主機端已啟動,傳輸方式 {Config.TransportType}{(transport is TcpTransport tcp ? $",監聽 {tcp.Endpoint}" : "")}");
@@ -210,6 +231,21 @@ public static class MultiboxUtility
             {
                 ErrorLog($"StartServer error: {ex}");
             }
+        }
+
+        private static void ReportStartFailure(ITransport failed, Exception ex)
+        {
+            string                          where = failed is TcpTransport tcp ? tcp.Endpoint : $"pipe \"{Config.PipeName}\"";
+            System.Net.Sockets.SocketError? code  = (ex as System.Net.Sockets.SocketException)?.SocketErrorCode;
+            ErrorLog($"StartServer failed on {where} (SocketError={code?.ToString() ?? "n/a"}): {ex}");
+
+            string hint = code switch
+            {
+                System.Net.Sockets.SocketError.AddressNotAvailable => "Multibox host could not start: ?? is not an address of this computer. Turn Multibox off and set the server address to 127.0.0.1 or this computer's LAN address.".Loc(where),
+                System.Net.Sockets.SocketError.AddressAlreadyInUse => "Multibox host could not start: ?? is already in use by another program. Turn Multibox off and pick a different port.".Loc(where),
+                _                                                  => "Multibox host could not start on ??. Turn Multibox off, check the connection settings and try again; details are in the log.".Loc(where),
+            };
+            Svc.Chat.PrintError(hint, "AutoDuty");
         }
 
         private static void StopServer()
