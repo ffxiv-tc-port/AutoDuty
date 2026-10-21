@@ -1339,7 +1339,7 @@ public static class ConfigTab
                     mb.ServerAddress = serverAddress;
                     Configuration.Save();
                 }
-                ImGuiHelper.HelpMarkerAllowWhenDisabled("Host: the address this computer listens on. 127.0.0.1 only accepts game clients on this same computer; to accept clients from other computers, enter this computer's LAN address.\nClient: the host's address.".Loc());
+                ImGuiHelper.HelpMarkerAllowWhenDisabled("Host: the address this computer listens on. 127.0.0.1 only accepts game clients on this same computer. With this computer's LAN address, clients on other computers can connect, but clients on this same computer must also enter that LAN address (127.0.0.1 will not reach the host). Enter 0.0.0.0 to accept both.\nClient: the host's address.".Loc());
 
                 int port = mb.ServerPort;
                 ImGui.SetNextItemWidth(200 * ImGuiHelpers.GlobalScale);
