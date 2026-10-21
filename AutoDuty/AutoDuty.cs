@@ -145,6 +145,25 @@ public sealed class AutoDuty : IDalamudPlugin
             Svc.Log.Debug($"Stage={_stage.ToCustomString()}");
         }
     }
+
+    /// <summary>從暫停回到原本的流程；所有「繼續」入口都走這裡，不在暫停中時不做任何事。</summary>
+    /// <remarks>
+    /// 暫停時已取消尋路並停下路徑，原本在 Moving 的話直接回 Moving 會因為沒有路徑點被當成「已走到」
+    /// （跳過這一步或在原地執行動作）⇒ 改回 Reading_Path、Indexer 不動，從目前位置重送同一步。
+    /// </remarks>
+    internal void Resume()
+    {
+        if (Stage != Stage.Paused)
+            return;
+
+        Stage resumeTo = PreviousStage == Stage.Moving ? Stage.Reading_Path : PreviousStage;
+        if (resumeTo != PreviousStage)
+            Svc.Log.Information($"[繼續] 暫停前正在移動：從目前位置重送第 {Indexer} 步（{(Indexer >= 0 && Indexer < Actions.Count ? Actions[Indexer].Name : "?")}）。");
+
+        TaskManager.SetStepMode(false);
+        Stage  =  resumeTo;
+        States &= ~PluginState.Paused;
+    }
     internal LevelingMode LevelingModeEnum
     {
         get => levelingModeEnum;
@@ -2743,12 +2762,7 @@ public sealed class AutoDuty : IDalamudPlugin
                 Plugin.Stage = Stage.Paused;
                 break;
             case "resume":
-                if (Plugin.Stage == Stage.Paused)
-                {
-                    Plugin.TaskManager.SetStepMode(false);
-                    Plugin.Stage  =  Plugin.PreviousStage;
-                    Plugin.States &= ~PluginState.Paused;
-                }
+                Plugin.Resume();
                 break;
             case "goto":
                 switch (argsArray[1])

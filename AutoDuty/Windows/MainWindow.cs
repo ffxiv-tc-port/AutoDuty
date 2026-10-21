@@ -122,11 +122,7 @@ public class MainWindow : Window, IDisposable
             if (Plugin.Stage == Stage.Paused)
             {
                 if (ImGui.Button("Resume".Loc()))
-                {
-                    Plugin.TaskManager.SetStepMode(false);
-                    Plugin.Stage = Plugin.PreviousStage;
-                    Plugin.States &= ~PluginState.Paused;
-                }
+                    Plugin.Resume();
             }
             else
             {
