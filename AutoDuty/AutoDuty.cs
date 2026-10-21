@@ -116,6 +116,9 @@ public sealed class AutoDuty : IDalamudPlugin
                     StopAndResetALL();
                     break;
                 case Stage.Paused:
+                    // 已在暫停中再暫停一次：PreviousStage 會被記成 Paused、繼續之後永遠停在暫停。
+                    if (_stage == Stage.Paused)
+                        break;
                     PreviousStage = Stage;
                     StuckEscalationHelper.Reset();
                     // Path.Stop 只清已在走的路徑點;還在算的那一筆算完會照樣開走,所以先取消尋路。
