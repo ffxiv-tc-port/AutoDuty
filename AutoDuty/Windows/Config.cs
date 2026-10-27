@@ -529,6 +529,8 @@ public class Configuration
             HideBossModAIConfig = !value;
         }
     }
+    // 王戰中把目標切到 BMR 首領模組標記的限時必殺小怪、打掉後切回王；與上面兩格無關，BMR 沒開 AI 也照做。
+    public bool       BossTargetUrgentAdds           = true;
     public bool       AutoManageVnavAlignCamera      = true;
     public bool       LootTreasure                   = true;
     public LootMethod LootMethodEnum                 = LootMethod.AutoDuty;
@@ -1802,6 +1804,10 @@ public static class ConfigTab
             if (ImGui.Checkbox("Auto Manage BossMod AI Settings".Loc(), ref Configuration.autoManageBossModAISettings))
                 Configuration.Save();
             ImGuiHelper.HelpMarkerAllowWhenDisabled("Autoduty will enable BMAI and any options you configure at the start of each duty.".Loc());
+
+            if (ImGui.Checkbox("王戰時自動切到限時必殺的小怪", ref Configuration.BossTargetUrgentAdds))
+                Configuration.Save();
+            ImGuiHelper.HelpMarkerAllowWhenDisabled("首領模組標記為「時限內沒打掉就會致死」的小怪（例：伊弗利特討伐戰的火獄之楔、泰坦討伐戰的泰坦的核心與花崗石牢）一出現，就把目標切過去；打掉後目標空了會切回首領。\n需要 BossModReborn；BMR 的 AI 有沒有開、上一格有沒有勾都不影響。");
 
             if (Configuration.autoManageBossModAISettings)
             {

@@ -129,6 +129,9 @@ namespace AutoDuty.IPC
 
         [EzIPC("AI.SetEnabled", true)] internal static readonly Func<bool, bool> AI_SetEnabled;
 
+        // 首領模組標記的限時必殺目標（InstanceID，優先度由高到低）；舊版 BMR 沒有這支，SafeWrapper 吞掉後回 null。
+        [EzIPC("Hints.UrgentKillTargets", true)] internal static readonly Func<ulong[]> UrgentKillTargets;
+
         internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
     }
 

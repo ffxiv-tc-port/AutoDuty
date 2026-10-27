@@ -1051,7 +1051,7 @@ namespace AutoDuty.Managers
 
         private bool TryGetObjectIdRegex(string input, out string output) => (RegexHelper.ObjectIdRegex().Match(input).Success ? output = RegexHelper.ObjectIdRegex().Match(input).Captures.First().Value : output = string.Empty) != string.Empty;
 
-        private bool BossCheck()
+        private bool BossCheck(UrgentAddState urgent)
         {
             if (!Svc.Condition[ConditionFlag.InCombat])
                 return true;
@@ -1059,8 +1059,78 @@ namespace AutoDuty.Managers
             
             if (EzThrottler.Throttle("PositionalChecker", 25) && ReflectionHelper.Avarice_Reflection.PositionalChanged(out Positional positional))
                 BossMod_IPCSubscriber.SetPositional(positional);
+
+            if (EzThrottler.Throttle("Boss-UrgentAdds", 250))
+                TargetUrgentAdd(urgent);
             
             return false;
+        }
+
+        // 一場王戰一份；只存 id，物件每次重查（IObjectTable 的包裝跨幀會換人）。
+        private sealed class UrgentAddState
+        {
+            public bool  SwitchedAway;
+            public ulong LastLoggedId;
+            public bool  Unavailable; // 舊版 BMR 沒有這支端點：這一場不再問，免得每 250 ms 擲一次例外
+        }
+
+        /// <summary>
+        /// BMR 首領模組標記為限時必殺（時限內沒打掉會致死）的小怪在場時把目標切過去；
+        /// 切過去之後目標空了或死了才切回王，手上還有活目標就不動。
+        /// </summary>
+        private void TargetUrgentAdd(UrgentAddState state)
+        {
+            if (state.Unavailable || !Plugin.Configuration.BossTargetUrgentAdds || Plugin.Configuration.UsingAlternativeBossPlugin || !BossModReborn_IPCSubscriber.IsEnabled)
+                return;
+
+            IGameObject? current       = Svc.Targets.Target;
+            bool         currentUsable = current is { IsDead: false, IsTargetable: true };
+            ulong[]?     ids           = BossModReborn_IPCSubscriber.UrgentKillTargets();
+            if (ids == null)
+            {
+                state.Unavailable = true;
+                return;
+            }
+            if (ids.Length > 0)
+            {
+                if (currentUsable && Array.IndexOf(ids, current!.GameObjectId) >= 0)
+                    return;
+                // 選著隊友（補師要復活之類）不搶。
+                if (currentUsable && (current is Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter || current is IBattleNpc { BattleNpcKind: Dalamud.Game.ClientState.Objects.Enums.BattleNpcSubKind.NpcPartyMember }))
+                    return;
+
+                foreach (ulong id in ids)
+                {
+                    IGameObject? add = Svc.Objects.SearchById(id);
+                    if (add is not { IsDead: false, IsTargetable: true })
+                        continue;
+                    string from = current?.Name.TextValue ?? "（無）";
+                    Svc.Targets.Target = add;
+                    state.SwitchedAway = true;
+                    if (state.LastLoggedId != id)
+                    {
+                        state.LastLoggedId = id;
+                        Svc.Log.Information($"[Boss] BMR 首領模組標記「{add.Name.TextValue}」為限時必殺目標（時限內沒打掉會致死），目標從 {from} 切過去。");
+                    }
+                    return;
+                }
+                return;
+            }
+
+            if (!state.SwitchedAway)
+                return;
+            if (currentUsable)
+            {
+                state.SwitchedAway = false;
+                return;
+            }
+            IGameObject? boss = Plugin.BossObject ?? GetBossObject();
+            if (boss is { IsDead: false, IsTargetable: true })
+            {
+                Svc.Targets.Target = boss;
+                state.SwitchedAway = false;
+                Svc.Log.Information($"[Boss] 限時必殺目標已清掉，目標切回首領「{boss.Name.TextValue}」。");
+            }
         }
 
         // MovementHelper.Move 的預設最後一點容許值;Boss-MoveCheck 一直是用預設值呼叫它。
@@ -1183,7 +1253,8 @@ namespace AutoDuty.Managers
                     preFightCoffers = GetObjectsByObjectKind(Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Treasure)?.Select(x => x.GameObjectId).ToHashSet();
                 return true;
             }, "Boss-WaitInCombat");
-            _taskManager.Enqueue(() => BossCheck(), int.MaxValue, "Boss-BossCheck");
+            var urgent = new UrgentAddState();
+            _taskManager.Enqueue(() => BossCheck(urgent), int.MaxValue, "Boss-BossCheck");
             _taskManager.Enqueue(() => { Plugin.BossObject = null; }, "Boss-ClearBossObject");
 
             if (Plugin.Configuration.LootTreasure)
