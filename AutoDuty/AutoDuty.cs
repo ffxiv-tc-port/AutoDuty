@@ -2536,7 +2536,7 @@ public sealed class AutoDuty : IDalamudPlugin
             _bareModeSettingsActive = SettingsActive.None;
         }
         // 沒在跑時不取消尋路:Nav.PathfindCancelAll 會連別的插件正在算的路一起取消。
-        bool wasRunning = States != PluginState.None;
+        bool ownsNavigation = States != PluginState.None;
         States = PluginState.None;
         TaskManager?.SetStepMode(false);
         TaskManager?.Abort();
@@ -2579,10 +2579,10 @@ public sealed class AutoDuty : IDalamudPlugin
 
         ActiveRunContext = null;
 
-        if (VNavmesh_IPCSubscriber.IsEnabled)
+        // 沒在跑時尋路與路徑都不碰：Dispose 與重複的 Stop 會走到這裡，路徑多半是別的插件的。
+        if (ownsNavigation && VNavmesh_IPCSubscriber.IsEnabled)
         {
-            if (wasRunning)
-                VNavmesh_IPCSubscriber.Nav_PathfindCancelAll();
+            VNavmesh_IPCSubscriber.Nav_PathfindCancelAll();
             if (VNavmesh_IPCSubscriber.Path_IsRunning())
                 VNavmesh_IPCSubscriber.Path_Stop();
         }
