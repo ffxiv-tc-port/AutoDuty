@@ -60,6 +60,9 @@ public static class MultiboxUtility
             }
         }
 
+        /// <summary>卸載用:只把開關歸零,不走 <see cref="Set"/>(主機端停止會送 <c>/partycmd breakup</c>)。</summary>
+        internal void ClearForUnload() => this.multiBox = false;
+
         public bool          SynchronizePath { get; set; } = true;
         public bool          Host            { get; set; } = false;
         public string        PipeName        { get; set; } = "AutoDutyPipe";
@@ -154,6 +157,52 @@ public static class MultiboxUtility
             Client.Set(on);
     }
 
+    /// <summary>
+    /// 插件卸載時收掉多開:停監聽、取消連線迴圈(取消會關掉 socket／管道,解開卡在同步讀取上的迴圈),
+    /// 最多等 <paramref name="timeoutMs"/> 毫秒,逾時記一次 Warning 放手。不擲例外。
+    /// </summary>
+    /// <remarks>刻意不走 <c>Set(false)</c>:主機端的停止會解散小隊,卸載／熱重載不該動到使用者的小隊。</remarks>
+    internal static void Shutdown(int timeoutMs)
+    {
+        try
+        {
+            List<Task> pending = [];
+            try
+            {
+                Config.ClearForUnload();
+            }
+            catch (Exception ex)
+            {
+                ErrorLog($"Shutdown: clearing MultiBox flag failed: {ex.Message}");
+            }
+
+            bool hadServer = Server.Shutdown(pending);
+            bool hadClient = Client.Shutdown(pending);
+            if (!hadServer && !hadClient)
+                return;
+
+            bool finished;
+            try
+            {
+                finished = Task.WhenAll(pending).Wait(timeoutMs);
+            }
+            catch (AggregateException)
+            {
+                finished = true; // 取消／失敗也是已結束
+            }
+
+            int stillRunning = pending.Count(t => !t.IsCompleted);
+            if (finished)
+                Svc.Log.Information($"[Multibox] 卸載:已停止{(hadServer ? "主機端監聽" : "")}{(hadServer && hadClient ? "與" : "")}{(hadClient ? "用戶端連線" : "")},{pending.Count} 條連線迴圈都已結束。");
+            else
+                Svc.Log.Warning($"[Multibox] 卸載:{stillRunning}/{pending.Count} 條連線迴圈在 {timeoutMs} 毫秒內沒有結束,不再等待(socket／管道已關閉)。");
+        }
+        catch (Exception ex)
+        {
+            ErrorLog($"Shutdown error: {ex}");
+        }
+    }
+
     internal static class Server
     {
         public const             int             MAX_SERVERS   = 3;
@@ -167,6 +216,10 @@ public static class MultiboxUtility
 
         private static ITransport?              transport;
         private static CancellationTokenSource? serverCts;
+        private static Task?                    acceptTask;
+
+        // 連線迴圈(執行緒池)寫、卸載時框架執行緒讀,一律 Volatile。
+        private static readonly Task?[] handlerTasks = new Task?[MAX_SERVERS];
 
         /// <summary>伺服器是否真的起來了(供 UI 顯示,不參與任何決策)。</summary>
         internal static bool Running => transport != null;
@@ -224,7 +277,7 @@ public static class MultiboxUtility
 
                 transport = created;
                 serverCts = new CancellationTokenSource();
-                Task.Run(() => AcceptLoop(serverCts.Token), serverCts.Token);
+                acceptTask = Task.Run(() => AcceptLoop(serverCts.Token), serverCts.Token);
                 Svc.Log.Information($"[Multibox] 主機端已啟動,傳輸方式 {Config.TransportType}{(transport is TcpTransport tcp ? $",監聽 {tcp.Endpoint}" : "")}");
             }
             catch (Exception ex)
@@ -332,6 +385,52 @@ public static class MultiboxUtility
             }
         }
 
+        /// <summary>卸載用的 <see cref="StopServer"/>:不解散小隊,只取消、關監聽,把要等的迴圈放進 <paramref name="pending"/>。</summary>
+        /// <returns>主機端原本有沒有在跑。</returns>
+        internal static bool Shutdown(List<Task> pending)
+        {
+            CancellationTokenSource? cts = serverCts;
+            ITransport?              t   = transport;
+            if (cts == null && t == null)
+                return false;
+
+            // 先取消:接受到的連線都以這個 token 註冊了 Dispose,取消即關 socket／管道。
+            try
+            {
+                cts?.Cancel();
+            }
+            catch (Exception ex)
+            {
+                ErrorLog($"Shutdown cancel error: {ex.Message}");
+            }
+
+            try
+            {
+                t?.StopServer();
+                t?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                ErrorLog($"Shutdown transport error: {ex.Message}");
+            }
+
+            transport = null;
+            serverCts = null;
+
+            if (acceptTask != null)
+                pending.Add(acceptTask);
+            acceptTask = null;
+            for (int i = 0; i < MAX_SERVERS; i++)
+            {
+                Task? h = Volatile.Read(ref handlerTasks[i]);
+                if (h != null)
+                    pending.Add(h);
+                Volatile.Write(ref handlerTasks[i], null);
+            }
+
+            return true;
+        }
+
         // 本檔四支連線迴圈一律回 Task、不用 async void:它們都從 Task.Run 進來(沒有 SynchronizationContext),
         // async void 漏出去的例外是執行緒池上的未處理例外＝整個遊戲結束;回 Task 時最壞只是一個沒人觀察的失敗工作。
         private static async Task AcceptLoop(CancellationToken ct)
@@ -368,7 +467,7 @@ public static class MultiboxUtility
                     streams[idx] = new StreamString(s);
 
                     int capturedIdx = idx;
-                    _ = Task.Run(() => ConnectionHandler(s, capturedIdx, ct), ct);
+                    Volatile.Write(ref handlerTasks[capturedIdx], Task.Run(() => ConnectionHandler(s, capturedIdx, ct), ct));
                 }
             }
             catch (OperationCanceledException)
@@ -636,6 +735,7 @@ public static class MultiboxUtility
     {
         private static StreamString?            clientSS;
         private static CancellationTokenSource? clientCts;
+        private static Task?                    connectionTask;
 
         /// <summary>用戶端是否已建立串流(供 UI 顯示,不參與任何決策)。</summary>
         internal static bool Connected => clientSS != null;
@@ -647,8 +747,8 @@ public static class MultiboxUtility
         {
             if (on)
             {
-                clientCts = new CancellationTokenSource();
-                Task.Run(() => ClientConnectionThread(clientCts.Token), clientCts.Token);
+                clientCts      = new CancellationTokenSource();
+                connectionTask = Task.Run(() => ClientConnectionThread(clientCts.Token), clientCts.Token);
             }
             else
             {
@@ -664,6 +764,30 @@ public static class MultiboxUtility
                 clientSS  = null;
                 clientCts = null;
             }
+        }
+
+        /// <summary>卸載用:取消連線(連到主機的串流以這個 token 註冊了 Dispose),把連線迴圈放進 <paramref name="pending"/>。</summary>
+        /// <returns>用戶端原本有沒有在跑。</returns>
+        internal static bool Shutdown(List<Task> pending)
+        {
+            CancellationTokenSource? cts = clientCts;
+            if (cts == null)
+                return false;
+
+            try
+            {
+                cts.Cancel();
+            }
+            catch (Exception ex)
+            {
+                ErrorLog($"Client shutdown cancel error: {ex.Message}");
+            }
+
+            clientCts = null;
+            if (connectionTask != null)
+                pending.Add(connectionTask);
+            connectionTask = null;
+            return true;
         }
 
         private static async Task ClientConnectionThread(CancellationToken ct)

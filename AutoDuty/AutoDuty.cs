@@ -2711,8 +2711,14 @@ public sealed class AutoDuty : IDalamudPlugin
         });
     }
 
+    /// <summary>卸載時等多開連線迴圈結束的上限;Dispose 在框架執行緒上,不可無限期等待。</summary>
+    private const int MultiboxShutdownTimeoutMs = 1000;
+
     public void Dispose()
     {
+        // 放第一行:Dispose 沒有分段 try,後面任何一步擲例外都不能讓連線迴圈與監聽留下來。
+        // 也必須在 ECommonsMain.Dispose() 之前:連線迴圈收尾時還會寫 Svc.Log。
+        global::AutoDuty.Multibox.MultiboxUtility.Shutdown(MultiboxShutdownTimeoutMs);
         GitHubHelper.Dispose();
         StopAndResetALL();
         Svc.Framework.Update -= Framework_Update;
