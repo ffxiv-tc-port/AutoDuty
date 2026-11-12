@@ -122,9 +122,14 @@ public sealed class AutoDuty : IDalamudPlugin
                     PreviousStage = Stage;
                     StuckEscalationHelper.Reset();
                     // Path.Stop 只清已在走的路徑點;還在算的那一筆算完會照樣開走,所以先取消尋路。
-                    VNavmesh_IPCSubscriber.Nav_PathfindCancelAll();
-                    if (VNavmesh_IPCSubscriber.Path_NumWaypoints() > 0)
-                        VNavmesh_IPCSubscriber.Path_Stop();
+                    // 閒置時(States 為 None)尋路與路徑都是別的插件的,暫停不碰。
+                    bool ownsNavigation = States != PluginState.None;
+                    if (ownsNavigation)
+                    {
+                        VNavmesh_IPCSubscriber.Nav_PathfindCancelAll();
+                        if (VNavmesh_IPCSubscriber.Path_NumWaypoints() > 0)
+                            VNavmesh_IPCSubscriber.Path_Stop();
+                    }
                     FollowHelper.SetFollow(null);
                     TaskManager.SetStepMode(true);
                     States |= PluginState.Paused;
@@ -2537,7 +2542,8 @@ public sealed class AutoDuty : IDalamudPlugin
             _bareModeSettingsActive = SettingsActive.None;
         }
         // 沒在跑時不取消尋路:Nav.PathfindCancelAll 會連別的插件正在算的路一起取消。
-        bool ownsNavigation = States != PluginState.None;
+        // 只剩 Paused 旗標＝閒置時暫停過,那時也沒有自己的路徑。
+        bool ownsNavigation = (States & ~PluginState.Paused) != PluginState.None;
         States = PluginState.None;
         TaskManager?.SetStepMode(false);
         TaskManager?.Abort();
