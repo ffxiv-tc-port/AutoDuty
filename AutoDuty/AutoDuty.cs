@@ -2258,8 +2258,9 @@ public sealed class AutoDuty : IDalamudPlugin
         if (AutoRetainerHelper.State == ActionState.Running || (AutoRetainer_IPCSubscriber.IsEnabled && AutoRetainer_IPCSubscriber.IsBusy()) || (AM_IPCSubscriber.IsEnabled && AM_IPCSubscriber.IsRunning()) || Stage == Stage.Paused)
             return;
 
+        // 每幀只關一次:關閉中的窗同一幀仍可見、TryBeginClose 又擋第二次 Close,同幀迴圈不會結束。
         if (Svc.Condition[ConditionFlag.OccupiedSummoningBell])
-            while(!AutoRetainerHelper.Instance.CloseAddons());
+            AutoRetainerHelper.Instance.CloseAddons();
     }
 
     private void InteractablesCheck()
