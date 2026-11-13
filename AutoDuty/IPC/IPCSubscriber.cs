@@ -57,6 +57,30 @@ namespace AutoDuty.IPC
         internal static int GetInventoryFreeSlotCount() => Pkg.GetInventoryFreeSlotCount();
         internal static void EnqueueGCInitiation() => Pkg.EnqueueInitiation();
 
+        /// <summary>
+        /// 推「排程器開著沒」用的三個讀值；讀不到給 null（不用 SafeWrapper：它把「沒有端點」吞成 false，會被當成「關著」）。
+        /// 型別與提供端、套件宣告相同（皆 <c>Func&lt;bool&gt;</c>）。只在框架執行緒呼叫。
+        /// </summary>
+        internal static void ReadSchedulerInputs(out bool? anyActive, out bool? taskBusy, out bool? multiModeEnabled)
+        {
+            anyActive        = TryInvokeBool("AutoRetainer.IsBusy");
+            taskBusy         = TryInvokeBool("AutoRetainer.PluginState.IsBusy");
+            multiModeEnabled = TryInvokeBool("AutoRetainer.PluginState.GetMultiModeStatus");
+        }
+
+        private static bool? TryInvokeBool(string endpoint)
+        {
+            try
+            {
+                var gate = Svc.PluginInterface.GetIpcSubscriber<bool>(endpoint);
+                return gate.HasFunction ? gate.InvokeFunc() : null;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
         /// <summary>側車：套件沒有這個端點。</summary>
         internal static Dictionary<ulong, HashSet<string>> GetEnabledRetainers() => AutoRetainerExtraIPC.GetEnabledRetainers();
 

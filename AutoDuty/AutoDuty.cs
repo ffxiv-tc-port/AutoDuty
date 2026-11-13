@@ -337,6 +337,14 @@ public sealed class AutoDuty : IDalamudPlugin
     private         DateTime       _lastRotationSetTime    = DateTime.MinValue;
     public readonly bool           isDev;
 
+    private const string PandoraChestsFeature = "Automatically Open Chests";
+    /// <summary>本次開跑第一次寫入前 PandorasBox「自動開寶箱」的值；null＝本次沒寫過。停止時讀一次就清。</summary>
+    private bool? _pandoraChestsOriginal;
+    private bool  _pandoraChestsLastWritten;
+
+    /// <summary><see cref="Dispose"/> 開始後為真；讓停止收尾分辨「卸載」與一般停止。</summary>
+    internal bool Disposing { get; private set; }
+
     public AutoDuty()
     {
         try
@@ -1916,13 +1924,13 @@ public sealed class AutoDuty : IDalamudPlugin
         if (Configuration.LootTreasure)
         {
             if (PandorasBox_IPCSubscriber.IsEnabled)
-                PandorasBox_IPCSubscriber.SetFeatureEnabled("Automatically Open Chests", this.Configuration.LootMethodEnum is LootMethod.Pandora or LootMethod.All);
+                SetPandoraChests(this.Configuration.LootMethodEnum is LootMethod.Pandora or LootMethod.All);
             this._lootTreasure = this.Configuration.LootMethodEnum is LootMethod.AutoDuty or LootMethod.All;
         }
         else
         {
             if (PandorasBox_IPCSubscriber.IsEnabled)
-                PandorasBox_IPCSubscriber.SetFeatureEnabled("Automatically Open Chests", false);
+                SetPandoraChests(false);
             this._lootTreasure = false;
         }
         Svc.Log.Info("Starting Navigation");
@@ -2033,6 +2041,59 @@ public sealed class AutoDuty : IDalamudPlugin
             MarkSelfStop("All loops finished.");
             Stage = Stage.Stopped;
         }
+    }
+
+    private void SetPandoraChests(bool on)
+    {
+        if (_pandoraChestsOriginal is null)
+        {
+            try
+            {
+                _pandoraChestsOriginal = PandorasBox_IPCSubscriber.GetFeatureEnabled(PandoraChestsFeature);
+                Svc.Log.Information($"PandorasBox「自動開寶箱」：開跑前為 {_pandoraChestsOriginal}，本次設為 {on}，停止時還原");
+            }
+            catch (Exception ex)
+            {
+                // 讀不到原值就不記（停止時不寫回＝原本的行為），寫入照舊。
+                Svc.Log.Information($"PandorasBox「自動開寶箱」：讀不到開跑前的值，停止時不還原（{ex.GetType().Name}）");
+            }
+        }
+        _pandoraChestsLastWritten = on;
+        PandorasBox_IPCSubscriber.SetFeatureEnabled(PandoraChestsFeature, on);
+    }
+
+    /// <summary>停止時要寫回的值；null＝本次沒寫過，或最後寫入的就是原值（等於沒改）。</summary>
+    internal static bool? PandoraChestsRestoreValue(bool? original, bool lastWritten) =>
+        original is bool o && o != lastWritten ? o : null;
+
+    private void RestorePandoraChests()
+    {
+        bool? restore = PandoraChestsRestoreValue(_pandoraChestsOriginal, _pandoraChestsLastWritten);
+        _pandoraChestsOriginal = null;
+        if (restore is not bool value)
+            return;
+
+        if (!PandorasBox_IPCSubscriber.IsEnabled)
+        {
+            if (Svc.Framework.IsFrameworkUnloading)
+                Svc.Log.Warning($"PandorasBox「自動開寶箱」：遊戲正在關閉且 PandorasBox 已卸載，無法還原成 {value}");
+            else
+                Svc.Log.Information($"PandorasBox「自動開寶箱」：PandorasBox 沒有載入，無法還原成 {value}");
+            return;
+        }
+
+        void Write()
+        {
+            Svc.Log.Information($"PandorasBox「自動開寶箱」：還原成開跑前的 {value}");
+            PandorasBox_IPCSubscriber.SetFeatureEnabled(PandoraChestsFeature, value);
+        }
+
+        if (Svc.Framework.IsInFrameworkUpdateThread)
+            Write();
+        else if (Svc.Framework.IsFrameworkUnloading)
+            Svc.Log.Warning($"PandorasBox「自動開寶箱」：遊戲正在關閉且不在框架執行緒上，略過還原成 {value}");
+        else
+            _ = Svc.Framework.Run(Write);
     }
 
     private void GetGeneralSettings()
@@ -2524,6 +2585,26 @@ public sealed class AutoDuty : IDalamudPlugin
         }
     }
 
+    /// <summary>路徑改過的設定寫回原值（只改記憶體）；回 true＝有改回、呼叫端要存檔。不在框架執行緒上時排到框架執行緒自己存。</summary>
+    private bool RestorePathConfigInMemory()
+    {
+        if (Svc.Framework.IsInFrameworkUpdateThread)
+            return PathConfigJournal.RestoreInMemory() > 0;
+
+        if (Svc.Framework.IsFrameworkUnloading)
+        {
+            Svc.Log.Warning("[路徑改設定] 遊戲正在關閉且不在框架執行緒上，略過還原路徑改過的設定");
+            return false;
+        }
+
+        _ = Svc.Framework.Run(() =>
+        {
+            if (PathConfigJournal.RestoreInMemory() > 0)
+                Configuration.Save();
+        });
+        return false;
+    }
+
     private void StopAndResetALL()
     {
         // 放最前面：後面任何一步擲例外，停下之前排的延遲回呼（OnDeath、傳送後改 Stage、復活後找捷徑）也都已失效。
@@ -2534,6 +2615,8 @@ public sealed class AutoDuty : IDalamudPlugin
         BossMod_IPCSubscriber.ResetStayCloseToTankCache();
         // 別的外掛透過 IPC 壓上來的設定覆寫,在停止時一律還原(呼叫端不必記得 Pop)。
         ConfigOverrideHelper.Pop();
+        // 順序：Pop 之後（覆寫值不被當原值）、Bare 還原之前（Bare 三旗標以使用者值為準），存檔放在 Bare 還原之後（不把 Bare 暫值寫進檔）。
+        bool pathConfigRestored = RestorePathConfigInMemory();
         if (_bareModeSettingsActive != SettingsActive.None)
         {
             Configuration.EnablePreLoopActions = _bareModeSettingsActive.HasFlag(SettingsActive.PreLoop_Enabled);
@@ -2541,6 +2624,9 @@ public sealed class AutoDuty : IDalamudPlugin
             Configuration.EnableTerminationActions = _bareModeSettingsActive.HasFlag(SettingsActive.TerminationActions_Enabled);
             _bareModeSettingsActive = SettingsActive.None;
         }
+        if (pathConfigRestored)
+            Configuration.Save();
+        RestorePandoraChests();
         // 沒在跑時不取消尋路:Nav.PathfindCancelAll 會連別的插件正在算的路一起取消。
         // 只剩 Paused 旗標＝閒置時暫停過,那時也沒有自己的路徑。
         bool ownsNavigation = (States & ~PluginState.Paused) != PluginState.None;
@@ -2719,6 +2805,7 @@ public sealed class AutoDuty : IDalamudPlugin
         // 放第一行:Dispose 沒有分段 try,後面任何一步擲例外都不能讓連線迴圈與監聽留下來。
         // 也必須在 ECommonsMain.Dispose() 之前:連線迴圈收尾時還會寫 Svc.Log。
         global::AutoDuty.Multibox.MultiboxUtility.Shutdown(MultiboxShutdownTimeoutMs);
+        Disposing = true;
         GitHubHelper.Dispose();
         StopAndResetALL();
         Svc.Framework.Update -= Framework_Update;

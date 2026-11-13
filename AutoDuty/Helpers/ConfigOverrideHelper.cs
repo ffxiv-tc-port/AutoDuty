@@ -59,6 +59,13 @@ internal static class ConfigOverrideHelper
         }
     }
 
+    /// <summary>這個欄位在 <paramref name="target"/> 上是否正被 IPC 覆寫（覆寫期間的寫入會被 <see cref="Pop"/> 還原、也不會存檔）。</summary>
+    internal static bool IsOverridden(FieldInfo field, Configuration target)
+    {
+        lock (Gate)
+            return Active.ContainsKey(new OverrideKey(field, target));
+    }
+
     /// <summary>
     /// 套用一組設定覆寫。任何一項驗不過就<b>整批不套用</b>(全部驗完才動手,所以不存在
     /// 「套了一半再回退」的時間窗)。

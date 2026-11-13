@@ -653,6 +653,7 @@ namespace AutoDuty.Managers
             _taskManager.Enqueue(() =>
             {
                 BossMod_IPCSubscriber.NoteBmrAICommand(action.Arguments[0], Svc.ClientState.TerritoryType);
+                PathConfigJournal.RecordBeforeCommand(action.Arguments[0]);
                 Chat.ExecuteCommand(action.Arguments[0]);
             }, "ChatCommand");
             _taskManager.Enqueue(() => Plugin.Action = "");
