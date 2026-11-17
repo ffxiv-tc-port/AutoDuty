@@ -1,6 +1,7 @@
 namespace AutoDuty.Multibox;
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -572,16 +573,23 @@ public static class MultiboxUtility
                             break;
                         case KEEPALIVE_RESPONSE_KEY:
                             break;
+                        // CheckStepProgress 讀 Plugin.Stage／Actions、寫 stepBlock；CheckDeaths 讀 Player.IsDead（原生）⇒ 排到框架執行緒。
                         case STEP_COMPLETED:
-                            stepConfirms[index] = true;
-                            CheckStepProgress();
+                            RunOnFramework(STEP_COMPLETED, () =>
+                            {
+                                stepConfirms[index] = true;
+                                CheckStepProgress();
+                            });
                             break;
                         case DEATH_KEY:
-                            deathConfirms[index] = true;
-                            CheckDeaths();
+                            RunOnFramework(DEATH_KEY, () =>
+                            {
+                                deathConfirms[index] = true;
+                                CheckDeaths();
+                            });
                             break;
                         case UNDEATH_KEY:
-                            deathConfirms[index] = false;
+                            RunOnFramework(UNDEATH_KEY, () => deathConfirms[index] = false);
                             break;
                         default:
                             ss.WriteString($"Unknown Message from {index}: {message}");
@@ -835,12 +843,15 @@ public static class MultiboxUtility
                             case STEP_START:
                                 if (split.Length > 1 && int.TryParse(split[1], out int step))
                                 {
-                                    Plugin.Indexer = step;
-                                    stepBlock      = false;
-                                    // 📌 上游這裡是 `Stage = Idle; Stage = Reading_Path;`。本 fork 沒有
-                                    // Stage.Idle,而兩者在本 fork 的 setter 都不命中任何 case ⇒ 直接設
-                                    // Reading_Path 等價。🔴 不可改用 Stage.Stopped(會 StopAndResetALL)。
-                                    Plugin.Stage = Stage.Reading_Path;
+                                    RunOnFramework(STEP_START, () =>
+                                    {
+                                        Plugin.Indexer = step;
+                                        stepBlock      = false;
+                                        // 📌 上游這裡是 `Stage = Idle; Stage = Reading_Path;`。本 fork 沒有
+                                        // Stage.Idle,而兩者在本 fork 的 setter 都不命中任何 case ⇒ 直接設
+                                        // Reading_Path 等價。🔴 不可改用 Stage.Stopped(會 StopAndResetALL)。
+                                        Plugin.Stage = Stage.Reading_Path;
+                                    });
                                 }
 
                                 break;
@@ -850,14 +861,17 @@ public static class MultiboxUtility
                             case KEEPALIVE_RESPONSE_KEY:
                                 break;
                             case DUTY_QUEUE_KEY:
-                                QueueHelper.InvokeAcceptOnly();
+                                RunOnFramework(DUTY_QUEUE_KEY, QueueHelper.InvokeAcceptOnly);
                                 break;
                             case DUTY_EXIT_KEY:
-                                stepBlock = false;
-                                ExitDutyHelper.Invoke();
+                                RunOnFramework(DUTY_EXIT_KEY, () =>
+                                {
+                                    stepBlock = false;
+                                    ExitDutyHelper.Invoke();
+                                });
                                 break;
                             case PARTY_INVITE:
-                                SchedulerHelper.ScheduleAction("MultiboxClient PartyInvite Accept", () =>
+                                RunOnFramework(PARTY_INVITE, () => SchedulerHelper.ScheduleAction("MultiboxClient PartyInvite Accept", () =>
                                                                                                     {
                                                                                                         unsafe
                                                                                                         {
@@ -900,14 +914,14 @@ public static class MultiboxUtility
                                                                                                                 }
                                                                                                             }
                                                                                                         }
-                                                                                                    }, 500, false);
+                                                                                                    }, 500, false));
                                 break;
                             case PATH_STEPS:
                                 List<PathAction>? steps = JsonSerializer.Deserialize<List<PathAction>>(message[(split[0].Length + 1)..], BuildTab.jsonSerializerOptions);
                                 if (steps is { Count: > 0 })
                                 {
                                     DebugLog("setting steps from host");
-                                    Plugin.Actions = steps;
+                                    RunOnFramework(PATH_STEPS, () => Plugin.Actions = steps);
                                 }
 
                                 break;
@@ -984,6 +998,38 @@ public static class MultiboxUtility
 
             clientSS.WriteString(dead ? DEATH_KEY : UNDEATH_KEY);
             DebugLog("Death sent to server.");
+        }
+    }
+
+    /// <summary>連線迴圈收到訊息後要在框架執行緒做的事，照收到的順序排隊；由 <c>AutoDuty.Framework_Update</c> 排乾。</summary>
+    /// <remarks>不用 <c>RunOnTick</c>：同一格不保序（理由同 <c>IPCProvider.PendingWork</c>），而 PATH_STEPS 必須先於 STEP_START 生效。</remarks>
+    private static readonly ConcurrentQueue<(string What, System.Action Action)> FrameworkWork = new();
+
+    /// <summary>連線迴圈跑在執行緒池：寫 <c>Plugin</c> 狀態、讀原生、按窗、呼叫別的插件一律經這裡排到框架執行緒。</summary>
+    private static void RunOnFramework(string what, System.Action action)
+    {
+        if (Svc.Framework.IsInFrameworkUpdateThread)
+        {
+            action();
+            return;
+        }
+
+        FrameworkWork.Enqueue((what, action));
+    }
+
+    /// <summary>每幀由 <c>AutoDuty.Framework_Update</c> 呼叫；每則各自 try，一則擲例外不擋後面。</summary>
+    internal static void DrainFrameworkWork()
+    {
+        while (FrameworkWork.TryDequeue(out (string What, System.Action Action) work))
+        {
+            try
+            {
+                work.Action();
+            }
+            catch (Exception e)
+            {
+                ErrorLog($"{work.What} failed on the framework thread: {e}");
+            }
         }
     }
 
