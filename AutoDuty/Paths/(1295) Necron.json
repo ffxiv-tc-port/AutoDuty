@@ -1,0 +1,26 @@
+{
+  "Actions": [
+    {
+      "Tag": "None",
+      "Name": "Boss",
+      "Position": {
+        "X": 100.0,
+        "Y": 0.0,
+        "Z": 100.0
+      },
+      "Arguments": [
+        ""
+      ],
+      "Conditions": [],
+      "ConditionsWhile": [],
+      "ConditionsUntil": [],
+      "Note": "Necron",
+      "Flags": "None"
+    }
+  ],
+  "Meta": {
+    "CreatedAt": 398,
+    "Changelog": [],
+    "Notes": []
+  }
+}
