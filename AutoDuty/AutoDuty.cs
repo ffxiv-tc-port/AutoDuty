@@ -337,6 +337,8 @@ public sealed class AutoDuty : IDalamudPlugin
     private static readonly string[] BareModeFieldNames =
         [nameof(Configuration.EnablePreLoopActions), nameof(Configuration.EnableBetweenLoopActions), nameof(Configuration.EnableTerminationActions)];
     private         DateTime       _lastRotationSetTime    = DateTime.MinValue;
+    /// <summary>最後一次過了設定閘門的 <see cref="SetRotationPluginSettings"/> 是「開」：輪替插件可能是 AutoDuty 打開的。</summary>
+    private         bool           _rotationEngaged;
     public readonly bool           isDev;
 
     private const string PandoraChestsFeature = "Automatically Open Chests";
@@ -2177,6 +2179,7 @@ public sealed class AutoDuty : IDalamudPlugin
 
         if (!ignoreConfig && !this.Configuration.AutoManageRotationPluginState)
             return;
+        _rotationEngaged = on;
         bool bmEnabled     = BossMod_IPCSubscriber.IsEnabled;
         bool foundRotation = false;
 
@@ -2640,6 +2643,8 @@ public sealed class AutoDuty : IDalamudPlugin
         // 沒在跑時不取消尋路:Nav.PathfindCancelAll 會連別的插件正在算的路一起取消。
         // 只剩 Paused 旗標＝閒置時暫停過,那時也沒有自己的路徑。
         bool ownsNavigation = (States & ~PluginState.Paused) != PluginState.None;
+        // 閒置時（急停、卸載、重複 Stop）不碰 Wrath／RSR：關自動輪替要先拿 Wrath 租約，拿不到會把 AutoManageRotationPluginState 寫成 false 並存檔。
+        bool rotationMayBeOurs = ownsNavigation || _rotationEngaged;
         States = PluginState.None;
         TaskManager?.SetStepMode(false);
         TaskManager?.Abort();
@@ -2667,7 +2672,7 @@ public sealed class AutoDuty : IDalamudPlugin
         BossMod_IPCSubscriber.RestoreBmrAIEnabled(null);
 
         SetGeneralSettings(true);
-        if (Configuration.AutoManageRotationPluginState && !Configuration.UsingAlternativeRotationPlugin)
+        if (rotationMayBeOurs && Configuration.AutoManageRotationPluginState && !Configuration.UsingAlternativeRotationPlugin)
             SetRotationPluginSettings(false);
         if (Indexer > 0 && !MainListClicked)
             Indexer = -1;
