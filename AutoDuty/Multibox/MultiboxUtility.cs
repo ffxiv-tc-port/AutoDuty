@@ -1001,37 +1001,13 @@ public static class MultiboxUtility
         }
     }
 
-    /// <summary>連線迴圈收到訊息後要在框架執行緒做的事，照收到的順序排隊；由 <c>AutoDuty.Framework_Update</c> 排乾。</summary>
-    /// <remarks>不用 <c>RunOnTick</c>：同一格不保序（理由同 <c>IPCProvider.PendingWork</c>），而 PATH_STEPS 必須先於 STEP_START 生效。</remarks>
-    private static readonly ConcurrentQueue<(string What, System.Action Action)> FrameworkWork = new();
-
     /// <summary>連線迴圈跑在執行緒池：寫 <c>Plugin</c> 狀態、讀原生、按窗、呼叫別的插件一律經這裡排到框架執行緒。</summary>
-    private static void RunOnFramework(string what, System.Action action)
-    {
-        if (Svc.Framework.IsInFrameworkUpdateThread)
-        {
-            action();
-            return;
-        }
+    /// <remarks>與 IPC 端點共用 <see cref="FrameworkWorkQueue"/>，照收到的順序執行（PATH_STEPS 必須先於 STEP_START 生效）。</remarks>
+    private static void RunOnFramework(string what, System.Action action) =>
+        FrameworkWorkQueue.Run(what, action, LogDrainFailure);
 
-        FrameworkWork.Enqueue((what, action));
-    }
-
-    /// <summary>每幀由 <c>AutoDuty.Framework_Update</c> 呼叫；每則各自 try，一則擲例外不擋後面。</summary>
-    internal static void DrainFrameworkWork()
-    {
-        while (FrameworkWork.TryDequeue(out (string What, System.Action Action) work))
-        {
-            try
-            {
-                work.Action();
-            }
-            catch (Exception e)
-            {
-                ErrorLog($"{work.What} failed on the framework thread: {e}");
-            }
-        }
-    }
+    private static readonly System.Action<string, Exception> LogDrainFailure =
+        (what, e) => ErrorLog($"{what} failed on the framework thread: {e}");
 
     /// <summary>同一則卸載期訊息的重印間隔(毫秒)。</summary>
     private const long UnloadLogIntervalMs = 10000;

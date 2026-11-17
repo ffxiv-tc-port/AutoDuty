@@ -3,7 +3,6 @@ using ECommons.DalamudServices;
 using ECommons.EzIpcManager;
 using Newtonsoft.Json.Linq;
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 #nullable disable
 
@@ -15,18 +14,6 @@ namespace AutoDuty.IPC
         {
             EzIPC.Init(this);
         }
-
-        /// <summary>
-        /// 從別的執行緒進來的端點工作,照先進先出排在這裡等 framework 執行緒來排乾。
-        /// </summary>
-        /// <remarks>
-        /// 🔴 刻意<b>不</b>用 <c>Svc.Framework.RunOnFrameworkThread</c> 逐則排隊:本 pin 的
-        /// <c>ThreadBoundTaskScheduler</c> 把待跑的工作放在 <c>ConcurrentDictionary</c> 裡、
-        /// <c>Run()</c> 走訪的是 <c>Keys</c>(Dalamud/Utility/ThreadBoundTaskScheduler.cs)——
-        /// <b>同一格內不保證先進先出</b>。而這幾個端點的順序是有語意的:呼叫端連著打
-        /// <c>Stop()</c> 再 <c>Run()</c>,順序一倒過來就變成「先開始跑、再把它整個停掉」。
-        /// </remarks>
-        private static readonly ConcurrentQueue<(string Name, Action Action)> PendingWork = new();
 
         /// <summary>
         /// 把端點的實際工作放到 framework 執行緒上跑。
@@ -44,38 +31,15 @@ namespace AutoDuty.IPC
         /// 「呼叫端持著鎖同步等 framework 執行緒」這種死結形狀。
         /// </para>
         /// </remarks>
-        private static void RunOnFramework(string endpointName, Action action)
-        {
-            if (Svc.Framework.IsInFrameworkUpdateThread)
-            {
-                action();
-                return;
-            }
-            PendingWork.Enqueue((endpointName, action));
-        }
+        private static void RunOnFramework(string endpointName, Action action) =>
+            FrameworkWorkQueue.Run(endpointName, action, LogDrainFailure);
 
-        /// <summary>
-        /// 由 <c>AutoDuty.Framework_Update</c> 每幀在最前面呼叫一次,把 <see cref="PendingWork"/> 排乾。
-        /// 每一則各自包 try:其中一則擲例外不會讓後面的排不出去,也不會中斷這一格的其餘處理。
-        /// </summary>
-        internal static void DrainPendingWork()
-        {
-            while (PendingWork.TryDequeue(out var work))
-            {
-                try
-                {
-                    work.Action();
-                }
-                catch (Exception e)
-                {
-                    Svc.Log.Error($"AutoDuty IPC {work.Name} 在 framework 執行緒上執行失敗:{e}");
-                }
-            }
-        }
+        private static readonly Action<string, Exception> LogDrainFailure =
+            (name, e) => Svc.Log.Error($"AutoDuty IPC {name} 在 framework 執行緒上執行失敗:{e}");
 
         /// <summary>把所有設定名稱與目前的值印進 log。</summary>
         /// <remarks>
-        /// 📌 這支<b>刻意不排進</b> <see cref="PendingWork"/>:它只做反射<b>讀取</b>
+        /// 📌 這支<b>刻意不排進</b> <see cref="FrameworkWorkQueue"/>:它只做反射<b>讀取</b>
         /// (<c>FieldInfo.GetValue</c>)與 <c>Svc.Log.Info</c>,不寫任何欄位、不存檔、不碰原生資料,
         /// 而 Serilog 的寫入端本身是執行緒安全的。排進佇列只會讓輸出晚一格,換不到任何安全性。
         /// </remarks>
@@ -94,7 +58,7 @@ namespace AutoDuty.IPC
 
         /// <summary>改一個設定的值並存檔。</summary>
         /// <remarks>
-        /// 🔴 排進 <see cref="PendingWork"/>:<c>FieldInfo.SetValue(Plugin.Configuration, ...)</c>(framework 執行緒每幀在讀那些欄位)
+        /// 🔴 排進 <see cref="FrameworkWorkQueue"/>:<c>FieldInfo.SetValue(Plugin.Configuration, ...)</c>(framework 執行緒每幀在讀那些欄位)
         /// 與 <c>Plugin.Configuration.Save()</c>(整份序列化<b>加寫檔</b>,還會走進 <c>ConfigOverrideHelper.WithUserValues</c> 的鎖)
         /// 都不可以在<b>呼叫端的執行緒</b>上做。
         /// <para>
@@ -180,7 +144,7 @@ namespace AutoDuty.IPC
         /// 🔴 回呼跑在 <b>Wrath Combo 的執行緒</b>上,而它要改
         /// <c>Plugin.Configuration.AutoManageRotationPluginState</c>、呼叫
         /// <c>Plugin.Configuration.Save()</c>(整份序列化加寫檔),並把 <c>Wrath_IPCSubscriber</c>
-        /// 的租約欄位清成 null —— 這三樣 framework 執行緒都在讀,所以排進 <see cref="PendingWork"/>,
+        /// 的租約欄位清成 null —— 這三樣 framework 執行緒都在讀,所以排進 <see cref="FrameworkWorkQueue"/>,
         /// 最多晚一格生效。晚一格不會多送出旋轉指令:租約在對方那端已經作廢,
         /// 這一格就算再打一次 IPC 也只會被拒絕。
         /// </remarks>
