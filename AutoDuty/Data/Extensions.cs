@@ -130,9 +130,14 @@ namespace AutoDuty.Data
             var splitString = vector3String.Replace(" ", string.Empty, strcomp).Replace("<", string.Empty, strcomp).Replace(">", string.Empty, strcomp).Split(",");
 
             if (splitString.Length < 3) return false;
-            
-            vector3 = new(float.Parse(splitString[0], cul), float.Parse(splitString[1], cul), float.Parse(splitString[2], cul));
 
+            // 任一段不是數字就回 false(out 為零向量),不擲例外。
+            if (!float.TryParse(splitString[0], NumberStyles.Float, cul, out var x)
+                || !float.TryParse(splitString[1], NumberStyles.Float, cul, out var y)
+                || !float.TryParse(splitString[2], NumberStyles.Float, cul, out var z))
+                return false;
+
+            vector3 = new(x, y, z);
             return true;
         }
 
