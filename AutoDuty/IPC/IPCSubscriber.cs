@@ -53,9 +53,6 @@ namespace AutoDuty.IPC
         internal static bool IsBusy() => Pkg.IsBusy();
         internal static bool AreAnyRetainersAvailableForCurrentChara() => Pkg.AreAnyRetainersAvailableForCurrentChara();
         internal static void AbortAllTasks() => Pkg.AbortAllTasks();
-        internal static void DisableAllFunctions() => Pkg.DisableAllFunctions();
-        internal static void EnableMultiMode() => Pkg.EnableMultiMode();
-        internal static int GetInventoryFreeSlotCount() => Pkg.GetInventoryFreeSlotCount();
         internal static void EnqueueGCInitiation() => Pkg.EnqueueInitiation();
 
         /// <summary>
@@ -82,13 +79,7 @@ namespace AutoDuty.IPC
             }
         }
 
-        /// <summary>側車：套件沒有這個端點。</summary>
-        internal static Dictionary<ulong, HashSet<string>> GetEnabledRetainers() => AutoRetainerExtraIPC.GetEnabledRetainers();
-
-        /// <summary>側車：沒有呼叫點，維持自己的宣告（與套件、提供端同為 <c>Action&lt;Action&gt;</c>）。</summary>
-        internal static void EnqueueHET(Action onFailure) => AutoRetainerExtraIPC.EnqueueHET(onFailure);
-
-        internal static void Dispose() => AutoRetainerExtraIPC.Dispose();
+        internal static void Dispose() { }
     }
 
     /// <summary>套件沒有 AutoBot 的訂閱類，整類不遷。</summary>
@@ -101,20 +92,6 @@ namespace AutoDuty.IPC
         [EzIPC] internal static readonly Action Start;
         [EzIPC] internal static readonly Action Stop;
         [EzIPC] internal static readonly Func<bool> IsRunning;
-
-        internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
-    }
-
-    /// <summary>套件沒有 Marketbuddy 的訂閱類，整類不遷。</summary>
-    internal static class Marketbuddy_IPCSubscriber
-    {
-        private static EzIPCDisposalToken[] _disposalTokens = EzIPC.Init(typeof(Marketbuddy_IPCSubscriber), "Marketbuddy", SafeWrapper.IPCException);
-
-        internal static bool IsEnabled => IPCSubscriber_Common.IsReady("Marketbuddy");
-
-        [EzIPC] internal static readonly Func<string, bool> IsLocked;
-        [EzIPC] internal static readonly Func<string, bool> Lock;
-        [EzIPC] internal static readonly Func<string, bool> Unlock;
 
         internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
     }
@@ -1448,7 +1425,6 @@ namespace AutoDuty.IPC
         {
             SafeDispose(nameof(AutoRetainer_IPCSubscriber), AutoRetainer_IPCSubscriber.Dispose);
             SafeDispose(nameof(AM_IPCSubscriber), AM_IPCSubscriber.Dispose);
-            SafeDispose(nameof(Marketbuddy_IPCSubscriber), Marketbuddy_IPCSubscriber.Dispose);
             SafeDispose(nameof(DiscardHelper_IPCSubscriber), DiscardHelper_IPCSubscriber.Dispose);
             SafeDispose(nameof(BossModReborn_IPCSubscriber), BossModReborn_IPCSubscriber.Dispose);
             SafeDispose(nameof(BossMod_IPCSubscriber), BossMod_IPCSubscriber.Dispose);

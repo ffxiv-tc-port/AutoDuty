@@ -30,26 +30,6 @@ namespace AutoDuty.IPC
     //      **離線證明不了**。故維持我方現行宣告，不賭。
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>AutoRetainer 側車。prefix 與門面類相同：<c>AutoRetainer.PluginState</c>。</summary>
-    internal static class AutoRetainerExtraIPC
-    {
-        private static EzIPCDisposalToken[] _disposalTokens =
-            EzIPC.Init(typeof(AutoRetainerExtraIPC), "AutoRetainer.PluginState", SafeWrapper.IPCException);
-
-        /// <summary>(甲) 套件沒有這個端點。目前全 repo 沒有呼叫點，保留以免回退既有介面。</summary>
-        [EzIPC] internal static readonly Func<Dictionary<ulong, HashSet<string>>> GetEnabledRetainers;
-
-        /// <summary>
-        /// (原 (丙)) 套件現在與我方同為 <c>Action&lt;Action&gt;</c>，與提供端 AutoRetainer 的
-        /// <c>IPC_PluginState.EnqueueHET(Action onFailure)</c> 相符。參數個數不符時
-        /// Dalamud 會丟例外，而這個 class 帶的是 SafeWrapper.IPCException，例外會被吞掉、
-        /// 變成完全靜默的空操作。目前全 repo 沒有呼叫點。
-        /// </summary>
-        [EzIPC] internal static readonly Action<Action> EnqueueHET;
-
-        internal static void Dispose() => IPCSubscriber_Common.DisposeAll(_disposalTokens);
-    }
-
     /// <summary>vnavmesh 側車。prefix 與門面類相同：<c>vnavmesh</c>。</summary>
     internal static class VNavmeshExtraIPC
     {

@@ -64,7 +64,6 @@ public sealed class AutoDuty : IDalamudPlugin
 {
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     internal List<PathAction> Actions { get; set; } = [];
-    internal List<uint> Interactables { get; set; } = [];
     internal int CurrentLoop = 0;
     internal KeyValuePair<ushort, Job?> CurrentPlayerItemLevelandClassJob = new(0, null);
     private Content? currentTerritoryContent = null;
@@ -328,8 +327,6 @@ public sealed class AutoDuty : IDalamudPlugin
     private readonly OverrideAFK _overrideAFK;
     private readonly IPCProvider _ipcProvider;
     private IGameObject? treasureCofferGameObject = null;
-    //private readonly TinyMessageBus _messageBusSend = new("AutoDutyBroadcaster");
-    //private readonly TinyMessageBus _messageBusReceive = new("AutoDutyBroadcaster");
     private         bool           _recentlyWatchedCutscene = false;
     private         bool           _lootTreasure;
     private         SettingsActive _settingsActive         = SettingsActive.None;
@@ -846,21 +843,6 @@ public sealed class AutoDuty : IDalamudPlugin
         }
     }
 
-    private void MessageReceived(string messageJson)
-    {
-        if (!Player.Available || messageJson.IsNullOrEmpty())
-            return;
-
-        var message = System.Text.Json.JsonSerializer.Deserialize<Message>(messageJson, BuildTab.jsonSerializerOptions);
-
-        if (message == null) return;
-
-        if (message.Sender == Player.Name || message.Action.Count == 0 || Svc.Party.All(x => x.Name.ExtractText() != message.Sender))
-            return;
-
-        message.Action.Each(_actions.InvokeAction);
-    }
-
     internal void ExitDuty() => _actions.ExitDuty(new());
 
     internal void LoadPath()
@@ -1205,18 +1187,9 @@ public sealed class AutoDuty : IDalamudPlugin
             if (Configuration.EnableAutoRetainer && AutoRetainer_IPCSubscriber.IsEnabled && AutoRetainer_IPCSubscriber.AreAnyRetainersAvailableForCurrentChara())
             {
                 TaskManager.Enqueue(() => Svc.Log.Debug($"AutoRetainer BetweenLoop Actions"));
-                if (Configuration.EnableAutoRetainer)
-                {
-                    TaskManager.Enqueue(() => AutoRetainerHelper.Invoke(), "Loop-AutoRetainer");
-                    TaskManager.DelayNext("Loop-Delay50", 50);
-                    TaskManager.Enqueue(() => AutoRetainerHelper.State != ActionState.Running, int.MaxValue, "Loop-WaitAutoRetainerComplete");
-                }
-                else
-                {
-                    TaskManager.Enqueue(() => AutoRetainer_IPCSubscriber.IsBusy(), 15000, "Loop-AutoRetainerIntegrationDisabledWait15sRetainerSense");
-                    TaskManager.Enqueue(() => !AutoRetainer_IPCSubscriber.IsBusy(), int.MaxValue, "Loop-AutoRetainerIntegrationDisabledWaitARNotBusy");
-                    TaskManager.Enqueue(() => AutoRetainerHelper.ForceStop(), "Loop-AutoRetainerStop");
-                }
+                TaskManager.Enqueue(() => AutoRetainerHelper.Invoke(), "Loop-AutoRetainer");
+                TaskManager.DelayNext("Loop-Delay50", 50);
+                TaskManager.Enqueue(() => AutoRetainerHelper.State != ActionState.Running, int.MaxValue, "Loop-WaitAutoRetainerComplete");
             }
 
             AutoConsume();
@@ -1593,22 +1566,6 @@ public sealed class AutoDuty : IDalamudPlugin
     {
         if (!PlayerHelper.IsReady || Indexer == -1 || Indexer >= Actions.Count)
             return;
-
-        if (Configuration.DutyModeEnum == DutyMode.Regular && Svc.Party.PartyId > 0)
-        {
-            Message message = new()
-            {
-                Sender = Player.Name,
-                Action =
-                [
-                    new PathAction(){ Name = "Follow", Arguments = [$"{Player.Name}"] }
-                ]
-            };
-
-            var messageJson = System.Text.Json.JsonSerializer.Serialize(message, BuildTab.jsonSerializerOptions);
-
-            //_messageBusSend.PublishAsync(Encoding.UTF8.GetBytes(messageJson));
-        }
 
         if (Indexer == -1 || Indexer >= Actions.Count)
             return;
@@ -2362,26 +2319,6 @@ public sealed class AutoDuty : IDalamudPlugin
 
         if (!TaskManager.IsBusy && !PathAction.Name.IsNullOrEmpty())
         {
-            if (PathAction.Name.Equals("Boss"))
-            {
-
-                if (Configuration.DutyModeEnum == DutyMode.Regular && Svc.Party.PartyId > 0)
-                {
-                    Message message = new()
-                    {
-                        Sender = Player.Name,
-                        Action =
-                        [
-                            new PathAction(){ Name = "Follow", Arguments = [$"null"] },
-                            new PathAction(){ Name = "SetBMSettings", Arguments = [$"true"] }
-                        ]
-                    };
-
-                    var messageJson = System.Text.Json.JsonSerializer.Serialize(message, BuildTab.jsonSerializerOptions);
-
-                    //_messageBusSend.PublishAsync(Encoding.UTF8.GetBytes(messageJson));
-                }
-            }
             _actions.InvokeAction(PathAction);
             PathAction = new();
         }
@@ -2417,31 +2354,12 @@ public sealed class AutoDuty : IDalamudPlugin
             AutoRetainerHelper.Instance.CloseAddons();
     }
 
-    private void InteractablesCheck()
-    {
-        if (Interactables.Count == 0) return;
-
-        var list = Svc.Objects.Where(x => Interactables.Contains(x.BaseId));
-
-        if (!list.Any()) return;
-
-        var index = this.Actions.Select((Value, Index) => (Value, Index)).First(x => this.Interactables.Contains(x.Value.Arguments.Any(y => y.Any(z => z == ' ')) ? uint.Parse(x.Value.Arguments[0].Split(" ")[0]) : uint.Parse(x.Value.Arguments[0]))).Index;
-
-        if (index > Indexer)
-        {
-            Indexer = index;
-            Stage = Stage.Reading_Path;
-        }
-    }
-
     private void PreStageChecks()
     {
         if (Stage == Stage.Stopped)
             return;
 
         CheckRetainerWindow();
-
-        InteractablesCheck();
 
         if (EzThrottler.Throttle("OverrideAFK") && States.HasFlag(PluginState.Navigating) && PlayerHelper.IsValid)
             _overrideAFK.ResetTimers();

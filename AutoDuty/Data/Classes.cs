@@ -19,12 +19,6 @@ namespace AutoDuty.Data
             public LogEventLevel LogEventLevel { get; set; }
         }
 
-        public class Message
-        {
-            public string Sender { get; set; } = string.Empty;
-            public List<PathAction> Action { get; set; } = [];
-        }
-
         public class Content
         {
             public uint              RowId                  { get; set; }
