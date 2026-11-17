@@ -8,7 +8,7 @@
 # 在這支 workflow 之前，這件事完全靠人記得。
 #
 # 上游 erdelf 有等價的 .github/workflows/md5filecreation.yml，但它綁在
-# pull_request_target closed（上游走 PR 流程），而本 fork 是直接推 tc-7.20，
+# pull_request_target closed（上游走 PR 流程），而本 fork 是直接推 tc-7.30，
 # 所以改成 push 觸發；雜湊計算也換成讀 git blob（理由見 generate_md5s.py 的檔頭）。
 #
 # 🔴 不會無限迴圈，兩道各自獨立的保險：
@@ -19,14 +19,14 @@ name: 重算路徑檔派送清單
 on:
   push:
     branches:
-      - 'tc-7.20'
+      - 'tc-7.30'
     paths:
       - 'AutoDuty/Paths/**'
   workflow_dispatch:
 
 # 排隊不取消：被取消的那一輪等於「這批路徑改動沒進清單」，而且是靜默的。
 concurrency:
-  group: md5s-tc-7.20
+  group: md5s-tc-7.30
   cancel-in-progress: false
 
 permissions:
@@ -40,7 +40,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: tc-7.20
+          ref: tc-7.30
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -114,13 +114,13 @@ jobs:
 
           pushed=0
           for attempt in 1 2 3; do
-            if git push origin HEAD:tc-7.20; then
+            if git push origin HEAD:tc-7.30; then
               echo "第 $attempt 次嘗試推送成功"
               pushed=1
               break
             fi
             echo "推送被拒（遠端有新 commit），rebase 後重試"
-            git pull --rebase origin tc-7.20
+            git pull --rebase origin tc-7.30
           done
           if [ "$pushed" != 1 ]; then
             echo "::error title=push 連續三次失敗::清單沒有更新"

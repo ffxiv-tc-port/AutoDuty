@@ -29,10 +29,10 @@ namespace AutoDuty.Updater
         /// 也就是說 <b>這個常數決定了使用者實際跑的是誰的路徑資料</b>。
         /// </para>
         /// <para>
-        /// 指向本 fork 的 tc-7.20:別的來源列的是國際服的路徑檔。
+        /// 指向本 fork 的 tc-7.30:別的來源列的是國際服的路徑檔。
         /// </para>
         /// </summary>
-        internal const string PathRepoBaseUrl = "https://raw.githubusercontent.com/ffxiv-tc-port/AutoDuty/refs/heads/tc-7.20/";
+        internal const string PathRepoBaseUrl = "https://raw.githubusercontent.com/ffxiv-tc-port/AutoDuty/refs/heads/tc-7.30/";
 
         // OAuth 裝置流程打的是 github.com/login/*,不是本 org 的 raw/api,
         // 認證用戶端對它沒有作用 ⇒ 維持原本的一般用戶端。
