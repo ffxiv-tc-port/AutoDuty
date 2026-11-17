@@ -1424,7 +1424,9 @@ namespace AutoDuty.Managers
                 case 1044:
                     switch (action.Arguments[0])
                     {
+                        // 先退訂再訂閱:帶離開條件的步驟會重做,重複訂閱之後 "2" 只退得掉一份。
                         case "1":
+                            Plugin.Framework_Update_InDuty -= this.PraeFrameworkUpdateMount;
                             Plugin.Framework_Update_InDuty += this.PraeFrameworkUpdateMount;
                             Interactable(new PathAction { Arguments = ["2012819"] });
                             break;
@@ -1432,6 +1434,7 @@ namespace AutoDuty.Managers
                             Plugin.Framework_Update_InDuty -= this.PraeFrameworkUpdateMount;
                             break;
                         case "3":
+                            Plugin.Framework_Update_InDuty -= this.PraeFrameworkUpdateGaius;
                             Plugin.Framework_Update_InDuty += this.PraeFrameworkUpdateGaius;
                             break;
                     }

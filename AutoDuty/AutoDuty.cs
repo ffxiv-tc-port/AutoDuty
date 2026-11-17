@@ -1615,6 +1615,15 @@ public sealed class AutoDuty : IDalamudPlugin
 
         Action = $"{Plugin.Actions[Indexer].ToCustomString()}";
 
+        // 持續條件刻意只在 Moving 判:上游在 Action 階段讀的是 ActionInvoke 已清空的 PathAction(永不觸發),
+        // 路徑檔是照這個實際行為調的;在 Action 判,王戰中途走出半徑就可能把 Boss 步驟中止。
+        if (PathAction.ConditionsWhile.Count != 0 && EzThrottler.Throttle("ConditionsWhile" + Indexer, 100) &&
+            !StepConditionsHold(PathAction.ConditionsWhile, valueOnError: false))
+        {
+            AbortStepForConditionsWhile();
+            return;
+        }
+
         unsafe
         {
             if (PlayerHelper.IsMoving && EzThrottler.Throttle("AutoSprint", 300) && ActionManager.Instance()->GetActionStatus(ActionType.GeneralAction, 4) == 0 && ActionManager.Instance()->QueuedActionId != 4 && !PlayerHelper.IsCasting)
@@ -1714,12 +1723,14 @@ public sealed class AutoDuty : IDalamudPlugin
             return;
         }
 
-        if ((!VNavmesh_IPCSubscriber.SimpleMove_PathfindInProgress() && VNavmesh_IPCSubscriber.Path_NumWaypoints() == 0) || (!PathAction.Name.IsNullOrEmpty() && PathAction.Position != Vector3.Zero && ObjectHelper.GetDistanceToPlayer(PathAction.Position) <= (PathAction.Name.EqualsIgnoreCase("Interactable") ? 2f : 0.25f)))
+        if (((!VNavmesh_IPCSubscriber.SimpleMove_PathfindInProgress() && VNavmesh_IPCSubscriber.Path_NumWaypoints() == 0) || (!PathAction.Name.IsNullOrEmpty() && PathAction.Position != Vector3.Zero && ObjectHelper.GetDistanceToPlayer(PathAction.Position) <= (PathAction.Name.EqualsIgnoreCase("Interactable") ? 2f : 0.25f))) &&
+            UntilThrottlePasses())
         {
             if (PathAction.Name.IsNullOrEmpty() || PathAction.Name.Equals("MoveTo") || PathAction.Name.Equals("TreasureCoffer") || PathAction.Name.Equals("Revival"))
             {
                 Stage = Stage.Reading_Path;
-                Indexer++;
+                if (CurrentStepUntilFulfilled())
+                    Indexer++;
             }
             else
             {
@@ -1750,13 +1761,80 @@ public sealed class AutoDuty : IDalamudPlugin
         if (this.Configuration is { AutoManageRotationPluginState: true, UsingAlternativeRotationPlugin: false } && !Svc.Condition[ConditionFlag.OccupiedInCutSceneEvent])
             SetRotationPluginSettings(true);
         
-        if (!TaskManager.IsBusy)
+        if (!TaskManager.IsBusy && UntilThrottlePasses())
         {
             BossMod_IPCSubscriber.DisableRealAIPreset();
             Stage = Stage.Reading_Path;
-            Indexer++;
+            if (CurrentStepUntilFulfilled())
+                Indexer++;
             return;
         }
+    }
+
+    private int _untilHoldIndex = -1;
+
+    // 沒有離開條件的步驟不節流,推進時機與加入這兩種條件之前完全相同。
+    private bool UntilThrottlePasses() =>
+        Indexer < 0 || Indexer >= Actions.Count || Actions[Indexer].ConditionsUntil.Count == 0 ||
+        EzThrottler.Throttle("AdvanceStep" + Indexer, 100);
+
+    /// <summary>目前這一步的離開條件是否全部成立(沒有離開條件＝成立)。不成立時呼叫端不推進 Indexer,這一步會從頭重做。</summary>
+    /// <remarks>讀 <c>Actions[Indexer]</c> 而不是 <see cref="PathAction"/>:Action 階段的 PathAction 已被 ActionInvoke 清空。</remarks>
+    private bool CurrentStepUntilFulfilled()
+    {
+        if (Indexer < 0 || Indexer >= Actions.Count)
+            return true;
+
+        PathAction step = Actions[Indexer];
+        if (step.ConditionsUntil.Count == 0 || StepConditionsHold(step.ConditionsUntil, valueOnError: true))
+        {
+            if (_untilHoldIndex == Indexer)
+                Svc.Log.Information($"[步驟條件] 第 {Indexer} 步「{step.Name}」的離開條件已成立,往下一步。");
+            _untilHoldIndex = -1;
+            return true;
+        }
+
+        if (_untilHoldIndex != Indexer)
+        {
+            _untilHoldIndex = Indexer;
+            Svc.Log.Information($"[步驟條件] 第 {Indexer} 步「{step.Name}」的離開條件[{string.Join(" & ", step.ConditionsUntil.Select(c => c.Describe()))}]還沒成立,重做這一步。");
+        }
+        return false;
+    }
+
+    /// <summary>全部條件都成立才回 true。條件擲例外時回 <paramref name="valueOnError"/>,讓呼叫端選「往下走」的那一邊,不卡在原地。</summary>
+    private static bool StepConditionsHold(List<PathActionCondition> conditions, bool valueOnError)
+    {
+        foreach (PathActionCondition condition in conditions)
+        {
+            try
+            {
+                if (!condition.IsFulfilled())
+                    return false;
+            }
+            catch (Exception ex)
+            {
+                Svc.Log.Warning($"Path condition {condition.ParseKey} threw, treating as {(valueOnError ? "fulfilled" : "not fulfilled")}: {ex}");
+                return valueOnError;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>持續條件不成立:停掉這一步的導航與排隊中的任務,直接進下一步。</summary>
+    private void AbortStepForConditionsWhile()
+    {
+        int        abortedIndex = Indexer;
+        PathAction step         = Actions[abortedIndex];
+
+        StopNavigationIfRunning();
+        TaskManager.Abort();
+        StuckEscalationHelper.Reset();
+
+        Indexer = abortedIndex + 1;
+        Stage   = Stage.Reading_Path;
+
+        Svc.Log.Information($"[步驟條件] 第 {abortedIndex} 步「{step.Name}」的持續條件[{string.Join(" & ", step.ConditionsWhile.Select(c => c.Describe()))}]不再成立,中止這一步、往下一步。");
     }
 
     /// <summary>

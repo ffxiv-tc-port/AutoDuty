@@ -146,6 +146,19 @@ namespace AutoDuty.Data
             [JsonPropertyName("conditions")]
             public List<PathActionCondition> Conditions { get; set; } = [];
 
+            /// <summary>
+            /// 移動途中的持續條件。空集合＝不檢查。任何一個不成立就中止這一步、直接往下一步。
+            /// 少了這個欄位,上游路徑檔裡的條件會被 System.Text.Json 靜默丟掉。
+            /// </summary>
+            [JsonPropertyName("conditionsWhile")]
+            public List<PathActionCondition> ConditionsWhile { get; set; } = [];
+
+            /// <summary>
+            /// 離開條件。空集合＝照舊做完就往下。不成立時不推進,從頭重做這一步,直到全部成立。
+            /// </summary>
+            [JsonPropertyName("conditionsUntil")]
+            public List<PathActionCondition> ConditionsUntil { get; set; } = [];
+
             [JsonPropertyName("note")]
             public string Note { get; set; } = string.Empty;
 
