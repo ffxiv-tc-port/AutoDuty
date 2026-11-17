@@ -4,11 +4,11 @@
 [submodule "ECommons.IPC"]
 	path = ECommons.IPC
 	url = https://github.com/ffxiv-tc-port/ECommons.IPC.git
-	branch = tc-api13
+	branch = tc-7.30
 [submodule "WrathCombo.API"]
 	path = WrathCombo.API
 	url = https://github.com/ffxiv-tc-port/WrathCombo.API.git
-	branch = tc-api13
+	branch = tc-7.30
 [submodule "ffxiv_pictomancy"]
 	path = ffxiv_pictomancy
 	url = https://github.com/ffxiv-tc-port/Pictomancy.git
