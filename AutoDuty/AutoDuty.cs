@@ -2661,17 +2661,16 @@ public sealed class AutoDuty : IDalamudPlugin
             Svc.Chat.Print($"已跳過目前步驟：{step.Name}", "AutoDuty");
     }
 
-    /// <summary>導航真的在跑時才叫 Path_Stop(),vnavmesh 沒載入就什麼都不做。</summary>
+    /// <summary>
+    /// 只停 AutoDuty 自己送的導航(中止／跳過「這一步」不是使用者要全部停),vnavmesh 沒載入就什麼都不做。
+    /// 舊版 vnavmesh 沒有帶擁有者的端點時退回原本的「有在走或在算才取消全部尋路並停路徑」。
+    /// </summary>
     private static void StopNavigationIfRunning()
     {
         if (!VNavmesh_IPCSubscriber.IsEnabled)
             return;
 
-        if (VNavmesh_IPCSubscriber.Path_IsRunning() || VNavmesh_IPCSubscriber.SimpleMove_PathfindInProgress())
-        {
-            VNavmesh_IPCSubscriber.Nav_PathfindCancelAll();
-            VNavmesh_IPCSubscriber.Path_Stop();
-        }
+        VNavmesh_IPCSubscriber.StopOwnNavigation();
     }
 
     /// <summary>路徑改過的設定寫回原值（只改記憶體）；回 true＝有改回、呼叫端要存檔。不在框架執行緒上時排到框架執行緒自己存。</summary>

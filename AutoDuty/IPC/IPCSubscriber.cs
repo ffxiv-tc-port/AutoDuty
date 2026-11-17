@@ -1,4 +1,5 @@
 ﻿using Dalamud.Plugin;
+using Dalamud.Plugin.Ipc.Exceptions;
 using ECommons.DalamudServices;
 using ECommons.EzIpcManager;
 using ECommons.IPC.Subscribers;
@@ -714,6 +715,23 @@ namespace AutoDuty.IPC
     {
         private static readonly VnavmeshIPC Pkg = new(SafeWrapper.IPCException);
 
+        // 送路線與 StopOwnNavigation 都經這裡;側車欄位綁不上(null)當成端點不存在,一樣退回舊端點。
+        private static readonly VnavOwnedRouting Owned = new(
+            pathfindAndMoveToOwned:  (dest, fly, owner) => (VNavmeshExtraIPC.SimpleMove_PathfindAndMoveToOwned ?? throw new IpcNotReadyError("vnavmesh.SimpleMove.PathfindAndMoveToOwned"))(dest, fly, owner),
+            pathfindAndMoveToLegacy: (dest, fly) => Pkg.PathfindAndMoveTo(dest, fly),
+            moveToOwned:             (waypoints, fly, owner) => (VNavmeshExtraIPC.Path_MoveToOwned ?? throw new IpcNotReadyError("vnavmesh.Path.MoveToOwned"))(waypoints, fly, owner),
+            moveToLegacy:            (waypoints, fly) => Pkg.MoveTo(waypoints, fly),
+            stopIfOwner:             owner => (VNavmeshExtraIPC.Path_StopIfOwner ?? throw new IpcNotReadyError("vnavmesh.Path.StopIfOwner"))(owner),
+            legacyIsRunning:         () => Pkg.IsRunning() || Pkg.PathfindInProgress(),
+            legacyStopAll:           () =>
+            {
+                VNavmeshExtraIPC.Nav_PathfindCancelAll();
+                Pkg.Stop();
+            },
+            providerLoaded:          () => IsEnabled,
+            logInfo:                 message => Svc.Log.Information(message),
+            nowMs:                   () => Environment.TickCount64);
+
         internal static bool IsEnabled => IPCSubscriber_Common.IsReady("vnavmesh");
 
         /// <summary>
@@ -776,7 +794,8 @@ namespace AutoDuty.IPC
         // EzIPC 訂閱端要有 TryGetDelegateSignature 才綁得上;綁不上時欄位停在 null(靜態建構式會檢查)。
         // 端點名是 Nav.Pathfind / Path.MoveTo / SimpleMove.PathfindAndMoveTo,SafeWrapper 同為 IPCException。
         internal static Task<List<Vector3>> Nav_Pathfind(Vector3 from, Vector3 to, bool fly) => Pkg.Pathfind(from, to, fly);
-        internal static void Path_MoveTo(List<Vector3> waypoints, bool fly) => Pkg.MoveTo(waypoints, fly);
+        /// <summary>送路線：帶擁有者版優先，舊版 vnavmesh 退回 Path.MoveTo（見 <see cref="VnavOwnedRouting"/>）。</summary>
+        internal static void Path_MoveTo(List<Vector3> waypoints, bool fly) => Owned.MoveTo(waypoints, fly);
         /// <summary>
         /// 算路徑並開始移動。<b>vnavmesh 那一側自己擲例外時回 <see langword="false"/></b>。
         /// </summary>
@@ -804,7 +823,7 @@ namespace AutoDuty.IPC
         {
             try
             {
-                return Pkg.PathfindAndMoveTo(position, canFly);
+                return Owned.PathfindAndMoveTo(position, canFly);
             }
             catch (System.Reflection.TargetInvocationException ex)
             {
@@ -812,6 +831,12 @@ namespace AutoDuty.IPC
                 return false;
             }
         }
+
+        /// <summary>
+        /// 只停 AutoDuty 自己送的路線(含排隊／算路中的那一筆),別的插件的不碰;
+        /// 舊版 vnavmesh 退回「有在走或在算才取消全部尋路並停路徑」。
+        /// </summary>
+        internal static VnavOwnedRouting.StopKind StopOwnNavigation() => Owned.StopOwn();
 
         // ── 以下走側車，理由見 IPCSubscriberSidecar.cs ──
         internal static Task<List<Vector3>> Nav_PathfindCancelable(Vector3 from, Vector3 to, bool fly, CancellationToken token) => VNavmeshExtraIPC.Nav_PathfindCancelable(from, to, fly, token);

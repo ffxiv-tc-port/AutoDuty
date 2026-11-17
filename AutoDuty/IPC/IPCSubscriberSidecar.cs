@@ -105,6 +105,16 @@ namespace AutoDuty.IPC
         /// 回 <see langword="false"/>＝這把租約已經不在了,或傳進去的值不是有限數。
         /// </summary>
         [EzIPC("Path.SetLeasedTolerance", true)] internal static readonly Func<Guid, float, bool> Path_SetLeasedTolerance;
+        // -- 帶擁有者的移動／停止(vnavmesh a5220d3 起)。(甲) 套件沒有;取捨在 VnavOwnedRouting.cs。 ----------
+        // 🔴 刻意 SafeWrapper.None:舊版 vnavmesh 沒有這幾支時要拿到 IpcNotReadyError 才知道該退回舊端點,
+        //    IPCException 包裝會把它吞成 default(false),與「提供端回 false」分不出來。
+        /// <summary>(甲) 同 SimpleMove.PathfindAndMoveTo,多一個擁有者;Path.StopIfOwner 只停同一擁有者送的。</summary>
+        [EzIPC("SimpleMove.PathfindAndMoveToOwned", true, wrapper: SafeWrapper.None)] internal static readonly Func<Vector3, bool, string, bool> SimpleMove_PathfindAndMoveToOwned;
+        /// <summary>(甲) 同 Path.MoveTo,多一個擁有者。</summary>
+        [EzIPC("Path.MoveToOwned", true, wrapper: SafeWrapper.None)] internal static readonly Action<List<Vector3>, bool, string> Path_MoveToOwned;
+        /// <summary>(甲) 只停這個擁有者的路徑與它排隊／算路中的請求;回 true＝真的停掉或撤掉了東西。</summary>
+        [EzIPC("Path.StopIfOwner", true, wrapper: SafeWrapper.None)] internal static readonly Func<string, bool> Path_StopIfOwner;
+
         /// <summary>(甲) 套件沒有這個端點。</summary>
         [EzIPC("Window.IsOpen", true)] internal static readonly Func<bool> Window_IsOpen;
         /// <summary>(甲) 套件沒有這個端點。</summary>
