@@ -2595,7 +2595,9 @@ public sealed class AutoDuty : IDalamudPlugin
 
         if (Svc.Framework.IsFrameworkUnloading)
         {
-            Svc.Log.Warning("[路徑改設定] 遊戲正在關閉且不在框架執行緒上，略過還原路徑改過的設定");
+            int pending = PathConfigJournal.PendingCount;
+            if (pending > 0)
+                Svc.Log.Warning($"[路徑改設定] 遊戲正在關閉且不在框架執行緒上，略過還原路徑改過的 {pending} 項設定");
             return false;
         }
 

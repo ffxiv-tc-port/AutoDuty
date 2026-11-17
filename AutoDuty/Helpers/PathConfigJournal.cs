@@ -62,6 +62,9 @@ internal static class PathConfigJournal
         Svc.Log.Information($"[路徑改設定] 路徑要改 {name}（原值 {original}），停止時還原");
     }
 
+    /// <summary>待還原的欄位數。可在框架執行緒外讀（只讀一個 int，不走訪）；只用來決定要不要警告。</summary>
+    internal static int PendingCount => Originals.Count;
+
     /// <summary>把本次記下的欄位寫回原值（只改記憶體）；回傳實際改回的欄位數，&gt;0 時呼叫端要存檔。</summary>
     internal static int RestoreInMemory()
     {
