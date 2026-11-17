@@ -131,6 +131,8 @@ namespace AutoDuty.Managers
 
             public Match ColoredNameRegex { get; private set; }
 
+            private readonly HashSet<string> loggedMissingSelections = [];
+
             public DutyPath? SelectPath(out int pathIndex, Job? job = null)
             {
                 // Paths 可能是空的:RemoveInvalidPaths() 會把解析失敗的 path 從容器裡拿掉,
@@ -164,11 +166,15 @@ namespace AutoDuty.Managers
                             {
                                 int pInx = this.Paths.IndexOf(dp => dp.FileName.Equals(pathName));
 
-                                if (pInx < this.Paths.Count)
+                                if (pInx >= 0 && pInx < this.Paths.Count)
                                 {
                                     pathIndex = pInx;
                                     return this.Paths[pathIndex];
                                 }
+
+                                // 存的選擇指向已刪除／改名的路線檔:略過它,照沒有選擇時的規則挑。
+                                if (this.loggedMissingSelections.Add(pathName ?? string.Empty))
+                                    Svc.Log.Information($"AutoDuty: saved path selection '{pathName}' for territory {this.Content.TerritoryType} no longer exists; falling back to the default path.");
                             }
                         }
                     }

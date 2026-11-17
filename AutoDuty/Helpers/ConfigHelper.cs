@@ -152,7 +152,7 @@ namespace AutoDuty.Helpers
                                 if (entry != null)
                                 {
                                     int index = valueList.IndexOf(entry);
-                                    if (i >= 0)
+                                    if (index >= 0)
                                         valueList.RemoveAt(index);
                                 }
                             }
