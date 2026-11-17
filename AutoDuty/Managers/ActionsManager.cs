@@ -1306,11 +1306,18 @@ namespace AutoDuty.Managers
             if (action != null)
             {
                 string[] v = action.Arguments[0].Split(", ");
-                if (v.Length == 3)
+                // 樣式同 float.Parse(string, provider) 的預設,合法輸入的解析結果不變。
+                const System.Globalization.NumberStyles styles = System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands;
+                var cul = System.Globalization.CultureInfo.InvariantCulture;
+                if (v.Length != 3
+                    || !float.TryParse(v[0], styles, cul, out var x)
+                    || !float.TryParse(v[1], styles, cul, out var y)
+                    || !float.TryParse(v[2], styles, cul, out var z))
                 {
-                    Vector3 facingPos = new(float.Parse(v[0], System.Globalization.CultureInfo.InvariantCulture), float.Parse(v[1], System.Globalization.CultureInfo.InvariantCulture), float.Parse(v[2], System.Globalization.CultureInfo.InvariantCulture));
-                    Plugin.OverrideCamera.Face(facingPos);
+                    Svc.Log.Warning($"CameraFacing: 參數格式不對（應為 x, y, z），收到「{action.Arguments[0]}」，這一步不轉向。");
+                    return;
                 }
+                Plugin.OverrideCamera.Face(new Vector3(x, y, z));
             }
         }
 

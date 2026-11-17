@@ -3027,12 +3027,27 @@ public sealed class AutoDuty : IDalamudPlugin
                 ImGui.SetClipboardText($"{obj?.BaseId}");
                 break;
             case "moveto":
-                var argss = args.Replace("moveto ", "").Split("|");
-                var vs = argss[1].Split(", ");
-                var v3 = new Vector3(float.Parse(vs[0]), float.Parse(vs[1]), float.Parse(vs[2]));
+                {
+                    var argss = args.Replace("moveto ", "").Split("|");
+                    var cul = System.Globalization.CultureInfo.InvariantCulture;
+                    const System.Globalization.NumberStyles fs = System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands;
+                    var vs = argss.Length > 1 ? argss[1].Split(", ") : [];
+                    float tolerance = 0.25f, lastPointTolerance = 0.25f;
+                    if (vs.Length < 3
+                        || !uint.TryParse(argss[0], System.Globalization.NumberStyles.Integer, cul, out var territoryId)
+                        || !float.TryParse(vs[0], fs, cul, out var mx)
+                        || !float.TryParse(vs[1], fs, cul, out var my)
+                        || !float.TryParse(vs[2], fs, cul, out var mz)
+                        || (argss.Length > 2 && !float.TryParse(argss[2], fs, cul, out tolerance))
+                        || (argss.Length > 3 && !float.TryParse(argss[3], fs, cul, out lastPointTolerance)))
+                    {
+                        Svc.Chat.Print("moveto 參數格式不對，應為：/ad moveto 區域ID|x, y, z[|容許距離[|終點容許距離]]（小數點用「.」）", "AutoDuty");
+                        break;
+                    }
 
-                GotoHelper.Invoke(Convert.ToUInt32(argss[0]), [v3], argss.Length > 2 ? float.Parse(argss[2]) : 0.25f, argss.Length > 3 ? float.Parse(argss[3]) : 0.25f);
-                break;
+                    GotoHelper.Invoke(territoryId, [new Vector3(mx, my, mz)], tolerance, lastPointTolerance);
+                    break;
+                }
             case "exitduty":
                 _actions.ExitDuty(new());
                 break;
