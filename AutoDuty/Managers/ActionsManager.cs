@@ -739,10 +739,11 @@ namespace AutoDuty.Managers
                     _taskManager.Enqueue(() => IsReady, int.MaxValue, "WaitFor-IsReady");
                     break;
                 case "DistanceTo":
-                    if (waitForWhats.Length < 3)
+                    if (waitForWhats.Length < 3 || !waitForWhats[1].TryGetVector3(out var position) || !float.TryParse(waitForWhats[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var distance))
+                    {
+                        Svc.Log.Warning($"WaitFor DistanceTo: 參數格式不對（應為 DistanceTo;x,y,z;距離），收到「{action.Arguments[0]}」，這一步不等待。");
                         return;
-                    if (waitForWhats[1].TryGetVector3(out var position)) return;
-                    if (float.TryParse(waitForWhats[2], out var distance)) return;
+                    }
 
                     _taskManager.Enqueue(() => Vector3.Distance(Player.Position, position) <= distance, int.MaxValue, $"WaitFor-DistanceTo({position})<={distance}");
                     break;
