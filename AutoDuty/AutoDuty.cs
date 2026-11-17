@@ -1113,8 +1113,10 @@ public sealed class AutoDuty : IDalamudPlugin
         Stage = Stage.Looping;
         States |= PluginState.Looping;
         SetGeneralSettings(false);
-        if (!VNavmesh_IPCSubscriber.Path_GetMovementAllowed())
-            VNavmesh_IPCSubscriber.Path_SetMovementAllowed(true);
+        // 刻意不呼叫 Path_SetMovementAllowed(true):Get 回的是租約生效後的值,寫 true 壓不過租約,
+        // 只會蓋掉使用者手動取消的「Allow movement」;AutoDuty 自己從不關它,所以沒有要開回來的帳。
+        if (VNavmesh_IPCSubscriber.IsEnabled && !VNavmesh_IPCSubscriber.Path_GetMovementAllowed())
+            Svc.Log.Information("vnavmesh 目前不允許移動(使用者在 Navmesh manager 取消了 Allow movement,或有插件持移動租約壓住);AutoDuty 不會替你改這個設定,路徑照算但角色會停在原地,誰在壓請看 vnavmesh 的 log");
         TaskManager.Abort();
         Svc.Log.Info($"Running {CurrentTerritoryContent.Name} {GetEffectiveLoopTimes()} Times");
         if (!InDungeon)
