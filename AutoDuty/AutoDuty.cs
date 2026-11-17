@@ -2818,33 +2818,47 @@ public sealed class AutoDuty : IDalamudPlugin
 
     public void Dispose()
     {
-        // 放第一行:Dispose 沒有分段 try,後面任何一步擲例外都不能讓連線迴圈與監聽留下來。
-        // 也必須在 ECommonsMain.Dispose() 之前:連線迴圈收尾時還會寫 Svc.Log。
-        global::AutoDuty.Multibox.MultiboxUtility.Shutdown(MultiboxShutdownTimeoutMs);
+        // 每一步各自隔離:前一步擲例外,後面的退訂與釋放照做。順序是契約,不要重排。
+        // 多開放第一步,也必須在 ECommonsMain.Dispose() 之前:連線迴圈收尾時還會寫 Svc.Log。
+        DisposeStep("MultiboxUtility.Shutdown", () => global::AutoDuty.Multibox.MultiboxUtility.Shutdown(MultiboxShutdownTimeoutMs));
         Disposing = true;
-        GitHubHelper.Dispose();
-        StopAndResetALL();
-        Svc.Framework.Update -= Framework_Update;
-        Svc.Framework.Update -= SchedulerHelper.ScheduleInvoker;
-        FileHelper.FileSystemWatcher.Dispose();
-        FileHelper.FileWatcher.Dispose();
-        WindowSystem.RemoveAllWindows();
+        // 在釋放 HttpClient 之前叫路徑更新停手,免得剩下的檔一個個撞已釋放的用戶端。
+        DisposeStep("Patcher.CancelForUnload", Patcher.CancelForUnload);
+        DisposeStep("GitHubHelper.Dispose", GitHubHelper.Dispose);
+        DisposeStep("StopAndResetALL", StopAndResetALL);
+        DisposeStep("Framework.Update -= Framework_Update", () => Svc.Framework.Update -= Framework_Update);
+        DisposeStep("Framework.Update -= ScheduleInvoker", () => Svc.Framework.Update -= SchedulerHelper.ScheduleInvoker);
+        DisposeStep("FileSystemWatcher.Dispose", () => FileHelper.FileSystemWatcher.Dispose());
+        DisposeStep("FileWatcher.Dispose", () => FileHelper.FileWatcher.Dispose());
+        DisposeStep("WindowSystem.RemoveAllWindows", () => WindowSystem.RemoveAllWindows());
         // 🔴 要在 ECommonsMain.Dispose() 之前拆:AddonPressGuard 的解除封鎖監聽器掛在
         //    Svc.AddonLifecycle 上,ECommons 收掉服務之後就沒有東西可以 Unregister 了,
         //    留著的委派會指向已卸載的組件。
-        AddonPressGuard.ForceTeardown();
+        DisposeStep("AddonPressGuard.ForceTeardown", AddonPressGuard.ForceTeardown);
         // 🔴 拆掉所有 *_IPCSubscriber，要在 ECommonsMain.Dispose() 之前：拆除動作用得到
         //    Svc 的服務。放在 EzIpcFailureLog.Disable() 之前，拆的過程若有 IPC 失敗才記得到 log。
-        IPCSubscriber_Common.DisposeAllSubscribers();
-        EzIpcFailureLog.Disable();
-        ECommonsMain.Dispose();
-        MainWindow.Dispose();
-        OverrideCamera.Dispose();
-        Svc.ClientState.TerritoryChanged -= ClientState_TerritoryChanged;
-        Svc.Condition.ConditionChange    -= Condition_ConditionChange;
-        PictoService.Dispose();
-        PluginInterface.UiBuilder.Draw   -= UiBuilderOnDraw;
-        Svc.Commands.RemoveHandler(CommandName);
+        DisposeStep("DisposeAllSubscribers", IPCSubscriber_Common.DisposeAllSubscribers);
+        DisposeStep("EzIpcFailureLog.Disable", EzIpcFailureLog.Disable);
+        DisposeStep("ECommonsMain.Dispose", ECommonsMain.Dispose);
+        DisposeStep("MainWindow.Dispose", () => MainWindow.Dispose());
+        DisposeStep("OverrideCamera.Dispose", () => OverrideCamera.Dispose());
+        DisposeStep("TerritoryChanged -=", () => Svc.ClientState.TerritoryChanged -= ClientState_TerritoryChanged);
+        DisposeStep("ConditionChange -=", () => Svc.Condition.ConditionChange -= Condition_ConditionChange);
+        DisposeStep("PictoService.Dispose", PictoService.Dispose);
+        DisposeStep("UiBuilder.Draw -=", () => PluginInterface.UiBuilder.Draw -= UiBuilderOnDraw);
+        DisposeStep("Commands.RemoveHandler", () => Svc.Commands.RemoveHandler(CommandName));
+    }
+
+    private static void DisposeStep(string name, System.Action step)
+    {
+        try
+        {
+            step();
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Error(ex, $"[AutoDuty] Dispose step '{name}' failed; continuing with the remaining steps");
+        }
     }
 
     private unsafe void OnCommand(string command, string args)

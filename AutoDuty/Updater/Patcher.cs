@@ -3,6 +3,7 @@ using ECommons.DalamudServices;
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace AutoDuty.Updater
@@ -14,6 +15,11 @@ namespace AutoDuty.Updater
         internal static ActionState PatcherState => PatcherTask != null && !PatcherTask.IsCompleted && !PatcherTask.IsCanceled && !PatcherTask.IsFaulted ? ActionState.Running : ActionState.None;
             
         internal static Task<bool>? PatcherTask = null;
+
+        // 只在卸載時取消;插件重載是新的組件,這個欄位跟著重建。
+        private static readonly CancellationTokenSource UnloadCts = new();
+
+        internal static void CancelForUnload() => UnloadCts.Cancel();
 
         internal static void Patch(bool skipMD5 = false, bool startup = false)
         {
@@ -52,6 +58,12 @@ namespace AutoDuty.Updater
 
                 foreach (var file in downloadList)
                 {
+                    if (UnloadCts.IsCancellationRequested)
+                    {
+                        Svc.Log.Information("Patching stopped: plugin is unloading");
+                        return false;
+                    }
+
                     // 來源與 md5s.json 必須是同一個 repo/分支,否則雜湊永遠對不上、每次都重下載。
                     var result = await GitHubHelper.DownloadFileAsync($"{GitHubHelper.PathRepoBaseUrl}AutoDuty/Paths/{file.Key}",$"{Plugin.PathsDirectory.FullName}/{file.Key}");
                     var logger = result ? $"Succesfully downloaded: {file.Key}" : $"Failed to download: {file.Key}";
