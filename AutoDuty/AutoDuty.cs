@@ -334,6 +334,8 @@ public sealed class AutoDuty : IDalamudPlugin
     private         bool           _lootTreasure;
     private         SettingsActive _settingsActive         = SettingsActive.None;
     private         SettingsActive _bareModeSettingsActive = SettingsActive.None;
+    private static readonly string[] BareModeFieldNames =
+        [nameof(Configuration.EnablePreLoopActions), nameof(Configuration.EnableBetweenLoopActions), nameof(Configuration.EnableTerminationActions)];
     private         DateTime       _lastRotationSetTime    = DateTime.MinValue;
     public readonly bool           isDev;
 
@@ -1097,6 +1099,9 @@ public sealed class AutoDuty : IDalamudPlugin
                 _bareModeSettingsActive |= SettingsActive.BetweenLoop_Enabled;
             if (Configuration.EnableTerminationActions)
                 _bareModeSettingsActive |= SettingsActive.TerminationActions_Enabled;
+            // 先登記再改：途中任何存檔都寫使用者原本的值，遊戲在 Stop 前結束也不會把三項留成關。
+            foreach (string name in BareModeFieldNames)
+                ConfigOverrideHelper.RegisterInternal(typeof(Configuration).GetField(name)!, Configuration);
             Configuration.EnablePreLoopActions = false;
             Configuration.EnableBetweenLoopActions = false;
             Configuration.EnableTerminationActions = false;
@@ -2628,6 +2633,7 @@ public sealed class AutoDuty : IDalamudPlugin
             Configuration.EnableTerminationActions = _bareModeSettingsActive.HasFlag(SettingsActive.TerminationActions_Enabled);
             _bareModeSettingsActive = SettingsActive.None;
         }
+        ConfigOverrideHelper.ClearInternal();
         if (pathConfigRestored)
             Configuration.Save();
         RestorePandoraChests();

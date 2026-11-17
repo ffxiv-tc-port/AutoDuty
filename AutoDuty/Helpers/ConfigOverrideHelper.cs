@@ -44,6 +44,9 @@ internal static class ConfigOverrideHelper
     private static readonly object                           Gate   = new();
     private static readonly Dictionary<OverrideKey, object?> Active = [];
 
+    /// <summary>AutoDuty 自己的暫改（Bare 模式）登記的使用者值：只供序列化換回，執行期的改值與還原由呼叫端負責；同鍵時優先於 <see cref="Active"/>。</summary>
+    private static readonly Dictionary<OverrideKey, object?> Internal = [];
+
     /// <summary>
     /// 序列化換值的重入旗標。取 <c>Plugin.Configuration</c> 在極少數情況下會自己觸發一次存檔,
     /// 那時候值已經是使用者的值了,再換一次會把覆寫值當成使用者的值記下來。
@@ -202,6 +205,28 @@ internal static class ConfigOverrideHelper
     }
 
     /// <summary>
+    /// 登記「呼叫端即將自己改掉這個欄位」，存檔時寫 <paramref name="target"/> 上這一刻的值。
+    /// 同鍵已登記就不覆蓋（重複 Run 時第二次讀到的是暫值）；欄位正被 IPC 覆寫時改記覆寫前的值。
+    /// </summary>
+    internal static void RegisterInternal(FieldInfo field, Configuration target)
+    {
+        lock (Gate)
+        {
+            OverrideKey key = new(field, target);
+            if (Internal.ContainsKey(key))
+                return;
+            Internal[key] = Active.TryGetValue(key, out object? beforeIpc) ? beforeIpc : field.GetValue(target);
+        }
+    }
+
+    /// <summary>撤銷 <see cref="RegisterInternal"/> 的全部登記；呼叫端要先把執行期的值改回去再呼叫。</summary>
+    internal static void ClearInternal()
+    {
+        lock (Gate)
+            Internal.Clear();
+    }
+
+    /// <summary>
     /// 在<b>存檔序列化的那一刻</b>把被覆寫的欄位換回使用者的值,跑完 <paramref name="body"/> 再換回來。
     /// </summary>
     /// <remarks>
@@ -223,16 +248,24 @@ internal static class ConfigOverrideHelper
         {
             lock (Gate)
             {
-                if (Active.Count == 0)
+                if (Active.Count == 0 && Internal.Count == 0)
                     return body();
 
                 // 先把「目前的(覆寫)值」抄下來,換成使用者的值,序列化,再換回去。
-                List<(OverrideKey Key, object? Overridden)> swapped = new(Active.Count);
+                List<(OverrideKey Key, object? Overridden)> swapped = new(Active.Count + Internal.Count);
                 _inSwap = true;
                 try
                 {
+                    foreach ((OverrideKey key, object? user) in Internal)
+                    {
+                        swapped.Add((key, key.Field.GetValue(key.Target)));
+                        key.Field.SetValue(key.Target, user);
+                    }
+
                     foreach ((OverrideKey key, object? user) in Active)
                     {
+                        if (Internal.ContainsKey(key))
+                            continue;
                         swapped.Add((key, key.Field.GetValue(key.Target)));
                         key.Field.SetValue(key.Target, user);
                     }
