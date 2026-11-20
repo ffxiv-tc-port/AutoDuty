@@ -607,6 +607,13 @@ namespace AutoDuty.Managers
 
                                      IGameObject target = gameObjects.OrderBy(GetDistanceToPlayer).First();
 
+                                     // 分隊先發只接 30 米內的（等待中原地停下）；更遠的照舊鎖定並走過去，不然每次檢查都會重送尋路。
+                                     if (GetDistanceToPlayer(target) < 30 && SquadronOpener.ShouldHold(target))
+                                     {
+                                         VNavmesh_IPCSubscriber.Path_Stop();
+                                         return false;
+                                     }
+
                                      if (AcquireTargetCheck(target) && GetDistanceToPlayer(target) < 30)
                                          VNavmesh_IPCSubscriber.Path_Stop();
                                      else

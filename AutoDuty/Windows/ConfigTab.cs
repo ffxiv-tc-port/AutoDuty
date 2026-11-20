@@ -560,6 +560,18 @@ public static partial class ConfigTab
                 Configuration.Save();
             ImGuiHelper.HelpMarkerAllowWhenDisabled("首領模組標記為「時限內沒打掉就會致死」的小怪（例：伊弗利特討伐戰的火獄之楔、泰坦討伐戰的泰坦的核心與花崗石牢）一出現，就把目標切過去；打掉後目標空了會切回首領。\n需要 BossModReborn；BMR 的 AI 有沒有開、上一格有沒有勾都不影響。");
 
+            if (ImGui.Checkbox("冒險者小隊：小怪路段先下號令再開打", ref Configuration.SquadronOpener))
+                Configuration.Save();
+            ImGuiHelper.HelpMarkerAllowWhenDisabled("只在分隊攻略任務的小怪路段生效（首領戰交給 BossModReborn 的分隊號令）；玩家是坦克時不做。\n要選新的敵人時，先對牠下「號令：戰鬥開始」，等分隊坦克換過去（沒有坦克就看任一名分隊員）才選牠當目標，讓輪替插件晚一步出手、讓坦克先接仇恨。\n等到上限還沒人跟上，就先選目標再下一次號令，然後開打；等待中玩家血量低於一半就直接開打。\n輪替插件的目標要設成「手動」才有「晚一步」的效果。");
+            if (Configuration.SquadronOpener)
+            {
+                ImGui.Indent();
+                ImGui.SetNextItemWidth(150 * ImGuiHelpers.GlobalScale);
+                if (ImGui.SliderFloat("等待上限（秒）##SquadronOpenerMaxWait", ref Configuration.SquadronOpenerMaxWaitSeconds, 0.5f, 6f, "%.1f"))
+                    Configuration.Save();
+                ImGui.Unindent();
+            }
+
             if (Configuration.autoManageBossModAISettings)
             {
                 ImGui.Indent();

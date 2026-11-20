@@ -470,7 +470,7 @@ public sealed partial class AutoDuty
                 //find and target closest attackable npc, if we are not targeting
                 var gos = ObjectHelper.GetObjectsByObjectKind(Dalamud.Game.ClientState.Objects.Enums.ObjectKind.BattleNpc)?.FirstOrDefault(o => o.GetNameplateKind() is NameplateKind.HostileEngagedSelfUndamaged or NameplateKind.HostileEngagedSelfDamaged && ObjectHelper.GetBattleDistanceToPlayer(o) <= 75);
 
-                if (gos != null)
+                if (gos != null && !SquadronOpener.ShouldHold(gos))
                     Svc.Targets.Target = gos;
             }
             if (Configuration.AutoManageBossModAISettings)

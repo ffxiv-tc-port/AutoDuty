@@ -531,6 +531,9 @@ public class Configuration
     }
     // 王戰中把目標切到 BMR 首領模組標記的限時必殺小怪、打掉後切回王；與上面兩格無關，BMR 沒開 AI 也照做。
     public bool       BossTargetUrgentAdds           = true;
+    // 冒險者小隊小怪路段：設玩家目標前先對該敵人下「號令：戰鬥開始」，分隊跟上或逾時才設（Helpers/SquadronOpener）。
+    public bool       SquadronOpener                 = true;
+    public float      SquadronOpenerMaxWaitSeconds   = 2.5f;
     public bool       AutoManageVnavAlignCamera      = true;
     public bool       LootTreasure                   = true;
     public LootMethod LootMethodEnum                 = LootMethod.AutoDuty;

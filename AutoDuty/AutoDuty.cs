@@ -858,6 +858,9 @@ public sealed partial class AutoDuty : IDalamudPlugin
         if (ManualMoveYield.TakeResume() && Stage == Stage.Moving)
             Stage = Stage.Reading_Path;
 
+        // 在 Stage 判斷之前：先發放手時設的玩家目標，這一幀的 Waiting_For_Combat 就看得到。
+        SquadronOpener.Tick();
+
         switch (Stage)
         {
             case Stage.Reading_Path:
