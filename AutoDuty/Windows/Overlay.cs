@@ -87,7 +87,7 @@ public unsafe class Overlay : Window
 
                 ImGui.SameLine(0, 5);
             }
-            ImGui.PushItemWidth(75 * ImGuiHelpers.GlobalScale);
+            ImGui.PushItemWidth(75f.Scale());
             MainWindow.LoopsConfig();
             ImGui.PopItemWidth();
             ImGui.SameLine();

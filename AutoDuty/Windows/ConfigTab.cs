@@ -135,7 +135,7 @@ public static partial class ConfigTab
             ImGuiHelper.DrawIcon(FontAwesomeIcon.Lock);
         if (ConfigurationMain.Instance.ActiveProfileName == ConfigurationMain.Instance.DefaultConfigName)
             ImGuiHelper.DrawIcon(FontAwesomeIcon.CheckCircle);
-        ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X - 180 * ImGuiHelpers.GlobalScale);
+        ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X - 180f.Scale());
         ImGui.SetItemAllowOverlap();
         using (ImRaii.IEndObject configCombo = ImRaii.Combo("##ConfigCombo", ConfigurationMain.Instance.ActiveProfileName))
         {
@@ -173,14 +173,14 @@ public static partial class ConfigTab
         {
             bool    open     = true;
             Vector2 textSize = ImGui.CalcTextSize(profileRenameInput);
-            ImGui.SetNextWindowSize(new Vector2(textSize.X + 200, textSize.Y + 120) * ImGuiHelpers.GlobalScale);
+            ImGui.SetNextWindowSize(new System.Numerics.Vector2(textSize.X + 200, textSize.Y + 120).Scale());
             if (ImGui.BeginPopupModal($"##RenameProfile", ref open, ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoMove))
             {
                 ImGuiHelper.CenterNextElement(ImGui.CalcTextSize("New Profile Name".Loc()).X);
                 ImGui.Text("New Profile Name".Loc());
                 ImGui.NewLine();
-                ImGui.SameLine(50);
-                ImGui.SetNextItemWidth((textSize.X + 100) * ImGuiHelpers.GlobalScale);
+                ImGui.SameLine(50f.Scale());
+                ImGui.SetNextItemWidth((textSize.X + 100).Scale());
 
                 ImGui.InputText("##RenameProfileInput", ref profileRenameInput, 100);
                 ImGui.Spacing();
@@ -512,7 +512,7 @@ public static partial class ConfigTab
                         ImGui.AlignTextToFramePadding();
                         ImGui.Text("Targeting | Tank: ".Loc());
                         ImGui.SameLine(0, 5);
-                        ImGui.PushItemWidth(150 * ImGuiHelpers.GlobalScale);
+                        ImGui.PushItemWidth(150f.Scale());
                         if (ImGui.BeginCombo("##ConfigWrathTargetingTank", Configuration.Wrath_TargetingTank.ToCustomString()))
                         {
                             foreach (Wrath_IPCSubscriber.DPSRotationMode targeting in Enum.GetValues(typeof(Wrath_IPCSubscriber.DPSRotationMode)))
@@ -532,7 +532,7 @@ public static partial class ConfigTab
                         ImGui.AlignTextToFramePadding();
                         ImGui.Text("Targeting | Non-Tank: ".Loc());
                         ImGui.SameLine(0, 5);
-                        ImGui.PushItemWidth(150 * ImGuiHelpers.GlobalScale);
+                        ImGui.PushItemWidth(150f.Scale());
                         if (ImGui.BeginCombo("##ConfigWrathTargetingNonTank", Configuration.Wrath_TargetingNonTank.ToCustomString()))
                         {
                             foreach (Wrath_IPCSubscriber.DPSRotationMode targeting in Enum.GetValues(typeof(Wrath_IPCSubscriber.DPSRotationMode)))
@@ -566,7 +566,7 @@ public static partial class ConfigTab
             if (Configuration.SquadronOpener)
             {
                 ImGui.Indent();
-                ImGui.SetNextItemWidth(150 * ImGuiHelpers.GlobalScale);
+                ImGui.SetNextItemWidth(150f.Scale());
                 if (ImGui.SliderFloat("等待上限（秒）##SquadronOpenerMaxWait", ref Configuration.SquadronOpenerMaxWaitSeconds, 0.5f, 6f, "%.1f"))
                     Configuration.Save();
                 ImGui.Unindent();
@@ -600,7 +600,7 @@ public static partial class ConfigTab
                     }
                     using (ImRaii.Disabled(Configuration.MaxDistanceToTargetRoleBased))
                     {
-                        ImGui.PushItemWidth(195 * ImGuiHelpers.GlobalScale);
+                        ImGui.PushItemWidth(195f.Scale());
                         // 滑桿在拖曳期間每一幀都回 true，存檔只能在放開滑鼠（編輯結束）那一刻做一次
                         if (ImGui.SliderFloat("Max Distance To Target".Loc(), ref Configuration.MaxDistanceToTargetFloat, 1, 30))
                             Configuration.MaxDistanceToTargetFloat = Math.Clamp(Configuration.MaxDistanceToTargetFloat, 1, 30);
@@ -614,7 +614,7 @@ public static partial class ConfigTab
                     }
                     using (ImRaii.Disabled(!Configuration.MaxDistanceToTargetRoleBased))
                     {
-                        ImGui.PushItemWidth(195 * ImGuiHelpers.GlobalScale);
+                        ImGui.PushItemWidth(195f.Scale());
                         if (ImGui.SliderFloat("Max Distance To Target | Melee".Loc(), ref Configuration.MaxDistanceToTargetRoleMelee, 1, 30))
                             Configuration.MaxDistanceToTargetRoleMelee = Math.Clamp(Configuration.MaxDistanceToTargetRoleMelee, 1, 30);
                         if (ImGui.IsItemDeactivatedAfterEdit())
@@ -674,7 +674,7 @@ public static partial class ConfigTab
                 ImGui.Indent();
                 ImGui.Text("Select Method: ".Loc());
                 ImGui.SameLine(0, 5);
-                ImGui.PushItemWidth(150 * ImGuiHelpers.GlobalScale);
+                ImGui.PushItemWidth(150f.Scale());
                 if (ImGui.BeginCombo("##ConfigLootMethod", Configuration.LootMethodEnum.ToCustomString()))
                 {
                     foreach (LootMethod lootMethod in Enum.GetValues(typeof(LootMethod)))
@@ -700,7 +700,7 @@ public static partial class ConfigTab
                 ImGui.PopItemWidth();
                 ImGui.Unindent();
             }
-            ImGui.PushItemWidth(150 * ImGuiHelpers.GlobalScale);
+            ImGui.PushItemWidth(150f.Scale());
             if (ImGui.InputInt("Minimum time before declared stuck (in ms)".Loc(), ref Configuration.MinStuckTime))
             {
                 Configuration.MinStuckTime = Math.Max(250, Configuration.MinStuckTime);
@@ -768,7 +768,7 @@ public static partial class ConfigTab
             if (Configuration.PathDrawEnabled)
             {
                 ImGui.Indent();
-                ImGui.PushItemWidth(150 * ImGuiHelpers.GlobalScale);
+                ImGui.PushItemWidth(150f.Scale());
                 if (ImGui.InputInt("Drawing X steps".Loc() + "##PathDrawStepCount", ref Configuration.PathDrawStepCount, 1))
                 {
                     Configuration.PathDrawStepCount = Math.Max(1, Configuration.PathDrawStepCount);
@@ -1078,7 +1078,7 @@ public static partial class ConfigTab
                     ImGui.NextColumn();
                     //ImGui.SameLine(0, 5);
 
-                    ImGui.PushItemWidth(80 * ImGuiHelpers.GlobalScale);
+                    ImGui.PushItemWidth(80f.Scale());
 
                     using (ImRaii.Disabled(Configuration.AutoConsumeIgnoreStatus))
                     {
@@ -1093,7 +1093,7 @@ public static partial class ConfigTab
 
                     ImGui.PopItemWidth();
                     ImGui.Columns(1);
-                    ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X - 115 * ImGuiHelpers.GlobalScale);
+                    ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X - 115f.Scale());
                     if (ImGui.BeginCombo("##SelectAutoConsumeItem", consumableItemsSelectedItem.Name))
                     {
                         ImGui.InputTextWithHint("Item Name".Loc(), "Start typing item name to search".Loc(), ref consumableItemsItemNameInput, 1000);
@@ -1549,7 +1549,7 @@ public static partial class ConfigTab
                 ImGuiHelper.HelpMarkerAllowWhenDisabled("Looping will stop when these conditions are reached, so long as an adequate number of loops have been allocated.".Loc());
                 if (Configuration.StopItemQty)
                 {
-                    ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X - 125 * ImGuiHelpers.GlobalScale);
+                    ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X - 125f.Scale());
                     if (ImGui.BeginCombo("Select Item".Loc(), stopItemQtySelectedItem.Value))
                     {
                         ImGui.InputTextWithHint("Item Name".Loc(), "Start typing item name to search".Loc(), ref stopItemQtyItemNameInput, 1000);
@@ -1561,7 +1561,7 @@ public static partial class ConfigTab
                         ImGui.EndCombo();
                     }
                     ImGui.PopItemWidth();
-                    ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X - 220 * ImGuiHelpers.GlobalScale);
+                    ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X - 220f.Scale());
                     if (ImGui.InputInt("Quantity".Loc(), ref Configuration.StopItemQtyInt))
                         Configuration.Save();
 
@@ -1645,7 +1645,7 @@ public static partial class ConfigTab
             if (execute)
             {
                 ImGui.Indent();
-                ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X - 185 * ImGuiHelpers.GlobalScale);
+                ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X - 185f.Scale());
                 if (ImGui.InputTextWithHint($"##Commands{checkbox}", "enter command starting with /".Loc(), ref curCommand, 500, ImGuiInputTextFlags.EnterReturnsTrue))
                 {
                     if (!curCommand.IsNullOrEmpty() && curCommand[0] == '/' && (ImGui.IsKeyDown(ImGuiKey.Enter) || ImGui.IsKeyDown(ImGuiKey.KeypadEnter)))
@@ -1695,7 +1695,7 @@ public static partial class ConfigTab
     private static void DrawGameSound()
     {
         ImGui.SameLine(0, 10);
-        ImGui.PushItemWidth(150 * ImGuiHelpers.GlobalScale);
+        ImGui.PushItemWidth(150f.Scale());
         if (ImGui.BeginCombo("##ConfigEndSoundMethod", Configuration.SoundEnum.ToName()))
         {
             foreach (var sound in _validSounds)

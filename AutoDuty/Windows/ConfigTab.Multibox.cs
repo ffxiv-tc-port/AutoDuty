@@ -112,7 +112,7 @@ public static partial class ConfigTab
             ImGuiHelper.HelpMarkerAllowWhenDisabled("Intended to make the host send its loaded path to every client. The transport for this exists but nothing calls it yet, so this setting currently has no effect - each client still uses its own path file.".Loc());
 
             TransportType transport = mb.TransportType;
-            ImGui.SetNextItemWidth(200 * ImGuiHelpers.GlobalScale);
+            ImGui.SetNextItemWidth(200f.Scale());
             if (ImGuiEx.EnumCombo("Transport".Loc(), ref transport))
             {
                 mb.TransportType = transport;
@@ -122,7 +122,7 @@ public static partial class ConfigTab
             if (mb.TransportType == TransportType.NamedPipe)
             {
                 string pipeName = mb.PipeName;
-                ImGui.SetNextItemWidth(200 * ImGuiHelpers.GlobalScale);
+                ImGui.SetNextItemWidth(200f.Scale());
                 if (ImGui.InputText("Pipe name".Loc(), ref pipeName, 64))
                 {
                     mb.PipeName = pipeName;
@@ -132,7 +132,7 @@ public static partial class ConfigTab
                 if (!mb.Host)
                 {
                     string serverName = mb.ServerName;
-                    ImGui.SetNextItemWidth(200 * ImGuiHelpers.GlobalScale);
+                    ImGui.SetNextItemWidth(200f.Scale());
                     if (ImGui.InputText("Server name".Loc(), ref serverName, 64))
                     {
                         mb.ServerName = serverName;
@@ -145,7 +145,7 @@ public static partial class ConfigTab
             {
                 // 主機端也要顯示：它決定主機監聽的位址。
                 string serverAddress = mb.ServerAddress;
-                ImGui.SetNextItemWidth(200 * ImGuiHelpers.GlobalScale);
+                ImGui.SetNextItemWidth(200f.Scale());
                 if (ImGui.InputText("Server address".Loc(), ref serverAddress, 64))
                 {
                     mb.ServerAddress = serverAddress;
@@ -154,7 +154,7 @@ public static partial class ConfigTab
                 ImGuiHelper.HelpMarkerAllowWhenDisabled("Host: the address this computer listens on. 127.0.0.1 only accepts game clients on this same computer. With this computer's LAN address, clients on other computers can connect, but clients on this same computer must also enter that LAN address (127.0.0.1 will not reach the host). Enter 0.0.0.0 to accept both.\nClient: the host's address.".Loc());
 
                 int port = mb.ServerPort;
-                ImGui.SetNextItemWidth(200 * ImGuiHelpers.GlobalScale);
+                ImGui.SetNextItemWidth(200f.Scale());
                 if (ImGui.InputInt("Server port".Loc(), ref port))
                 {
                     mb.ServerPort = Math.Clamp(port, 1, 65535);

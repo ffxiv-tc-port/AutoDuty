@@ -69,7 +69,7 @@ public static partial class ConfigTab
                               Configuration.PlannerPlaylistName.IsNullOrEmpty() ? "(未載入)" :
                                                                                   Configuration.PlannerPlaylistName;
 
-        ImGui.SetNextItemWidth(220 * ImGuiHelpers.GlobalScale);
+        ImGui.SetNextItemWidth(220f.Scale());
         using (ImRaii.Disabled(playlists.Count == 0))
         {
             if (ImGui.BeginCombo("##PlannerPlaylistCombo", comboPreview))
@@ -94,7 +94,7 @@ public static partial class ConfigTab
 
         ImGui.SameLine(0, 15f);
 
-        ImGui.SetNextItemWidth(160 * ImGuiHelpers.GlobalScale);
+        ImGui.SetNextItemWidth(160f.Scale());
         ImGui.InputTextWithHint("##PlannerPlaylistName", "清單名稱", ref plannerPlaylistNameInput, 64);
 
         string trimmedName = plannerPlaylistNameInput.Trim();
@@ -220,7 +220,7 @@ public static partial class ConfigTab
             ImGui.TextDisabled("新增任務至排程：");
 
             plannerAddTargetRuns = Math.Max(1, plannerAddTargetRuns);
-            ImGui.SetNextItemWidth(120 * ImGuiHelpers.GlobalScale);
+            ImGui.SetNextItemWidth(120f.Scale());
             ImGui.InputInt("次數##PlannerAddRuns", ref plannerAddTargetRuns);
             if (plannerAddTargetRuns < 1)
                 plannerAddTargetRuns = 1;
@@ -228,7 +228,7 @@ public static partial class ConfigTab
             ImGui.InputTextWithHint("##PlannerSearch", "搜尋任務...", ref plannerSearchText, 100);
             ImGuiHelper.HelpMarkerAllowWhenDisabled("與 Main 一致：可用此開關隱藏目前不可執行的任務。");
 
-            using (ImRaii.Child("##PlannerDutySearch", new Vector2(0, 140 * ImGuiHelpers.GlobalScale), true))
+            using (ImRaii.Child("##PlannerDutySearch", new Vector2(0, 140f.Scale()), true))
             {
                 var level = PlayerHelper.GetCurrentLevelFromSheet();
                 foreach (var content in ContentHelper.DictionaryContent.Values
@@ -307,12 +307,12 @@ public static partial class ConfigTab
 
             if (ImGui.BeginTable("##PlannerTable", 6, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
             {
-                ImGui.TableSetupColumn("#", ImGuiTableColumnFlags.WidthFixed, 22);
+                ImGui.TableSetupColumn("#", ImGuiTableColumnFlags.WidthFixed, 22f.Scale());
                 ImGui.TableSetupColumn("任務", ImGuiTableColumnFlags.WidthStretch);
-                ImGui.TableSetupColumn("路徑", ImGuiTableColumnFlags.WidthFixed, 180);
-                ImGui.TableSetupColumn("次數", ImGuiTableColumnFlags.WidthFixed, 70);
-                ImGui.TableSetupColumn("進度", ImGuiTableColumnFlags.WidthFixed, 70);
-                ImGui.TableSetupColumn("操作", ImGuiTableColumnFlags.WidthFixed, 120);
+                ImGui.TableSetupColumn("路徑", ImGuiTableColumnFlags.WidthFixed, 180f.Scale());
+                ImGui.TableSetupColumn("次數", ImGuiTableColumnFlags.WidthFixed, 70f.Scale());
+                ImGui.TableSetupColumn("進度", ImGuiTableColumnFlags.WidthFixed, 70f.Scale());
+                ImGui.TableSetupColumn("操作", ImGuiTableColumnFlags.WidthFixed, 120f.Scale());
                 ImGui.TableHeadersRow();
 
                 for (var i = 0; i < Configuration.PlannerItems.Count; i++)

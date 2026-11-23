@@ -47,8 +47,8 @@ namespace AutoDuty.Windows
             try
             {
                 ImGui.TableSetupColumn("##Name",   ImGuiTableColumnFlags.WidthStretch);
-                ImGui.TableSetupColumn("##Status", ImGuiTableColumnFlags.WidthFixed, 130 * Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale);
-                ImGui.TableSetupColumn("##Open",   ImGuiTableColumnFlags.WidthFixed, 90 * Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale);
+                ImGui.TableSetupColumn("##Status", ImGuiTableColumnFlags.WidthFixed, 130f.Scale());
+                ImGui.TableSetupColumn("##Open",   ImGuiTableColumnFlags.WidthFixed, 90f.Scale());
 
                 foreach ((string internalName, string display, string repoUrl) in fleetPlugins)
                 {
