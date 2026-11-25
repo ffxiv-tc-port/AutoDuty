@@ -305,6 +305,9 @@ public sealed partial class AutoDuty : IDalamudPlugin
     /// <summary>這一場副本玩家已死幾次。只在框架執行緒讀寫；歸零點是 Run() 與 StartNavigation()。</summary>
     private int _deathsThisDuty;
 
+    /// <summary>這一場卡住處理第 4 階自動跳過的步驟數。歸零點同 <see cref="_deathsThisDuty"/> 的 StartNavigation()。</summary>
+    private int _autoSkippedStepsThisDuty;
+
     /// <summary>每停下一次（StopAndResetALL 第一行）加一；延遲回呼捕捉它，觸發時對不上＝停下之前排的，不可再動作。只在框架執行緒讀寫。</summary>
     internal int StopGeneration;
     private const string CommandName = "/autoduty";

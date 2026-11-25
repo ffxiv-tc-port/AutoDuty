@@ -254,7 +254,17 @@ public sealed partial class AutoDuty
 
             if (Configuration.StuckEscalationEnabled && StuckEscalationHelper.ShouldSkipStep(stuckCount) && CanSkipCurrentStep)
             {
+                string stepName = Actions[Indexer].Name;
+                if (!StepPolicies.StuckSkipAllowed(stepName))
+                {
+                    Svc.Log.Information($"[卡住處理] 第 4 階:在 {stuckAt} 連續卡住 {stuckCount + 1} 次,但第 {Indexer} 步是「{stepName}」,不跳過、停下等玩家接手。");
+                    MarkSelfStop("Stuck on the way to a boss. Skipping the boss would leave the duty unfinished, so AutoDuty stopped. Please take over.", needsHelp: true);
+                    Stage = Stage.Stopped;
+                    return;
+                }
+
                 Svc.Log.Information($"[卡住處理] 第 4 階:在 {stuckAt} 連續卡住 {stuckCount + 1} 次,跳過目前這一步。");
+                _autoSkippedStepsThisDuty++;
                 SkipCurrentStep();
                 return;
             }
@@ -554,6 +564,7 @@ public sealed partial class AutoDuty
         MainListClicked = false;
         // 每一場（含每一輪循環）開始導航都會走到這裡，復活後的流程不會 ⇒ 死亡計數的歸零點。
         _deathsThisDuty = 0;
+        _autoSkippedStepsThisDuty = 0;
         Stage = Stage.Reading_Path;
         States |= PluginState.Navigating;
         StopForCombat = true;
@@ -683,7 +694,13 @@ public sealed partial class AutoDuty
         {
             // 已停止時不再設一次 Stopped：setter 每次都整套重跑 StopAndResetALL，會關掉使用者之後自己開的循環插件。
             // 這一條不經過 LoopsCompleteActions(),所以既有的完成音效在這裡本來就不會響。
-            MarkSelfStop("All loops finished.");
+            if (StepPolicies.PathEndNeedsHelp(_autoSkippedStepsThisDuty, this.DutyState == DutyState.DutyComplete))
+            {
+                Svc.Log.Information($"[CheckFinishing] 路線跑完了,但這一場卡住時自動跳過了 {_autoSkippedStepsThisDuty} 步、副本還沒完成(DutyState={this.DutyState}),不算跑完,停下等玩家接手。");
+                MarkSelfStop("The route ended after skipping steps it was stuck on, but the duty is not complete. Please take over.", needsHelp: true);
+            }
+            else
+                MarkSelfStop("All loops finished.");
             Stage = Stage.Stopped;
         }
     }
