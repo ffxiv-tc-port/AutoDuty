@@ -21,7 +21,7 @@ public static class PlannerTab
             DutyMode.None => "無",
             DutyMode.Support => "劇情輔助器",
             DutyMode.Trust => "親信戰友",
-            DutyMode.Squadron => "冒險者小隊",
+            DutyMode.Squadron => "冒險者分隊",
             DutyMode.Regular => "一般模式(解限)",
             DutyMode.Trial => "討伐",
             DutyMode.Raid => "大型副本",
@@ -75,7 +75,7 @@ public static class PlannerTab
                 else if (Plugin.LevelingEnabled)
                     MainWindow.ShowPopup("Error".Loc(), "Planner and Auto Leveling are mutually exclusive. Set Leveling Mode to None/Manual first.".Loc());
                 else if (Svc.Party.PartyId > 0 && (Plugin.Configuration.DutyModeEnum == DutyMode.Support || Plugin.Configuration.DutyModeEnum == DutyMode.Squadron || Plugin.Configuration.DutyModeEnum == DutyMode.Trust))
-                    MainWindow.ShowPopup("錯誤", "執行劇情輔助器、冒險者小隊或親信戰友時不可組隊。");
+                    MainWindow.ShowPopup("錯誤", "執行劇情輔助器、冒險者分隊或親信戰友時不可組隊。");
                 else if (Plugin.Configuration.DutyModeEnum == DutyMode.Regular && !Plugin.Configuration.Unsynced && !Plugin.Configuration.OverridePartyValidation && Svc.Party.PartyId == 0)
                     MainWindow.ShowPopup("錯誤", "執行一般模式(解限)需要 4 人小隊。");
                 else if (Plugin.Configuration.DutyModeEnum == DutyMode.Regular && !Plugin.Configuration.Unsynced && !Plugin.Configuration.OverridePartyValidation && !ObjectHelper.PartyValidation())
