@@ -851,6 +851,9 @@ public sealed partial class AutoDuty : IDalamudPlugin
         //    容許值會在副本跑到一半跳回使用者的值。
         VnavmeshToleranceLease.Tick();
 
+        // 站定等待的 BMR 暫停租約：放在 Stage 分派之前，停止或換步的那一幀就釋放。
+        TickBmrMovementHold();
+
         // 任務逾時的觀察哨。必須跑在 TaskManager 自己的 Tick 之後 —— 這是成立的:
         // 建構子先 TaskManager = new()(它在自己的建構子裡掛上 Svc.Framework.Update),
         // 之後才 Svc.Framework.Update += Framework_Update,多播委派照訂閱順序呼叫。

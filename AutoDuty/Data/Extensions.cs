@@ -67,6 +67,11 @@ namespace AutoDuty.Data
                 results.Add((v4, "|"));
                 results.Add((index == Plugin.Indexer ? v4 : new(1, 165 / 255f, 0, 1), $"直到:{string.Join(" & ", pathAction.ConditionsUntil.Select(c => c.Describe()))}"));
             }
+            if (pathAction.HoldPosition)
+            {
+                results.Add((v4, "|"));
+                results.Add((index == Plugin.Indexer ? v4 : new(1, 165 / 255f, 0, 1), "站定:等待時暫停 BMR 閃避"));
+            }
             return results;
         }
 

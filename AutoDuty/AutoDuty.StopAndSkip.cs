@@ -278,6 +278,7 @@ public sealed partial class AutoDuty
         StuckEscalationHelper.Reset();
         _untilHoldIndex = -1;
         _untilFailures  = 0;
+        ResetBmrMovementHold();
         BossMod_IPCSubscriber.ResetStayCloseToTankCache();
         // 別的外掛透過 IPC 壓上來的設定覆寫,在停止時一律還原(呼叫端不必記得 Pop)。
         ConfigOverrideHelper.Pop();

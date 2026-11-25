@@ -28,5 +28,29 @@ namespace AutoDuty.Helpers
             userInitiated &&
             !(previousSkipAgoMs >= 0 && previousSkipAgoMs < quietMs) &&
             !(nextSkipWithinMs >= 0 && nextSkipWithinMs < quietMs);
+
+        internal enum MovementHold { Hold, NotHoldStep, NotWaiting, CapReached, Dead, LowHp, Fulfilled }
+
+        /// <summary>
+        /// 站定等待（路徑步驟 holdPosition）這一幀要不要請 BMR 暫停自動移動與閃避。
+        /// 只在 Wait 計時已起算、未結束、起算後 <paramref name="maxHoldMs"/> 內才要；死亡、血量比低於 <paramref name="minHpRatio"/>、離開條件已成立都不要。
+        /// </summary>
+        /// <param name="waitEndTick">Wait 計時的結束時刻(TickCount64);0＝沒在計時。</param>
+        internal static MovementHold DecideMovementHold(bool holdStepInAction, long nowMs, long waitEndTick, int waitDurationMs, int maxHoldMs,
+                                                        bool playerAlive, uint curHp, uint maxHp, float minHpRatio, bool untilFulfilled)
+        {
+            if (!holdStepInAction)
+                return MovementHold.NotHoldStep;
+            if (waitEndTick == 0 || nowMs >= waitEndTick)
+                return MovementHold.NotWaiting;
+            if (nowMs - (waitEndTick - waitDurationMs) >= maxHoldMs)
+                return MovementHold.CapReached;
+            if (!playerAlive || curHp == 0)
+                return MovementHold.Dead;
+            // maxHp 為 0 時讀不到血量＝當作不夠（照常閃）。
+            if (maxHp == 0 || (float)curHp / maxHp < minHpRatio)
+                return MovementHold.LowHp;
+            return untilFulfilled ? MovementHold.Fulfilled : MovementHold.Hold;
+        }
     }
 }

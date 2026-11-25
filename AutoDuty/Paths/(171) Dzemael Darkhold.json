@@ -143,6 +143,7 @@
         }
       ],
       "untilMaxRedo": 2,
+      "holdPosition": true,
       "note": ""
     },
     {
@@ -165,6 +166,7 @@
         }
       ],
       "untilMaxRedo": 2,
+      "holdPosition": true,
       "note": ""
     },
     {
@@ -475,6 +477,7 @@
         }
       ],
       "untilMaxRedo": 2,
+      "holdPosition": true,
       "note": ""
     },
     {
@@ -508,6 +511,7 @@
         }
       ],
       "untilMaxRedo": 2,
+      "holdPosition": true,
       "note": ""
     },
     {

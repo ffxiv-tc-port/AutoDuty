@@ -162,6 +162,14 @@ namespace AutoDuty.Data
             [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
             public int UntilMaxRedo { get; set; }
 
+            /// <summary>
+            /// 站在這一步的定點等待（Wait 計時中）時，暫時請 BossMod AI 不要自動移動與閃避；血量不足時不壓制。false＝既有行為。
+            /// </summary>
+            /// <remarks>本 fork 自有欄位;刻意不做成 <see cref="Flags"/> 的新列舉值:舊版插件讀到不認得的列舉字串會整份路徑讀取失敗,未知的布林鍵則只會被忽略。</remarks>
+            [JsonPropertyName("holdPosition")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+            public bool HoldPosition { get; set; }
+
             [JsonPropertyName("note")]
             public string Note { get; set; } = string.Empty;
 
