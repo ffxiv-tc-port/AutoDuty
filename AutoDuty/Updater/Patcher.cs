@@ -44,15 +44,15 @@ namespace AutoDuty.Updater
             Svc.Log.Info("Patching Started");
             try
             {
+                // 檔名不分大小寫：Windows 覆寫既有檔時沿用舊檔名的大小寫，區分大小寫比對會讓那個檔每次啟動都重下載。
                 var localFileInfos = Plugin.PathsDirectory.EnumerateFiles("*.json", SearchOption.AllDirectories);
-                var localFilesDictionary = localFileInfos.ToDictionary(
-                    fileInfo => fileInfo.Name,
-                    fileInfo => BitConverter.ToString(FileHelper.CalculateMD5(fileInfo.FullName)).Replace("-", "")
-                );
+                var localFilesDictionary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var fileInfo in localFileInfos)
+                    localFilesDictionary.TryAdd(fileInfo.Name, BitConverter.ToString(FileHelper.CalculateMD5(fileInfo.FullName)).Replace("-", ""));
                 var list = await GitHubHelper.GetPathFileListAsync();
                 if (list == null) return false;
 
-                HashSet<string> doNotUpdatePathFiles = ConfigurationMain.Instance.GetCurrentConfig.DoNotUpdatePathFiles;
+                HashSet<string> doNotUpdatePathFiles = new(ConfigurationMain.Instance.GetCurrentConfig.DoNotUpdatePathFiles, StringComparer.OrdinalIgnoreCase);
 
                 var downloadList = list.Where(kvp => !doNotUpdatePathFiles.Contains(kvp.Key) && (!localFilesDictionary.ContainsKey(kvp.Key) || !localFilesDictionary[kvp.Key].Equals(kvp.Value, StringComparison.OrdinalIgnoreCase)));
 
