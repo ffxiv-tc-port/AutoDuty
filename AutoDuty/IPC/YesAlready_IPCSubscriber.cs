@@ -89,6 +89,36 @@ namespace AutoDuty.IPC
 
         internal static bool IsEnabled => IPCSubscriber_Common.IsReady("YesAlready");
 
+        /// <summary>手上真的握著一把續約中的壓制租約。舊開關路徑不算：寫了開關也確認不了 YesAlready 真的讓開。</summary>
+        internal static bool HoldsSuppressionLease => _suppressing && !_legacyEngaged && _lease != Guid.Empty;
+
+        /// <summary>
+        /// 按「別的插件也會按」的窗之前當場向提供端確認租約還活著（順便續約）。回 false＝不准按。
+        /// </summary>
+        /// <remarks>失效時把心跳提前到下一幀，由 <see cref="Tick"/> 照原流程重取（欄位不在這裡清：Tick 看到空租約就不會重取）。</remarks>
+        internal static bool ConfirmSuppressionLease()
+        {
+            if (!HoldsSuppressionLease)
+                return false;
+
+            bool alive;
+            try
+            {
+                alive = YesAlreadyExtraIPC.RenewSuppressionFor(_lease, LeaseMilliseconds);
+            }
+            catch
+            {
+                alive = false;
+            }
+
+            if (alive)
+                return true;
+
+            Svc.Log.Information($"[AutoDuty] 按窗前確認 YesAlready 壓制租約 {_lease} 已經不在了，這次不按");
+            _nextRenewAt = 0;
+            return false;
+        }
+
         public static bool IsPluginEnabled() => Pkg.IsPluginEnabled();
 
         internal static void Dispose() => YesAlreadyExtraIPC.Dispose();

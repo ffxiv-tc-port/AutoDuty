@@ -4,6 +4,8 @@ using Dalamud.Plugin.Services;
 using ECommons;
 using ECommons.DalamudServices;
 using ECommons.Throttlers;
+using ECommons.UIHelpers.AddonMasterImplementations;
+using Lumina.Excel.Sheets;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using System;
@@ -21,15 +23,12 @@ namespace AutoDuty.Helpers
             get => _deathState;
             set
             {
-                // 🔴 這行必須在下面那個 DutyMode 早退之前:MultiboxUtility.Set() 會把
-                // DutyModeEnum 設成 Regular,若擺在早退之後,多開模式下(非 Unsynced)
-                // 死亡同步永遠不會送出。內部自帶 Config.MultiBox 閘門,沒開就是 no-op。
+                // 多開死亡同步內部自帶 Config.MultiBox 閘門，沒開就是 no-op。
                 if (_deathState != value)
                     MultiboxUtility.IsDead(value == PlayerLifeState.Dead);
 
-                if (Plugin.Configuration.DutyModeEnum.EqualsAny(DutyMode.Regular, DutyMode.Trial, DutyMode.Raid) && !Plugin.Configuration.Unsynced)
-                    return;
-                else if (value == PlayerLifeState.Dead)
+                // 刻意不再依任務模式早退：使用者常以「一般」模式跑分隊攻略，早退會讓復活後永遠停在 Revived。
+                if (value == PlayerLifeState.Dead)
                 {
                     if (value != _deathState)
                     {
@@ -44,6 +43,7 @@ namespace AutoDuty.Helpers
                     Svc.Log.Debug("DeathHelper - Player is Revived changing state to Revived");
                     _oldIndex = Plugin.Indexer;
                     _findShortcutStartTime = Environment.TickCount;
+                    _shortcutPressed = false;
                     FindShortcut(Plugin.StopGeneration);
                 }
                 _deathState = value;
@@ -75,9 +75,6 @@ namespace AutoDuty.Helpers
                 return;
             }
 
-            if (Plugin.Configuration.DutyModeEnum.EqualsAny(DutyMode.Regular, DutyMode.Trial, DutyMode.Raid) && !Plugin.Configuration.Unsynced)
-                return;
-
             Plugin.StopForCombat = true;
             Plugin.SkipTreasureCoffer = true;
 
@@ -86,8 +83,11 @@ namespace AutoDuty.Helpers
 
             if (Plugin.TaskManager.IsBusy)
                 Plugin.TaskManager.Abort();
-            
-            if (Plugin.Configuration.DutyModeEnum.EqualsAny(DutyMode.Regular, DutyMode.Trial, DutyMode.Raid, DutyMode.Variant))
+
+            // 同步的一般副本／討伐戰／大型任務刻意維持不按（與移除模式早退之前相同）：
+            // 這扇是「傳送到返回點」，和真人組隊時按下去等於放棄等隊友復活。
+            DutyMode mode = Plugin.Configuration.DutyModeEnum;
+            if (mode == DutyMode.Variant || (mode.EqualsAny(DutyMode.Regular, DutyMode.Trial, DutyMode.Raid) && Plugin.Configuration.Unsynced))
             {
                 Svc.Log.Debug("DeathHelper - On Death, looking for YesNo");
                 if (GenericHelpers.TryGetAddonByName("SelectYesno", out AtkUnitBase* addonSelectYesno) && GenericHelpers.IsAddonReady(addonSelectYesno))
@@ -98,6 +98,14 @@ namespace AutoDuty.Helpers
         private static int _oldIndex = 0;
         private static IGameObject? _gameObject => ObjectHelper.GetObjectByDataId(2000700);
         private static int _findShortcutStartTime = 0;
+
+        /// <summary>這次復活有沒有按下捷徑確認框（只用來寫接續方式的 log）。</summary>
+        private static bool _shortcutPressed;
+
+        /// <summary>按下捷徑確認框的時刻；之後這段時間內不再互動也不重讀那扇窗（關閉中的窗文字會讀壞）。</summary>
+        private static long _shortcutPressedAt;
+
+        private const int ShortcutPressSettleMs = 5000;
 
         private static int FindWaypoint()
         {
@@ -230,9 +238,9 @@ namespace AutoDuty.Helpers
             if (_gameObject == null || !_gameObject.IsTargetable || (distanceToPlayer = ObjectHelper.GetDistanceToPlayer(_gameObject)) > 50)
             {
                 Svc.Log.Debug("OnRevive: Done");
-                if(Plugin.Indexer == 0) 
+                if(Plugin.Indexer == 0)
                     Plugin.Indexer = FindWaypoint();
-                Stop();
+                FinishRevive(_shortcutPressed ? "走捷徑" : "走回去（附近沒有可用的捷徑）");
                 return;
             }
             if (_oldIndex == Plugin.Indexer)
@@ -243,12 +251,77 @@ namespace AutoDuty.Helpers
                 MovementHelper.Move(_gameObject, 0.25f, 2);
                 Svc.Log.Debug($"OnRevive: Moving to {_gameObject.Name} at: {_gameObject.Position} which is {distanceToPlayer} away");
             }
-            else
+            else if (!TryUseShortcut(_gameObject, out string giveUpReason))
+                FinishRevive($"走回去（{giveUpReason}）");
+        }
+
+        private static void FinishRevive(string how)
+        {
+            int index = Plugin.Indexer;
+            string step = index >= 0 && index < Plugin.Actions.Count ? Plugin.Actions[index].Name : "?";
+            Svc.Log.Information($"[DeathHelper] 復活後接續：{how}，從第 {index} 步「{step}」繼續。");
+            Stop();
+        }
+
+        /// <summary>捷徑（EObj 2000700）的確認框文字＝GimmickAccessor 第 74 列指向的 GimmickYesNo 列。</summary>
+        private const uint ShortcutPromptRowId = 36;
+
+        private static string? _shortcutPromptText;
+
+        private static string ShortcutPromptText =>
+            _shortcutPromptText ??= Normalize(Svc.Data.GetExcelSheet<GimmickYesNo>().GetRowOrDefault(ShortcutPromptRowId)?.Unknown0.ExtractText());
+
+        internal static string Normalize(string? text) => (text ?? string.Empty).ReplaceLineEndings("").Trim();
+
+        /// <summary>確認框文字是不是捷徑的那一句。期望文字讀不到（空字串）時一律不是。</summary>
+        internal static bool IsShortcutPrompt(string? shownText, string expected) =>
+            expected.Length > 0 && string.Equals(Normalize(shownText), expected, StringComparison.Ordinal);
+
+        /// <summary>
+        /// 在捷徑旁邊時每次 OnRevive 呼叫一次：還沒開窗就互動，窗開了且條件都成立才按「是」。回 false＝放棄捷徑、改走回去。
+        /// </summary>
+        /// <remarks>
+        /// 🔴 這扇 SelectYesno 是 YesAlready 也會按的窗：只在當場確認過壓制租約還活著時才按，
+        /// 租約不在就連互動都不做（開了窗卻不按會把人卡在事件裡）。窗與文字都在同一幀重找重讀。
+        /// </remarks>
+        private static unsafe bool TryUseShortcut(IGameObject shortcut, out string giveUpReason)
+        {
+            giveUpReason = string.Empty;
+
+            if (_shortcutPressed && Environment.TickCount64 - _shortcutPressedAt < ShortcutPressSettleMs)
+                return true;
+
+            if (!YesAlready_IPCSubscriber.HoldsSuppressionLease)
             {
-                Svc.Log.Debug($"OnRevive: Interacting with {_gameObject.Name} until SelectYesno Addon appears, and ClickingYes");
-                ObjectHelper.InteractWithObjectUntilAddon(_gameObject, "SelectYesno");
-                AddonHelper.ClickSelectYesno();
+                giveUpReason = "沒有 YesAlready 壓制租約，不按捷徑確認框";
+                return false;
             }
+
+            if (!GenericHelpers.TryGetAddonByName("SelectYesno", out AtkUnitBase* addon) || !GenericHelpers.IsAddonReady(addon))
+            {
+                Svc.Log.Debug($"OnRevive: Interacting with {shortcut.Name} until SelectYesno Addon appears");
+                ObjectHelper.InteractWithObjectUntilAddon(shortcut, "SelectYesno");
+                return true;
+            }
+
+            string shown = new AddonMaster.SelectYesno(addon).Text;
+            if (!IsShortcutPrompt(shown, ShortcutPromptText))
+            {
+                giveUpReason = $"確認框文字不是捷徑那一句（畫面上：{Normalize(shown)}），不按";
+                return false;
+            }
+
+            if (!YesAlready_IPCSubscriber.ConfirmSuppressionLease())
+            {
+                giveUpReason = "YesAlready 壓制租約已失效，不按捷徑確認框";
+                return false;
+            }
+
+            Svc.Log.Debug("OnRevive: Shortcut prompt confirmed, ClickingYes");
+            AddonHelper.ClickSelectYesno();
+            _shortcutPressed   = true;
+            _shortcutPressedAt = Environment.TickCount64;
+            return true;
         }
     }
 }
