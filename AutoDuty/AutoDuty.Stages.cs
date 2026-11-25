@@ -265,7 +265,7 @@ public sealed partial class AutoDuty
 
                 Svc.Log.Information($"[卡住處理] 第 4 階:在 {stuckAt} 連續卡住 {stuckCount + 1} 次,跳過目前這一步。");
                 _autoSkippedStepsThisDuty++;
-                SkipCurrentStep();
+                SkipCurrentStep(userInitiated: false);
                 return;
             }
 

@@ -109,14 +109,15 @@ public sealed partial class AutoDuty
 
     /// <summary>
     /// 跳過正在執行的那一步,直接進入下一步。
-    /// 跳過的是計時中的 Wait 步驟時,順便把已經等掉的時間寫回路徑檔。
+    /// 使用者單獨跳過計時中的 Wait 步驟時,前後 <see cref="WaitWriteBackQuietMs"/> 內都沒有別的跳步,才把已經等掉的時間寫回路徑檔。
     /// </summary>
     /// <remarks>
     /// 只動「這一步」的執行狀態:中止排隊中的任務、停掉導航、<see cref="Indexer"/> 加一、
     /// 回到 <c>Stage.Reading_Path</c>。迴圈計數(<c>CurrentLoop</c>)、<see cref="States"/>、
     /// 設定、已載入的路徑一律不動。
     /// </remarks>
-    internal void SkipCurrentStep()
+    /// <param name="userInitiated">使用者按的跳過;卡住處理自動跳的傳 false,永不寫回。</param>
+    internal void SkipCurrentStep(bool userInitiated = true)
     {
         if (!CanSkipCurrentStep)
         {
@@ -127,6 +128,11 @@ public sealed partial class AutoDuty
         int        skippedIndex = Indexer;
         PathAction step         = Actions[skippedIndex];
         var        stageBefore  = Stage;
+
+        long now            = Environment.TickCount64;
+        long previousSkipAgo = _lastStepSkipTick == 0 ? -1 : now - _lastStepSkipTick;
+        _lastStepSkipTick = now;
+        CancelPendingWaitWriteBack(skippedIndex, now);
 
         // 🔴 已等時間必須在做任何清理之前量 —— 清掉計時之後就量不到了。
         bool waitInProgress = TryGetCurrentWaitProgress(out int configuredMs, out int elapsedMs);
@@ -175,10 +181,58 @@ public sealed partial class AutoDuty
 
         Svc.Log.Information($"[跳過步驟] 已跳過第 {skippedIndex} 步「{step.Name}」(Stage={stageBefore.ToCustomString()}),Indexer -> {Indexer}。");
 
-        if (waitInProgress)
-            StepSkipHelper.WriteBackWaitTime(skippedIndex, step, configuredMs, elapsedMs);
-        else
-            Svc.Chat.Print($"已跳過目前步驟：{step.Name}", "AutoDuty");
+        Svc.Chat.Print($"已跳過目前步驟：{step.Name}", "AutoDuty");
+
+        if (!waitInProgress)
+            return;
+
+        if (!StepPolicies.ShouldWriteBackWait(userInitiated, previousSkipAgo, -1, WaitWriteBackQuietMs))
+        {
+            Svc.Log.Information($"[跳過步驟] 第 {skippedIndex} 步「Wait」不寫回等待時間(使用者跳過={userInitiated},距上一次跳步 {previousSkipAgo} 毫秒)。");
+            return;
+        }
+
+        // 延後到靜默期結束才寫:連續跳步的第一下要等看到「之後沒有再跳」才知道不是快轉。
+        long id = ++_waitWriteBackSeq;
+        _pendingWaitWriteBack = new PendingWaitWriteBack(id, skippedIndex, step, configuredMs, elapsedMs, previousSkipAgo, now, StopGeneration);
+        SchedulerHelper.ScheduleAction($"WaitWriteBack{id}", () => CommitPendingWaitWriteBack(id), WaitWriteBackQuietMs);
+    }
+
+    /// <summary>跳過等待後要多久沒有再跳步,才把等掉的時間寫回;這段期間內任何跳步都視為快轉。</summary>
+    private const int WaitWriteBackQuietMs = 5000;
+
+    private sealed record PendingWaitWriteBack(long Id, int Index, PathAction Step, int ConfiguredMs, int ElapsedMs, long PreviousSkipAgo, long SkipTick, int Generation);
+
+    private PendingWaitWriteBack? _pendingWaitWriteBack;
+    private long _waitWriteBackSeq;
+    private long _lastStepSkipTick;
+
+    private void CancelPendingWaitWriteBack(int nextSkippedIndex, long now)
+    {
+        if (_pendingWaitWriteBack is not { } p)
+            return;
+
+        long nextWithin = now - p.SkipTick;
+        if (StepPolicies.ShouldWriteBackWait(true, p.PreviousSkipAgo, nextWithin, WaitWriteBackQuietMs))
+            return;
+
+        _pendingWaitWriteBack = null;
+        Svc.Log.Information($"[跳過步驟] {nextWithin} 毫秒後又跳過第 {nextSkippedIndex} 步,視為快轉,第 {p.Index} 步「Wait」不寫回等待時間。");
+    }
+
+    private void CommitPendingWaitWriteBack(long id)
+    {
+        if (_pendingWaitWriteBack is not { } p || p.Id != id)
+            return;
+
+        _pendingWaitWriteBack = null;
+        if (p.Generation != StopGeneration)
+        {
+            Svc.Log.Information($"[跳過步驟] 跳過第 {p.Index} 步之後 AutoDuty 停過,不寫回等待時間。");
+            return;
+        }
+
+        StepSkipHelper.WriteBackWaitTime(p.Index, p.Step, p.ConfiguredMs, p.ElapsedMs);
     }
 
     /// <summary>

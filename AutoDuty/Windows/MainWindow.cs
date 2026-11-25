@@ -139,7 +139,7 @@ public class MainWindow : Window, IDisposable
 
     /// <summary>
     /// 「跳過目前步驟」按鈕:中止正在執行的那一步、直接進下一步。
-    /// 正在跑的是 Wait 步驟時,順便把已經等掉的時間寫回路徑檔,下次不用再等那麼久。
+    /// 單獨跳過正在跑的 Wait 步驟時,順便把已經等掉的時間寫回路徑檔(連續跳步不寫),下次不用再等那麼久。
     /// </summary>
     /// <remarks>
     /// 主視窗與疊加層共用 <see cref="StopResumePause"/>,所以兩邊都會有這個按鈕。
@@ -173,7 +173,8 @@ public class MainWindow : Window, IDisposable
         // 「這一步在等多久、已經等了多久」是起疑才會查的資訊 ⇒ 放 tooltip,不占列上版面。
         if (Plugin.TryGetCurrentWaitProgress(out int configuredMs, out int elapsedMs))
             tooltip += "\n" + "This step is waiting; skipping now will change its wait to the ?? seconds already elapsed (was ?? seconds)".Loc(
-                           (elapsedMs / 1000f).ToString("0.0"), (configuredMs / 1000f).ToString("0.0"));
+                           (elapsedMs / 1000f).ToString("0.0"), (configuredMs / 1000f).ToString("0.0"))
+                       + "\n" + "Not changed if you skip another step within 5 seconds before or after (fast-forwarding)".Loc();
 
         ImGui.SetTooltip(tooltip);
     }

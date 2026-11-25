@@ -17,5 +17,16 @@ namespace AutoDuty.Helpers
 
         /// <summary>路線跑到底時，是否該當成「卡住要人接手」而不是「全部跑完」：這一場自動跳過步驟、而副本沒完成。</summary>
         internal static bool PathEndNeedsHelp(int autoSkippedSteps, bool dutyComplete) => autoSkippedSteps > 0 && !dutyComplete;
+
+        /// <summary>
+        /// 跳過計時中的 Wait 時要不要把已等時間寫回路徑檔。只有使用者「單獨」跳過才寫：
+        /// 前一次或下一次跳步落在 <paramref name="quietMs"/> 內＝快轉／連續跳步，寫回會把機關等待砍到不夠用。
+        /// </summary>
+        /// <param name="previousSkipAgoMs">距上一次跳步的毫秒數;-1＝沒有上一次。</param>
+        /// <param name="nextSkipWithinMs">之後多久又跳步;-1＝還沒看到下一次。</param>
+        internal static bool ShouldWriteBackWait(bool userInitiated, long previousSkipAgoMs, long nextSkipWithinMs, int quietMs) =>
+            userInitiated &&
+            !(previousSkipAgoMs >= 0 && previousSkipAgoMs < quietMs) &&
+            !(nextSkipWithinMs >= 0 && nextSkipWithinMs < quietMs);
     }
 }
