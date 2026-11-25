@@ -148,10 +148,19 @@ namespace AutoDuty.Data
             public List<PathActionCondition> ConditionsWhile { get; set; } = [];
 
             /// <summary>
-            /// 離開條件。空集合＝照舊做完就往下。不成立時不推進,從頭重做這一步,直到全部成立。
+            /// 離開條件。空集合＝照舊做完就往下。不成立時不推進,從頭重做這一步,直到全部成立
+            /// （或達到 <see cref="UntilMaxRedo"/>）。
             /// </summary>
             [JsonPropertyName("conditionsUntil")]
             public List<PathActionCondition> ConditionsUntil { get; set; } = [];
+
+            /// <summary>
+            /// 離開條件不成立時最多重做幾次;超過就停下並標「需要幫忙」,不往下走。0＝不限(加入本欄位之前的行為)。
+            /// </summary>
+            /// <remarks>本 fork 自有欄位,上游沒有;值為 0 時不寫出,建置分頁存檔不會讓其他路徑檔多出這個鍵。</remarks>
+            [JsonPropertyName("untilMaxRedo")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+            public int UntilMaxRedo { get; set; }
 
             [JsonPropertyName("note")]
             public string Note { get; set; } = string.Empty;

@@ -348,13 +348,27 @@ public sealed partial class AutoDuty
             if (_untilHoldIndex == Indexer)
                 Svc.Log.Information($"[步驟條件] 第 {Indexer} 步「{step.Name}」的離開條件已成立,往下一步。");
             _untilHoldIndex = -1;
+            _untilFailures  = 0;
             return true;
         }
 
         if (_untilHoldIndex != Indexer)
         {
             _untilHoldIndex = Indexer;
+            _untilFailures  = 0;
             Svc.Log.Information($"[步驟條件] 第 {Indexer} 步「{step.Name}」的離開條件[{string.Join(" & ", step.ConditionsUntil.Select(c => c.Describe()))}]還沒成立,重做這一步。");
+        }
+
+        _untilFailures++;
+        if (step.UntilMaxRedo > 0)
+            Svc.Log.Information($"[步驟條件] 第 {Indexer} 步「{step.Name}」離開條件第 {_untilFailures} 次不成立(最多重做 {step.UntilMaxRedo} 次)。");
+
+        if (StepPolicies.ShouldGiveUpRedo(_untilFailures, step.UntilMaxRedo))
+        {
+            // 刻意停下而不是往下跳:沒做成的機關會讓後面的步驟整段卡住,往下跳只是把問題藏到更後面。
+            Svc.Log.Information($"[步驟條件] 第 {Indexer} 步「{step.Name}」重做 {step.UntilMaxRedo} 次後離開條件仍未成立,停下等玩家接手。");
+            MarkSelfStop("A path step still did not succeed after its retries. Please take over.", needsHelp: true);
+            Stage = Stage.Stopped;
         }
         return false;
     }

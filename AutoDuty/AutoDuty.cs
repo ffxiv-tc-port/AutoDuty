@@ -746,6 +746,9 @@ public sealed partial class AutoDuty : IDalamudPlugin
 
     private int _untilHoldIndex = -1;
 
+    /// <summary>目前這一步（<see cref="_untilHoldIndex"/>）離開條件連續不成立的次數；換步、成立、停止都歸零。</summary>
+    private int _untilFailures;
+
     // CheckFinishing 底下那個「等 Action／路徑真的跑完」的守衛自己沒有逾時：如果戰後的
     // Interactable 步驟卡在無止境重試（例如撿寶那條 InteractableCheck 迴圈永遠到不了結束條件），
     // Action 就永遠不會變回空字串，CheckFinishing-WaitAction 會每 500ms 把自己重新排一次、

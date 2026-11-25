@@ -134,6 +134,15 @@
       "arguments": [
         "20000"
       ],
+      "conditionsUntil": [
+        {
+          "$type": "AutoDuty.Data.PathActionConditionObjectData, AutoDuty",
+          "baseId": 2000478,
+          "property": "EventState",
+          "value": 7
+        }
+      ],
+      "untilMaxRedo": 2,
       "note": ""
     },
     {
@@ -147,6 +156,15 @@
       "arguments": [
         "20000"
       ],
+      "conditionsUntil": [
+        {
+          "$type": "AutoDuty.Data.PathActionConditionObjectData, AutoDuty",
+          "baseId": 2000479,
+          "property": "EventState",
+          "value": 7
+        }
+      ],
+      "untilMaxRedo": 2,
       "note": ""
     },
     {
@@ -448,6 +466,15 @@
       "arguments": [
         "25000"
       ],
+      "conditionsUntil": [
+        {
+          "$type": "AutoDuty.Data.PathActionConditionObjectData, AutoDuty",
+          "baseId": 2000484,
+          "property": "EventState",
+          "value": 7
+        }
+      ],
+      "untilMaxRedo": 2,
       "note": ""
     },
     {
@@ -472,6 +499,15 @@
       "arguments": [
         "25000"
       ],
+      "conditionsUntil": [
+        {
+          "$type": "AutoDuty.Data.PathActionConditionObjectData, AutoDuty",
+          "baseId": 2000483,
+          "property": "EventState",
+          "value": 7
+        }
+      ],
+      "untilMaxRedo": 2,
       "note": ""
     },
     {
