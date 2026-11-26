@@ -1,13 +1,15 @@
 using System;
 using AutoDuty.Helpers;
 using AutoDuty.IPC;
+using Dalamud.Game.ClientState.Objects.Enums;
+using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.DalamudServices;
 
 namespace AutoDuty;
 
 // 站定等待（路徑步驟 holdPosition）：Wait 計時中請 BMR 暫停自動移動與閃避，讓角色站滿機關要求的秒數。
 // 不看「自動管理 BossMod AI」設定：這是路徑檔對單一步驟的要求，不是在接管使用者的 BMR 設定。
-// 契約：只在框架執行緒呼叫 Tick；押著時每秒續一次 5 秒租約，離開步驟／計時結束／站滿上限／死亡／血量不足／條件成立／停止都主動釋放。
+// 契約：只在框架執行緒呼叫 Tick；押著時每秒續一次 5 秒租約，離開步驟／計時結束／站滿上限／死亡／血量不足／有怪以玩家為目標／條件成立／停止都主動釋放。
 public sealed partial class AutoDuty
 {
     private const float MovementHoldMinHpRatio   = 0.70f;
@@ -47,17 +49,31 @@ public sealed partial class AutoDuty
             _movementHold.NewEpisode();
         }
 
-        bool alive = false;
+        bool alive = false, attacked = false;
         uint hp    = 0, maxHp = 0;
+        string? attacker = null;
         if (holdStep)
         {
-            // 當幀讀完就丟，不留 IPlayerCharacter。
+            // 當幀讀完就丟，不留 IPlayerCharacter／IBattleNpc。
             var player = Svc.Objects.LocalPlayer;
             if (player != null)
             {
                 alive = !player.IsDead;
                 hp    = player.CurrentHp;
                 maxHp = player.MaxHp;
+                if (waitEnd != 0)
+                {
+                    ulong myId = player.GameObjectId;
+                    foreach (var o in Svc.Objects)
+                    {
+                        if (o is IBattleNpc { BattleNpcKind: BattleNpcSubKind.Enemy, IsDead: false } npc && npc.TargetObjectId == myId)
+                        {
+                            attacked = true;
+                            attacker = $"{npc.Name.TextValue}({npc.BaseId:X})";
+                            break;
+                        }
+                    }
+                }
             }
 
             if (waitEnd != 0 && now >= _movementHoldNextUntilCheckAt)
@@ -69,7 +85,7 @@ public sealed partial class AutoDuty
         }
 
         var decision = StepPolicies.DecideMovementHold(holdStep, now, waitEnd, WaitStepDurationMs, MovementHoldMaxMs,
-                                                       alive, hp, maxHp, MovementHoldMinHpRatio, _movementHoldUntilFulfilled);
+                                                       alive, hp, maxHp, MovementHoldMinHpRatio, _movementHoldUntilFulfilled, attacked);
         var previous = _movementHoldLastDecision;
         _movementHoldLastDecision = decision;
 
@@ -79,7 +95,7 @@ public sealed partial class AutoDuty
                 Svc.Log.Information($"[站定等待] 第 {index} 步「{Actions[index].Name}」：已請 BMR 暫停自動移動與閃避（每秒續 {MovementHoldLeaseSeconds:0} 秒租約，最多 {MovementHoldMaxMs / 1000} 秒；血量低於 {MovementHoldMinHpRatio:p0} 就不壓制）。");
                 break;
             case MovementHoldSession.Event.Released:
-                Svc.Log.Information($"[站定等待] 已請 BMR 恢復自動移動與閃避（{MovementHoldReason(decision, hp, maxHp)}）。");
+                Svc.Log.Information($"[站定等待] 已請 BMR 恢復自動移動與閃避（{MovementHoldReason(decision, hp, maxHp, attacker)}）。");
                 break;
             case MovementHoldSession.Event.Unavailable:
                 Svc.Log.Information($"[站定等待] 第 {index} 步：BossModReborn 沒有暫停閃避的介面（沒有載入或版本太舊），這一步照舊流程、不壓制。");
@@ -87,8 +103,8 @@ public sealed partial class AutoDuty
             case MovementHoldSession.Event.Rejected:
                 Svc.Log.Information($"[站定等待] 第 {index} 步：BossModReborn 拒絕暫停閃避的要求，這一步照舊流程、不壓制。");
                 break;
-            case MovementHoldSession.Event.None when decision == StepPolicies.MovementHold.LowHp && previous != decision:
-                Svc.Log.Information($"[站定等待] 第 {index} 步：{MovementHoldReason(decision, hp, maxHp)}，這次不請 BMR 暫停閃避。");
+            case MovementHoldSession.Event.None when decision is StepPolicies.MovementHold.LowHp or StepPolicies.MovementHold.Attacked && previous != decision:
+                Svc.Log.Information($"[站定等待] 第 {index} 步：{MovementHoldReason(decision, hp, maxHp, attacker)}，這次不請 BMR 暫停閃避。");
                 break;
         }
     }
@@ -102,7 +118,7 @@ public sealed partial class AutoDuty
         _movementHoldLastDecision = StepPolicies.MovementHold.NotHoldStep;
     }
 
-    private static string MovementHoldReason(StepPolicies.MovementHold decision, uint hp, uint maxHp) => decision switch
+    private static string MovementHoldReason(StepPolicies.MovementHold decision, uint hp, uint maxHp, string? attacker = null) => decision switch
     {
         StepPolicies.MovementHold.NotHoldStep => "離開站定步驟",
         StepPolicies.MovementHold.NotWaiting  => "等待計時結束",
@@ -110,6 +126,7 @@ public sealed partial class AutoDuty
         StepPolicies.MovementHold.Dead        => "角色無法行動",
         StepPolicies.MovementHold.LowHp       => $"血量 {(maxHp == 0 ? "?" : ((float)hp / maxHp).ToString("p0"))} 低於 {MovementHoldMinHpRatio:p0}",
         StepPolicies.MovementHold.Fulfilled   => "離開條件已成立",
+        StepPolicies.MovementHold.Attacked    => $"有怪在打玩家：{attacker ?? "?"}，交給分隊坦克接走前先照常閃",
         _                                     => decision.ToString(),
     };
 }
