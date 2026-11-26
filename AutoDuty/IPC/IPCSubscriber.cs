@@ -134,6 +134,9 @@ namespace AutoDuty.IPC
         // 首領模組標記的限時必殺目標（InstanceID，優先度由高到低）；舊版 BMR 沒有這支，SafeWrapper 吞掉後回 null。
         [EzIPC("Hints.UrgentKillTargets", true)] internal static readonly Func<ulong[]> UrgentKillTargets;
 
+        // 與 UrgentKillTargets 一一對應的 AIHints.Enemy.Priority；舊版 BMR 沒有這支，SafeWrapper 吞掉後回 null。
+        [EzIPC("Hints.UrgentKillPriorities", true)] internal static readonly Func<int[]> UrgentKillPriorities;
+
         // 有首領模組在跑（分隊號令歸 BMR 管）；BMR 沒載入時 SafeWrapper 吞掉後回 false。
         [EzIPC("HasActiveModule", true)] internal static readonly Func<bool> HasActiveModule;
 

@@ -1081,11 +1081,15 @@ namespace AutoDuty.Managers
             public bool  SwitchedAway;
             public ulong LastLoggedId;
             public bool  Unavailable; // 舊版 BMR 沒有這支端點：這一場不再問，免得每 250 ms 擲一次例外
+            public bool  PrioritiesUnavailable; // 同上，只對優先度端點；沒有就照「手上已在清單裡就不動」
+            public bool  PrioritiesMismatchLogged;
+            public ulong LastPriorityFrom, LastPriorityTo;
         }
 
         /// <summary>
         /// BMR 首領模組標記為限時必殺（時限內沒打掉會致死）的小怪在場時把目標切過去；
-        /// 切過去之後目標空了或死了才切回王，手上還有活目標就不動。
+        /// 切過去之後目標空了或死了才切回王，手上還有活目標就不動；
+        /// BMR 有給優先度時，手上那隻在清單裡但有嚴格更高優先度的活目標就換過去（同優先度不換，免得來回切）。
         /// </summary>
         private void TargetUrgentAdd(UrgentAddState state)
         {
@@ -1102,14 +1106,22 @@ namespace AutoDuty.Managers
             }
             if (ids.Length > 0)
             {
-                if (currentUsable && Array.IndexOf(ids, current!.GameObjectId) >= 0)
+                Wrath_IPCSubscriber.HoldManualTargeting(Environment.TickCount64);
+                int[]? prios = UrgentPriorities(state, ids.Length);
+                int    ci    = currentUsable ? Array.IndexOf(ids, current!.GameObjectId) : -1;
+                if (ci >= 0)
+                {
+                    if (prios != null)
+                        SwitchToHigherPriority(state, ids, prios, ci, current!);
                     return;
+                }
                 // 選著隊友（補師要復活之類）不搶。
                 if (currentUsable && (current is Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter || current is IBattleNpc { BattleNpcKind: Dalamud.Game.ClientState.Objects.Enums.BattleNpcSubKind.NpcPartyMember }))
                     return;
 
-                foreach (ulong id in ids)
+                foreach (int i in UrgentPriorityRules.Order(ids.Length, prios))
                 {
+                    ulong        id  = ids[i];
                     IGameObject? add = Svc.Objects.SearchById(id);
                     if (add is not { IsDead: false, IsTargetable: true })
                         continue;
@@ -1119,7 +1131,7 @@ namespace AutoDuty.Managers
                     if (state.LastLoggedId != id)
                     {
                         state.LastLoggedId = id;
-                        Svc.Log.Information($"[Boss] BMR 首領模組標記「{add.Name.TextValue}」為限時必殺目標（時限內沒打掉會致死），目標從 {from} 切過去。");
+                        Svc.Log.Information($"[Boss] BMR 首領模組標記「{add.Name.TextValue}」為限時必殺目標（時限內沒打掉會致死）{(prios != null ? $"，優先度 {prios[i]}" : "")}，目標從 {from} 切過去。");
                     }
                     return;
                 }
@@ -1140,6 +1152,46 @@ namespace AutoDuty.Managers
                 state.SwitchedAway = false;
                 Svc.Log.Information($"[Boss] 限時必殺目標已清掉，目標切回首領「{boss.Name.TextValue}」。");
             }
+        }
+
+        // null＝退回不看優先度（舊版 BMR 沒這支端點，或長度和目標清單對不上）。
+        private static int[]? UrgentPriorities(UrgentAddState state, int count)
+        {
+            if (state.PrioritiesUnavailable)
+                return null;
+            int[]? prios = BossModReborn_IPCSubscriber.UrgentKillPriorities();
+            if (prios == null)
+            {
+                state.PrioritiesUnavailable = true;
+                Svc.Log.Information("[Boss] BMR 沒有 Hints.UrgentKillPriorities（舊版）：限時必殺目標照清單順序，手上已在清單裡就不換。");
+                return null;
+            }
+            if (prios.Length == count)
+                return prios;
+            if (!state.PrioritiesMismatchLogged)
+            {
+                state.PrioritiesMismatchLogged = true;
+                Svc.Log.Information($"[Boss] BMR 的限時必殺優先度有 {prios.Length} 筆、目標有 {count} 筆對不上：這次不看優先度。");
+            }
+            return null;
+        }
+
+        private static void SwitchToHigherPriority(UrgentAddState state, ulong[] ids, int[] prios, int ci, IGameObject current)
+        {
+            int best = UrgentPriorityRules.HigherThanCurrent(prios, ci, i => Svc.Objects.SearchById(ids[i]) is { IsDead: false, IsTargetable: true });
+            if (best < 0)
+                return;
+            IGameObject? add = Svc.Objects.SearchById(ids[best]);
+            if (add == null)
+                return;
+            Svc.Targets.Target = add;
+            state.SwitchedAway = true;
+            if (state.LastPriorityFrom == current.GameObjectId && state.LastPriorityTo == ids[best])
+                return;
+            state.LastPriorityFrom = current.GameObjectId;
+            state.LastPriorityTo   = ids[best];
+            state.LastLoggedId     = ids[best];
+            Svc.Log.Information($"[Boss] 限時必殺目標依優先度換目標：從「{current.Name.TextValue}」（優先度 {prios[ci]}）換到「{add.Name.TextValue}」（優先度 {prios[best]}）。");
         }
 
         // MovementHelper.Move 的預設最後一點容許值;Boss-MoveCheck 一直是用預設值呼叫它。

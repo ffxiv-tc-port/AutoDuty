@@ -837,6 +837,8 @@ public sealed partial class AutoDuty : IDalamudPlugin
     {
         // 分隊先發暫停 Wrath 的硬上限：放最前面，後面任何一步擲例外也照樣到期恢復。
         SquadronOpener.Watchdog();
+        // 同理：首領戰限時必殺目標期間改成手動的 Wrath DPS 選目標，續約一斷就改回。
+        Wrath_IPCSubscriber.TickManualTargeting();
 
         // 從別的執行緒打進來的 IPC 指令(Run／Start／Stop)與多開訊息,照排入的先後在這裡排乾。
         // 🔴 放在最前面:同一格排進來的指令要在這一格的 Stage 判斷之前生效,

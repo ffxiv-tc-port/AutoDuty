@@ -350,6 +350,99 @@ namespace AutoDuty.IPC
             return result is SetResult.Okay or SetResult.OkayWorking ? "已恢復" : $"恢復回 {result}（AutoDuty 之後的「開自動循環」會再補開）";
         }
 
+        /// <summary>首領戰有限時必殺目標時把 DPS 選目標暫改「手動」的租約；非 null＝改著。只在框架執行緒碰。</summary>
+        private static Guid? _manualTargetingLease;
+        private static DPSRotationMode _manualTargetingRestore;
+        private static long _manualTargetingRefreshMs;
+        private static readonly HashSet<string> ManualTargetingSkipLogged = [];
+
+        /// <summary>呼叫端停止續約超過這麼久就改回原值（王戰結束、AutoDuty 停止、換領地、例外都走這條）。</summary>
+        private const long ManualTargetingKeepAliveMs = 6000;
+
+        internal static bool ManualTargetingHeld => _manualTargetingLease != null;
+
+        private static DPSRotationMode RoleDpsConfig() =>
+            Plugin.CurrentPlayerItemLevelandClassJob.Value.GetCombatRole() == CombatRole.Tank ?
+                Plugin.Configuration.Wrath_TargetingTank :
+                Plugin.Configuration.Wrath_TargetingNonTank;
+
+        /// <summary>
+        /// 場上有限時必殺目標的每個節拍呼叫：沒改就改成「手動」（只打玩家目前目標），改著就續約。
+        /// 只有 AutoDuty 經租約開著自動循環時才改；其他情況不硬來，同一原因只記一次。
+        /// </summary>
+        internal static void HoldManualTargeting(long nowMs)
+        {
+            if (_manualTargetingLease != null)
+            {
+                _manualTargetingRefreshMs = nowMs;
+                return;
+            }
+            string skip = null;
+            if (!Plugin.Configuration.AutoManageRotationPluginState || Plugin.Configuration.UsingAlternativeRotationPlugin)
+                skip = "AutoDuty 沒有在管輪替插件";
+            else if (!IsEnabled)
+                skip = "Wrath Combo 沒有載入";
+            else if (_curLease == null)
+                skip = "AutoDuty 還沒拿到 Wrath Combo 的租借";
+            else if (!Plugin.RotationEngaged)
+                skip = "AutoDuty 目前沒有開著自動循環";
+            var restore = RoleDpsConfig();
+            if (skip == null && restore == DPSRotationMode.Manual)
+                skip = "DPS 選目標本來就是手動";
+            if (skip != null)
+            {
+                if (ManualTargetingSkipLogged.Add(skip))
+                    Svc.Log.Information($"[Boss] 有限時必殺目標，但不改 Wrath Combo 的 DPS 選目標：{skip}");
+                return;
+            }
+            var lease  = _curLease!.Value;
+            var result = SetAutoRotationConfigState(lease, AutoRotationConfigOption.DPSRotationMode, DPSRotationMode.Manual);
+            if (result is SetResult.Okay or SetResult.OkayWorking)
+            {
+                _manualTargetingLease     = lease;
+                _manualTargetingRestore   = restore;
+                _manualTargetingRefreshMs = nowMs;
+                Svc.Log.Information($"[Boss] 有限時必殺目標：Wrath Combo 的 DPS 選目標暫改「手動」（原本 {restore}），只打 AutoDuty 選的目標");
+                return;
+            }
+            if (result == SetResult.InvalidLease)
+                _curLease = null;
+            if (ManualTargetingSkipLogged.Add("result:" + result))
+                Svc.Log.Information($"[Boss] Wrath Combo 沒接受把 DPS 選目標改成手動（{result}）");
+        }
+
+        /// <summary>每幀呼叫、放在 Framework_Update 最前面：續約斷了就改回原值。</summary>
+        internal static void TickManualTargeting()
+        {
+            if (_manualTargetingLease == null || Environment.TickCount64 - _manualTargetingRefreshMs < ManualTargetingKeepAliveMs)
+                return;
+            try
+            {
+                Svc.Log.Information($"[Boss] 限時必殺目標已不在（或王戰結束）：Wrath Combo 的 DPS 選目標改回 {_manualTargetingRestore}：{ReleaseManualTargeting()}");
+            }
+            catch (Exception e)
+            {
+                _manualTargetingLease = null;
+                EzIpcFailureLog.Report(e);
+            }
+        }
+
+        /// <summary>改回 <see cref="HoldManualTargeting"/> 之前的值；租約換過就不動（新租約沒改過它）。</summary>
+        internal static string ReleaseManualTargeting()
+        {
+            if (_manualTargetingLease is not { } lease)
+                return "沒有改著";
+            _manualTargetingLease = null;
+            if (!IsEnabled)
+                return "Wrath Combo 沒有載入";
+            if (_curLease != lease)
+                return "租借已失效，Wrath Combo 已回到使用者自己的設定";
+            var result = SetAutoRotationConfigState(lease, AutoRotationConfigOption.DPSRotationMode, _manualTargetingRestore);
+            if (result == SetResult.InvalidLease)
+                _curLease = null;
+            return result is SetResult.Okay or SetResult.OkayWorking ? "已改回" : $"改回時回 {result}";
+        }
+
         internal static void SetAutoMode(bool on)
         {
             if (_pausedLease != null)
@@ -372,9 +465,8 @@ namespace AutoDuty.IPC
                     SetAutoRotationConfigState(_curLease.Value, AutoRotationConfigOption.IncludeNPCs,        true);
                     SetAutoRotationConfigState(_curLease.Value, AutoRotationConfigOption.OnlyAttackInCombat, false);
 
-                    DPSRotationMode dpsConfig = Plugin.CurrentPlayerItemLevelandClassJob.Value.GetCombatRole() == CombatRole.Tank ?
-                                                    Plugin.Configuration.Wrath_TargetingTank :
-                                                    Plugin.Configuration.Wrath_TargetingNonTank;
+                    // 限時必殺目標期間維持手動；改回由 TickManualTargeting 負責。
+                    DPSRotationMode dpsConfig = _manualTargetingLease != null && _manualTargetingLease == _curLease ? DPSRotationMode.Manual : RoleDpsConfig();
                     SetAutoRotationConfigState(_curLease.Value, AutoRotationConfigOption.DPSRotationMode, dpsConfig);
 
                     SetAutoRotationConfigState(_curLease.Value, AutoRotationConfigOption.HealerRotationMode, HealerRotationMode.Lowest_Current);
@@ -415,8 +507,9 @@ namespace AutoDuty.IPC
                     break;
             }
 
-            _curLease    = null;
-            _pausedLease = null;
+            _curLease             = null;
+            _pausedLease          = null;
+            _manualTargetingLease = null;
             Svc.Log.Info($"Wrath lease cancelled via {(CancellationReason) reason} for: {s}");
         }
 
@@ -428,9 +521,11 @@ namespace AutoDuty.IPC
 
         internal static void Release()
         {
-            // 釋放沒被確認時租約還留在對方那裡：先撤銷暫停，免得自動循環停在關。
+            // 釋放沒被確認時租約還留在對方那裡：先撤銷暫停與手動選目標，免得停在我們改過的值。
             if (_pausedLease != null)
                 Svc.Log.Information($"[分隊先發] 釋放 Wrath Combo 租借前撤銷自動循環暫停：{ResumeAutoRotation()}");
+            if (_manualTargetingLease != null)
+                Svc.Log.Information($"[Boss] 釋放 Wrath Combo 租借前把 DPS 選目標改回 {_manualTargetingRestore}：{ReleaseManualTargeting()}");
 
             if (!_curLease.HasValue)
             {
