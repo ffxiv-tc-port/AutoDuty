@@ -534,6 +534,8 @@ public class Configuration
     // 冒險者小隊小怪路段：設玩家目標前先對該敵人下「號令：戰鬥開始」，分隊跟上或逾時才設（Helpers/SquadronOpener）。
     public bool       SquadronOpener                 = true;
     public float      SquadronOpenerMaxWaitSeconds   = 2.5f;
+    // 同上路段：敵人打玩家、分隊坦克沒在打它，就對它下號令讓坦克接走；要上一格也開著才生效。
+    public bool       SquadronRescue                 = true;
     public bool       AutoManageVnavAlignCamera      = true;
     public bool       LootTreasure                   = true;
     public LootMethod LootMethodEnum                 = LootMethod.AutoDuty;

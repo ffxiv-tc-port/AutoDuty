@@ -295,8 +295,72 @@ namespace AutoDuty.IPC
         internal static bool SetJobAutoReady() =>
             Register() && DoThing(() => SetCurrentJobAutoRotationReady(_curLease!.Value));
 
+        /// <summary>分隊先發暫停自動循環用的租約；非 null＝暫停中（只有自己這把租約開著時才會暫停）。</summary>
+        private static Guid? _pausedLease;
+        private static long _pausedAtMs;
+
+        /// <summary>分隊先發的暫停被 AutoDuty 每 5 秒的「開自動循環」攔住的最長時間；先發自己的上限遠小於這個值。</summary>
+        private const long PauseSafetyMs = 10_000;
+
+        internal static bool AutoRotationPaused => _pausedLease != null;
+
+        /// <summary>
+        /// 暫停 AutoDuty 經租約開著的 Wrath 自動循環。回 null＝已暫停；否則回不暫停的原因（不硬來、不註冊新租約）。
+        /// 只在框架執行緒呼叫。恢復一律走 <see cref="ResumeAutoRotation"/>。
+        /// </summary>
+        internal static string TryPauseAutoRotation()
+        {
+            if (_pausedLease != null)
+                return null;
+            if (!Plugin.Configuration.AutoManageRotationPluginState || Plugin.Configuration.UsingAlternativeRotationPlugin)
+                return "AutoDuty 沒有在管輪替插件（「自動管理連段插件狀態」沒開，或用的是其他輪替插件）";
+            if (!IsEnabled)
+                return "Wrath Combo 沒有載入";
+            if (_curLease is not { } lease)
+                return "AutoDuty 還沒拿到 Wrath Combo 的租借";
+            if (!Plugin.RotationEngaged)
+                return "AutoDuty 目前沒有開著自動循環";
+            if (!GetAutoRotationState())
+                return "Wrath Combo 自動循環本來就是關的";
+            var result = FromApi(WrathSafe(() => WrathIPCWrapper.SetAutoRotationState(lease, false)));
+            if (result is SetResult.Okay or SetResult.OkayWorking)
+            {
+                _pausedLease = lease;
+                _pausedAtMs  = Environment.TickCount64;
+                return null;
+            }
+            if (result == SetResult.InvalidLease)
+                _curLease = null;
+            return $"Wrath Combo 沒接受暫停（{result}）";
+        }
+
+        /// <summary>撤銷 <see cref="TryPauseAutoRotation"/>：租約沒換過才設回開著（暫停前就是開著）。回一句結果給 log。</summary>
+        internal static string ResumeAutoRotation()
+        {
+            if (_pausedLease is not { } lease)
+                return "沒有暫停中";
+            _pausedLease = null;
+            if (!IsEnabled)
+                return "Wrath Combo 沒有載入";
+            if (_curLease != lease)
+                return "租借已失效，Wrath Combo 已回到使用者自己的設定";
+            var result = FromApi(WrathSafe(() => WrathIPCWrapper.SetAutoRotationState(lease, true)));
+            if (result == SetResult.InvalidLease)
+                _curLease = null;
+            return result is SetResult.Okay or SetResult.OkayWorking ? "已恢復" : $"恢復回 {result}（AutoDuty 之後的「開自動循環」會再補開）";
+        }
+
         internal static void SetAutoMode(bool on)
         {
+            if (_pausedLease != null)
+            {
+                if (!on)
+                    _pausedLease = null;
+                else if (Environment.TickCount64 - _pausedAtMs < PauseSafetyMs)
+                    return;
+                else
+                    Svc.Log.Information($"[分隊先發] Wrath Combo 自動循環暫停超過 {PauseSafetyMs / 1000} 秒安全上限，強制恢復：{ResumeAutoRotation()}");
+            }
             if (Register())
             {
                 bool autoRotationState = DoThing(() => SetAutoRotationState(_curLease!.Value, on));
@@ -351,7 +415,8 @@ namespace AutoDuty.IPC
                     break;
             }
 
-            _curLease = null;
+            _curLease    = null;
+            _pausedLease = null;
             Svc.Log.Info($"Wrath lease cancelled via {(CancellationReason) reason} for: {s}");
         }
 
@@ -363,6 +428,10 @@ namespace AutoDuty.IPC
 
         internal static void Release()
         {
+            // 釋放沒被確認時租約還留在對方那裡：先撤銷暫停，免得自動循環停在關。
+            if (_pausedLease != null)
+                Svc.Log.Information($"[分隊先發] 釋放 Wrath Combo 租借前撤銷自動循環暫停：{ResumeAutoRotation()}");
+
             if (!_curLease.HasValue)
             {
                 _unconfirmedReleaseLease = null;

@@ -560,15 +560,18 @@ public static partial class ConfigTab
                 Configuration.Save();
             ImGuiHelper.HelpMarkerAllowWhenDisabled("首領模組標記為「時限內沒打掉就會致死」的小怪（例：伊弗利特討伐戰的火獄之楔、泰坦討伐戰的泰坦的核心與花崗石牢）一出現，就把目標切過去；打掉後目標空了會切回首領。\n需要 BossModReborn；BMR 的 AI 有沒有開、上一格有沒有勾都不影響。");
 
-            if (ImGui.Checkbox("冒險者分隊：小怪路段先下號令再開打", ref Configuration.SquadronOpener))
+            if (ImGui.Checkbox("冒險者小隊：小怪路段先下號令再開打##SquadronOpener", ref Configuration.SquadronOpener))
                 Configuration.Save();
-            ImGuiHelper.HelpMarkerAllowWhenDisabled("只在分隊攻略任務的小怪路段生效（首領戰交給 BossModReborn 的分隊號令）；玩家是坦克時不做。\n要選新的敵人時，先對牠下「號令：戰鬥開始」，等分隊坦克換過去（沒有坦克就看任一名分隊員）才選牠當目標，讓輪替插件晚一步出手、讓坦克先接仇恨。\n等到上限還沒人跟上，就先選目標再下一次號令，然後開打；等待中玩家血量低於一半就直接開打。\n輪替插件的目標要設成「手動」才有「晚一步」的效果。");
+            ImGuiHelper.HelpMarkerAllowWhenDisabled("只在分隊攻略任務的小怪路段生效（首領戰交給 BossModReborn 的分隊號令）；玩家是坦克時不做。\n要選新的敵人時，先對牠下「號令：戰鬥開始」，等分隊坦克換過去（沒有坦克就看任一名分隊員）才選牠當目標，讓輪替插件晚一步出手、讓坦克先接仇恨。\n玩家目標已經被別的插件或手動選成敵人時，立刻對那隻下號令，一樣等坦克換過去。\n等到上限還沒人跟上，就先選目標再下一次號令，然後開打；等待中玩家血量低於一半就直接開打。\n「自動管理連段插件狀態」開著、而且用的是 Wrath Combo 時，等待中會暫停 Wrath 的自動循環，結束就恢復；其他情況要把輪替插件的目標設成「手動」才有「晚一步」的效果。");
             if (Configuration.SquadronOpener)
             {
                 ImGui.Indent();
                 ImGui.SetNextItemWidth(150f.Scale());
                 if (ImGui.SliderFloat("等待上限（秒）##SquadronOpenerMaxWait", ref Configuration.SquadronOpenerMaxWaitSeconds, 0.5f, 6f, "%.1f"))
                     Configuration.Save();
+                if (ImGui.Checkbox("被怪打時下號令讓坦克接走##SquadronRescue", ref Configuration.SquadronRescue))
+                    Configuration.Save();
+                ImGuiHelper.HelpMarkerAllowWhenDisabled("小怪路段有敵人在打玩家、分隊坦克又沒在打牠，持續約 1 秒（玩家血量低於一半時不等）就對牠下「號令：戰鬥開始」，讓坦克轉過去接仇恨。\n同時好幾隻在打玩家時一次處理一隻：玩家目前的目標優先，其次打玩家最久的那隻；等牠改打別人（或坦克打上牠）才換下一隻。\n同一隻至少隔 8 秒才會再下令、最多 3 次。");
                 ImGui.Unindent();
             }
 

@@ -339,6 +339,7 @@ public sealed partial class AutoDuty : IDalamudPlugin
     private         DateTime       _lastRotationSetTime    = DateTime.MinValue;
     /// <summary>最後一次過了設定閘門的 <see cref="SetRotationPluginSettings"/> 是「開」：輪替插件可能是 AutoDuty 打開的。</summary>
     private         bool           _rotationEngaged;
+    internal        bool           RotationEngaged => _rotationEngaged;
     public readonly bool           isDev;
 
     private const string PandoraChestsFeature = "Automatically Open Chests";
@@ -834,6 +835,9 @@ public sealed partial class AutoDuty : IDalamudPlugin
 
     public void Framework_Update(IFramework framework)
     {
+        // 分隊先發暫停 Wrath 的硬上限：放最前面，後面任何一步擲例外也照樣到期恢復。
+        SquadronOpener.Watchdog();
+
         // 從別的執行緒打進來的 IPC 指令(Run／Start／Stop)與多開訊息,照排入的先後在這裡排乾。
         // 🔴 放在最前面:同一格排進來的指令要在這一格的 Stage 判斷之前生效,
         //    否則會白白多等一格,而 Stop 多等一格代表多跑一格的自動化。
@@ -903,6 +907,7 @@ public sealed partial class AutoDuty : IDalamudPlugin
         // 在釋放 HttpClient 之前叫路徑更新停手,免得剩下的檔一個個撞已釋放的用戶端。
         DisposeStep("Patcher.CancelForUnload", Patcher.CancelForUnload);
         DisposeStep("GitHubHelper.Dispose", GitHubHelper.Dispose);
+        DisposeStep("SquadronOpener.Shutdown", () => SquadronOpener.Shutdown("插件卸載"));
         DisposeStep("StopAndResetALL", StopAndResetALL);
         DisposeStep("Framework.Update -= Framework_Update", () => Svc.Framework.Update -= Framework_Update);
         DisposeStep("Framework.Update -= ScheduleInvoker", () => Svc.Framework.Update -= SchedulerHelper.ScheduleInvoker);
