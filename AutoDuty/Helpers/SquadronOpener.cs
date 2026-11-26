@@ -88,6 +88,29 @@ namespace AutoDuty.Helpers
         private static ushort _pendingSeqStart;
         private static long _pauseStartMs;
         private static int _pauses, _autoStarts;
+        private static volatile bool _targetingOwned;
+        private static long _nextOwnedMs;
+
+        /// <summary>
+        /// IPC <c>AutoDuty.SquadronTargetingOwned</c> 讀的快照（任何執行緒可讀）：冒險者小隊小怪路段的玩家目標由 AutoDuty 決定，
+        /// 外部自動選目標插件在玩家沒有目標時不要自己選。每 100 ms 在框架執行緒更新；首領戰期間為 false。
+        /// </summary>
+        internal static bool TargetingOwned => _targetingOwned;
+
+        private static void UpdateTargetingOwned(long now)
+        {
+            if (now < _nextOwnedMs)
+                return;
+            _nextOwnedMs = now + TickMs;
+            var enabled = Plugin.Configuration.SquadronOpener && !_tablesFailed;
+            var running = Running() && Player.Available;
+            if (enabled && running)
+            {
+                SyncZone();
+                Classify(now);
+            }
+            _targetingOwned = SquadronOpenerPlanner.TargetingOwned(enabled, running, _zoneIsSquadron, () => BossActive(), () => PlayerIsTank());
+        }
 
         /// <summary>要把 <paramref name="candidate"/> 設成玩家目標之前呼叫；回 true＝先不要設（號令先發中）。</summary>
         internal static bool ShouldHold(IGameObject? candidate)
@@ -155,6 +178,7 @@ namespace AutoDuty.Helpers
         /// <summary>插件卸載時呼叫：撤銷暫停，等待中的先發直接放棄。</summary>
         internal static void Shutdown(string cause)
         {
+            _targetingOwned = false;
             var pending = Planner.Pending != 0;
             var note = ResumeRotation(Environment.TickCount64, cause);
             if (pending || note.Length > 0)
@@ -166,10 +190,12 @@ namespace AutoDuty.Helpers
         {
             try
             {
+                UpdateTargetingOwned(Environment.TickCount64);
                 TickCore();
             }
             catch (Exception ex)
             {
+                _targetingOwned = false;
                 Once("tickex", $"更新失敗，放棄這次先發：{ex.GetType().Name}: {ex.Message}");
                 try
                 {
@@ -577,7 +603,8 @@ namespace AutoDuty.Helpers
             _nextClassifyMs = now + ClassifyMs;
             if (ScanSquad(0, false).Count > 0)
                 return _zoneIsSquadron = true;
-            if (++_classifyMisses >= ClassifyMisses)
+            // 只有戰鬥中沒找到才算一次：剛進副本時分隊員可能還沒生成。
+            if (Svc.Condition[ConditionFlag.InCombat] && ++_classifyMisses >= ClassifyMisses)
                 _zoneNotSquadron = true;
             return false;
         }

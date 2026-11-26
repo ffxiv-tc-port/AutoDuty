@@ -128,6 +128,11 @@ namespace AutoDuty.IPC
         [EzIPC] public bool IsNavigating() => Plugin.States.HasFlag(PluginState.Navigating);
         [EzIPC] public bool IsLooping() => Plugin.States.HasFlag(PluginState.Looping);
         [EzIPC] public bool IsStopped() => Plugin.Stage == Stage.Stopped;
+        /// <summary>
+        /// true＝此刻冒險者小隊小怪路段的玩家目標由 AutoDuty 決定，外部自動選目標插件在玩家沒有目標時不要自己選；首領戰期間為 false。
+        /// 只讀框架執行緒每 100 ms 更新的 volatile 快照，任何執行緒可呼叫、不做原生讀取。
+        /// </summary>
+        [EzIPC] public bool SquadronTargetingOwned() => SquadronOpener.TargetingOwned;
         /// <summary>某個領土有沒有路徑檔。</summary>
         /// <remarks>
         /// 📌 <b>不需要排隊</b>:<c>ContentPathsManager.DictionaryPaths</c> 是<b>整份替換</b>發布的

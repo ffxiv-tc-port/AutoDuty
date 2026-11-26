@@ -88,6 +88,13 @@ namespace AutoDuty.Helpers
 
         internal bool Handled(ulong target) => _handled.Contains(target);
 
+        /// <summary>
+        /// 「玩家目標由 AutoDuty 決定」：先發開著、AutoDuty 執行中、分隊領地、非首領戰、玩家不是坦克。
+        /// 刻意涵蓋整段小怪路段而非只有等待中：外部插件輪詢可能搶在先發開始之前。後兩項用委派，前面不成立就不問（含 IPC）。
+        /// </summary>
+        internal static bool TargetingOwned(bool enabled, bool running, bool squadronZone, System.Func<bool> bossActive, System.Func<bool> playerIsTank) =>
+            enabled && running && squadronZone && !bossActive() && !playerIsTank();
+
         /// <summary>同一隻只先發一次；分隊已經在打它＝記一筆、不先發。回 true＝開始等待。</summary>
         internal bool TryStart(ulong target, long nowMs, bool squadAlreadyOn)
         {
